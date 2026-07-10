@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>THE WHITE HOUSE GH — Members Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--black:#0a0a0a;--surface:#111111;--card:#181818;--border:#2a2a2a;--gold:#f5c842;--gold-dim:#c8a22a;--green:#22c55e;--red:#ef4444;--teal:#3fb6a8;--purple:#a855f7;--muted:#888;--text:#f2f2f2;--text-dim:#b5b5b5;}
+*{margin:0;padding:0;box-sizing:border-box;}body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min-height:100vh;}
+.header{background:var(--surface);border-bottom:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+.logo-row{display:flex;align-items:center;gap:12px;}
+.logo-row img{height:36px;width:auto;display:block;}
+.logo-row span{color:var(--text-dim);font-weight:400;font-size:11px;letter-spacing:3px;}
+.header-right{display:flex;align-items:center;gap:16px;}
+.last-refresh{font-size:11px;color:var(--muted);font-family:'Space Mono',monospace;}
+.refresh-btn{background:var(--border);border:none;color:var(--text);padding:6px 14px;border-radius:4px;cursor:pointer;font-size:12px;font-family:'Syne',sans-serif;font-weight:600;letter-spacing:1px;transition:background .2s;}
+.refresh-btn:hover{background:var(--gold);color:var(--black);}
+.main{padding:20px 24px;max-width:1300px;margin:0 auto;}
+.tabs{display:flex;gap:4px;margin-bottom:24px;background:var(--surface);padding:6px;border-radius:8px;border:1px solid var(--border);overflow-x:auto;}
+.tab{padding:8px 16px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:700;letter-spacing:1px;white-space:nowrap;color:var(--text-dim);border:none;background:none;font-family:'Syne',sans-serif;}
+.tab.active{background:var(--gold);color:var(--black);}.tab:hover:not(.active){color:var(--text);background:var(--border);}
+.tab-content{display:none;}.tab-content.active{display:block;}
+.metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:24px;}
+.metric-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:18px;position:relative;overflow:hidden;}
+.metric-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;}
+.metric-card.gold::before{background:var(--gold);}.metric-card.green::before{background:var(--green);}.metric-card.teal::before{background:var(--teal);}.metric-card.purple::before{background:var(--purple);}
+.metric-label{font-size:10px;font-weight:700;letter-spacing:2px;color:var(--muted);margin-bottom:8px;}
+.metric-value{font-size:32px;font-weight:800;font-family:'Space Mono',monospace;line-height:1;}
+.metric-sub{font-size:11px;color:var(--text-dim);margin-top:6px;}
+.metric-card.gold .metric-value{color:var(--gold);}.metric-card.green .metric-value{color:var(--green);}.metric-card.teal .metric-value{color:var(--teal);}.metric-card.purple .metric-value{color:var(--purple);}
+.card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:18px;margin-bottom:16px;}
+.card-title{font-size:11px;font-weight:700;letter-spacing:2px;color:var(--muted);margin-bottom:14px;text-transform:uppercase;}
+.contact-table{width:100%;border-collapse:collapse;font-size:12px;}
+.contact-table th{text-align:left;padding:8px 10px;color:var(--muted);font-weight:700;letter-spacing:1px;border-bottom:1px solid var(--border);font-size:10px;}
+.contact-table td{padding:8px 10px;border-bottom:1px solid #1a1a1a;vertical-align:middle;}
+.contact-table tr:hover td{background:#1c1c1c;}
+.search-input{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 14px;color:var(--text);font-size:13px;font-family:'Syne',sans-serif;width:100%;margin-bottom:14px;outline:none;}.search-input:focus{border-color:var(--gold);}
+input[type=text],input[type=tel],input[type=number],select,textarea{background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:5px;font-family:'Syne',sans-serif;font-size:12px;width:100%;outline:none;}
+select:focus,input:focus,textarea:focus{border-color:var(--gold);}
+.rank-badge{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--border);font-family:'Space Mono',monospace;font-size:11px;font-weight:700;}
+.rank-1{background:var(--gold);color:var(--black);}.rank-2{background:#c0c0c0;color:var(--black);}.rank-3{background:#c9861a;color:var(--black);}
+.pts{color:var(--gold);font-weight:700;font-family:'Space Mono',monospace;}
+.empty{text-align:center;padding:30px;color:var(--muted);font-size:12px;}
+.loading{text-align:center;padding:40px;color:var(--muted);font-size:13px;font-family:'Space Mono',monospace;}
+.toast{position:fixed;bottom:24px;right:24px;background:var(--gold);color:var(--black);padding:10px 18px;border-radius:6px;font-size:12px;font-weight:700;letter-spacing:1px;opacity:0;transform:translateY(20px);transition:all .3s;z-index:999;pointer-events:none;}
+.toast.show{opacity:1;transform:translateY(0);}
+.err-msg{color:#e77;font-size:12px;margin-top:6px;}
+.result-msg{font-size:12px;margin-top:8px;}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px;}@media(max-width:768px){.two-col{grid-template-columns:1fr;}}
+.reward-item{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:12px 14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:12px;}
+.activity-row{padding:8px 0;border-bottom:1px solid #1a1a1a;font-size:12px;display:flex;justify-content:space-between;gap:10px;}
+.badge-source{font-size:9px;padding:2px 6px;border-radius:3px;font-weight:700;letter-spacing:1px;}
+.src-bar{background:#1a1500;color:var(--gold);}.src-booking{background:#001a10;color:var(--teal);}.src-landing{background:#0a0020;color:var(--purple);}
+/* Footer follow/website links — inactive (plain text) until a URL is filled in below in JS config */
+.footer-links{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;padding:18px 0 6px;}
+.footer-link{font-size:11px;color:var(--muted);text-decoration:none;padding:6px 12px;border:1px solid var(--border);border-radius:20px;}
+.footer-link.live{color:var(--teal);border-color:var(--teal);}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="logo-row">
+    <img src="logo-white.png" alt="THE WHITE HOUSE GH">
+    <span>MEMBERS DASHBOARD</span>
+  </div>
+  <div class="header-right"><span class="last-refresh" id="lastRefresh">Loading...</span><button class="refresh-btn" onclick="loadData()">&#8635; REFRESH</button></div>
+</div>
+<div class="main">
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('today',event)">TODAY</button>
+  <button class="tab" onclick="switchTab('leaderboard',event)">&#127942; LEADERBOARD</button>
+  <button class="tab" onclick="switchTab('customers',event)">ALL CUSTOMERS</button>
+  <button class="tab" onclick="switchTab('bookings',event)">ADD BOOKING</button>
+  <button class="tab" onclick="switchTab('rewards',event)">REWARDS &amp; REDEEM</button>
+  <button class="tab" onclick="switchTab('activity',event)">ACTIVITY</button>
+</div>
+
+<!-- TODAY -->
+<div class="tab-content active" id="tab-today">
+  <div class="metrics-grid" id="topMetrics"><div class="loading">Loading data</div></div>
+  <div class="two-col">
+    <div class="card">
+      <div class="card-title">&#127942; TOP 5 THIS SESSION</div>
+      <div id="topFive"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">&#128203; RECENT ACTIVITY</div>
+      <div id="recentActivityMini"></div>
+    </div>
+  </div>
+</div>
+
+<!-- LEADERBOARD -->
+<div class="tab-content" id="tab-leaderboard">
+  <div style="background:#1a1500;border:1px solid var(--gold-dim);border-radius:6px;padding:12px 16px;margin-bottom:16px;font-size:12px;line-height:1.7">
+    Ranked by current point balance. Great for shout-outs — screenshot the top of this list for social posts.
+  </div>
+  <div id="leaderboardList"></div>
+</div>
+
+<!-- ALL CUSTOMERS -->
+<div class="tab-content" id="tab-customers">
+  <input class="search-input" type="text" id="customerSearch" placeholder="Search by name, ID, phone, business..." oninput="renderCustomers()">
+  <div class="scroll-table" style="overflow-x:auto"><table class="contact-table"><thead><tr><th>ID</th><th>NAME</th><th>PHONE</th><th>SERVICE</th><th>SOURCE</th><th>VISITS</th><th>POINTS</th><th>LAST ACTIVITY</th><th>ADJUST</th></tr></thead><tbody id="customersBody"></tbody></table></div>
+</div>
+
+<!-- ADD BOOKING -->
+<div class="tab-content" id="tab-bookings">
+  <div style="background:#001a10;border:1px solid var(--teal);border-radius:6px;padding:12px 16px;margin-bottom:16px;font-size:12px;line-height:1.7">
+    No live booking system yet — use this to log walk-ins and bookings taken by phone/in person. Matches by phone number, so it will find and update an existing member automatically instead of creating a duplicate.
+  </div>
+  <div class="card">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div><label style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:1px">NAME*</label><input type="text" id="bkName"></div>
+      <div><label style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:1px">PHONE*</label><input type="tel" id="bkPhone" placeholder="024 123 4567"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div><label style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:1px">SERVICE</label>
+        <select id="bkService"><option>Pool</option><option>Bar</option><option>Canteen</option><option>Events</option><option>Family Occasions</option><option>Couples</option><option>Other</option></select>
+      </div>
+      <div><label style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:1px">BOOKING DATE</label><input type="date" id="bkDate"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div><label style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:1px">PARTY SIZE</label><input type="number" id="bkParty"></div>
+      <div><label style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:1px">ADDED BY</label><input type="text" id="bkAddedBy" placeholder="Your name"></div>
+    </div>
+    <label style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:1px">NOTES</label>
+    <textarea id="bkNotes" style="min-height:60px"></textarea>
+    <button class="refresh-btn" onclick="submitBooking()" style="background:var(--teal);color:var(--black);width:100%;margin-top:12px;padding:10px;font-weight:800">+ ADD BOOKING</button>
+    <div id="bkResult" class="result-msg"></div>
+  </div>
+</div>
+
+<!-- REWARDS & REDEEM -->
+<div class="tab-content" id="tab-rewards">
+  <div class="two-col">
+    <div class="card">
+      <div class="card-title">CURRENT REWARDS LIST</div>
+      <div style="font-size:11px;color:var(--text-dim);margin-bottom:12px">Edit names/points/active anytime directly in the "Rewards" sheet — changes show here on next refresh.</div>
+      <div id="rewardsList"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">REDEEM A REWARD</div>
+      <label style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:1px">MEMBER ID OR PHONE*</label>
+      <input type="text" id="rdCustId" placeholder="e.g. THWGH12 or 024...">
+      <label style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:1px;margin-top:10px;display:block">REWARD*</label>
+      <select id="rdReward"></select>
+      <label style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:1px;margin-top:10px;display:block">GIVEN BY</label>
+      <input type="text" id="rdGivenBy" placeholder="Your name">
+      <label style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:1px;margin-top:10px;display:block">NOTES</label>
+      <input type="text" id="rdNotes">
+      <button class="refresh-btn" onclick="submitRedeem()" style="background:var(--gold);color:var(--black);width:100%;margin-top:12px;padding:10px;font-weight:800">REDEEM</button>
+      <div id="rdResult" class="result-msg"></div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px;border-color:var(--purple)">
+    <div class="card-title" style="color:var(--purple)">MANUAL POINTS ADJUSTMENT</div>
+    <div style="font-size:11px;color:var(--text-dim);margin-bottom:12px">Add or remove points for any reason — a birthday bonus, a correction, a promo. Use a negative number to remove points.</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><label style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:1px">MEMBER ID OR PHONE*</label><input type="text" id="apCustId"></div>
+      <div><label style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:1px">POINTS (+/-)*</label><input type="number" id="apPoints"></div>
+    </div>
+    <label style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:1px;margin-top:10px;display:block">REASON</label>
+    <input type="text" id="apReason" placeholder="e.g. Birthday bonus">
+    <button class="refresh-btn" onclick="submitAdjustPoints()" style="background:var(--purple);color:#fff;width:100%;margin-top:12px;padding:10px;font-weight:800">APPLY</button>
+    <div id="apResult" class="result-msg"></div>
+  </div>
+</div>
+
+<!-- ACTIVITY -->
+<div class="tab-content" id="tab-activity">
+  <div class="filter-row" style="display:flex;gap:8px;margin-bottom:16px">
+    <button class="tab active" onclick="setActivityFilter('all',this)">ALL</button>
+    <button class="tab" onclick="setActivityFilter('points',this)">POINTS</button>
+    <button class="tab" onclick="setActivityFilter('bookings',this)">BOOKINGS</button>
+    <button class="tab" onclick="setActivityFilter('redemptions',this)">REDEMPTIONS</button>
+  </div>
+  <div id="activityFullList"></div>
+</div>
+
+</div><!-- end .main -->
+
+<div class="footer-links" id="footerLinks"></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API_URL = 'https://script.google.com/macros/s/AKfycbyyGLRGOhHrtT_zXj-99tW8Cbril7OZcygt5oiiS5NApxtsYLUt3bDA5b8W2LbjQpFrNw/exec';
+
+/* -----------------------------------------------------------
+   FOOTER LINKS — leave url blank for now. Fill one in later and
+   it automatically becomes a clickable link in the dashboard footer.
+   ----------------------------------------------------------- */
+const FOOTER_LINKS = [
+  { name:'TikTok',        url:'' },
+  { name:'Instagram',     url:'' },
+  { name:'Facebook',      url:'' },
+  { name:'Website',       url:'' }
+];
+
+let state = { customers: [], leaderboard: [], rewards: [], pointsLog: [], bookings: [], redemptions: [], totalCustomers: 0, newToday: 0 };
+let activityFilter = 'all';
+
+function renderFooterLinks(){
+  document.getElementById('footerLinks').innerHTML = FOOTER_LINKS.map(l =>
+    l.url ? `<a class="footer-link live" href="${l.url}" target="_blank" rel="noopener">${l.name}</a>`
+          : `<span class="footer-link">${l.name}</span>`
+  ).join('');
+}
+renderFooterLinks();
+
+function showToast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2500); }
+
+function switchTab(name, evt){
+  document.querySelectorAll('.tabs .tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+  if(evt && evt.target) evt.target.classList.add('active');
+  document.getElementById('tab-'+name).classList.add('active');
+  if(name==='leaderboard') renderLeaderboard();
+  if(name==='customers') renderCustomers();
+  if(name==='rewards') renderRewards();
+  if(name==='activity') renderActivityFull();
+}
+
+async function loadData(){
+  document.getElementById('lastRefresh').textContent = 'Refreshing...';
+  try{
+    const res = await fetch(API_URL + '?action=getMasterData&t=' + Date.now());
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error || 'Unknown error');
+    state = data;
+    document.getElementById('lastRefresh').textContent = 'Updated: ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+    renderToday();
+  }catch(e){
+    document.getElementById('lastRefresh').textContent = 'Offline — check connection';
+    console.log('Load error:', e.message);
+  }
+}
+
+function renderToday(){
+  document.getElementById('topMetrics').innerHTML = `
+    <div class="metric-card gold"><div class="metric-label">TOTAL MEMBERS</div><div class="metric-value">${state.totalCustomers||0}</div><div class="metric-sub">across bar, bookings, landing page</div></div>
+    <div class="metric-card green"><div class="metric-label">NEW TODAY</div><div class="metric-value">${state.newToday||0}</div><div class="metric-sub">registered today</div></div>
+    <div class="metric-card teal"><div class="metric-label">TOTAL POINTS LIVE</div><div class="metric-value" style="font-size:24px">${(state.customers||[]).reduce((s,c)=>s+(parseFloat(c.totalPoints)||0),0).toLocaleString()}</div><div class="metric-sub">unredeemed, across all members</div></div>
+    <div class="metric-card purple"><div class="metric-label">REDEMPTIONS</div><div class="metric-value">${(state.redemptions||[]).length}</div><div class="metric-sub">rewards given so far</div></div>`;
+  const top5 = (state.leaderboard||[]).slice(0,5);
+  document.getElementById('topFive').innerHTML = top5.length ? top5.map((c,i)=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #1a1a1a">
+      <div style="display:flex;align-items:center;gap:10px"><span class="rank-badge rank-${i+1<=3?i+1:'x'}">${i+1}</span><span style="font-size:12px;font-weight:700">${c.fullName}</span></div>
+      <span class="pts">${c.totalPoints||0} pts</span>
+    </div>`).join('') : '<div class="empty">No members yet</div>';
+  const acts = buildActivityFeed().slice(0,8);
+  document.getElementById('recentActivityMini').innerHTML = acts.length ? acts.map(a=>renderActivityRow(a)).join('') : '<div class="empty">No activity yet</div>';
+}
+
+function renderLeaderboard(){
+  const lb = state.leaderboard || [];
+  document.getElementById('leaderboardList').innerHTML = lb.length ? lb.map((c,i)=>`
+    <div class="reward-item">
+      <div style="display:flex;align-items:center;gap:14px">
+        <span class="rank-badge rank-${i+1<=3?i+1:'x'}">${i+1}</span>
+        <div>
+          <div style="font-weight:700;font-size:13px">${c.fullName}${c.businessName?' · '+c.businessName:''}</div>
+          <div style="font-size:10px;color:var(--text-dim);font-family:'Space Mono',monospace">${c.custId} · ${c.phone||'—'} · ${c.totalVisits||0} visits</div>
+        </div>
+      </div>
+      <span class="pts" style="font-size:16px">${c.totalPoints||0} pts</span>
+    </div>`).join('') : '<div class="empty">No members yet</div>';
+}
+
+function renderCustomers(){
+  const q = (document.getElementById('customerSearch').value||'').toLowerCase();
+  const filtered = (state.customers||[]).filter(c => !q ||
+    (c.fullName||'').toLowerCase().includes(q) || (c.custId||'').toLowerCase().includes(q) ||
+    (c.phone||'').includes(q) || (c.businessName||'').toLowerCase().includes(q));
+  document.getElementById('customersBody').innerHTML = filtered.length ? filtered.map(c => `
+    <tr>
+      <td style="font-family:'Space Mono',monospace;color:var(--gold);font-size:11px">${c.custId}</td>
+      <td><strong>${c.fullName}</strong>${c.businessName?'<br><span style="font-size:10px;color:var(--text-dim)">'+c.businessName+'</span>':''}</td>
+      <td style="font-family:'Space Mono',monospace;font-size:11px">${c.phone||'—'}</td>
+      <td style="font-size:11px">${c.service||'—'}</td>
+      <td><span class="badge-source ${c.source==='Bar'?'src-bar':c.source&&c.source.indexOf('Bar')===0?'src-bar':'src-landing'}">${c.source||'—'}</span></td>
+      <td style="text-align:center">${c.totalVisits||0}</td>
+      <td class="pts">${c.totalPoints||0}</td>
+      <td style="font-size:10px;color:var(--text-dim)">${c.lastActivity||'—'}</td>
+      <td><button class="refresh-btn" style="padding:4px 10px;font-size:10px" onclick="quickAdjust('${c.custId}')">+/-</button></td>
+    </tr>`).join('') : '<tr><td colspan="9" class="empty">No members match this search</td></tr>';
+}
+function quickAdjust(custId){
+  switchTab('rewards', {target:document.querySelector('.tab')});
+  document.querySelectorAll('.tabs .tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('apCustId').value = custId;
+  document.getElementById('apCustId').focus();
+  showToast('Jumped to points adjustment for ' + custId);
+}
+
+function renderRewards(){
+  const rewards = (state.rewards||[]).filter(r => (r.active||'YES').toUpperCase()==='YES');
+  document.getElementById('rewardsList').innerHTML = rewards.length ? rewards.map(r=>`
+    <div class="reward-item"><div><div style="font-weight:700;font-size:13px">${r.name}</div><div style="font-size:10px;color:var(--text-dim)">${r.category||'—'}</div></div><span class="pts">${r.points} pts</span></div>`).join('') : '<div class="empty">No active rewards — add rows to the Rewards sheet</div>';
+  document.getElementById('rdReward').innerHTML = rewards.map(r=>`<option value="${r.name}">${r.name} — ${r.points} pts</option>`).join('');
+}
+
+function buildActivityFeed(){
+  const items = [];
+  (state.pointsLog||[]).forEach(p => items.push({type:'points', ts:p.timestamp, name:p.name, custId:p.custId, detail:(p.change>0?'+':'')+p.change+' pts — '+p.reason}));
+  (state.bookings||[]).forEach(b => items.push({type:'booking', ts:b.timestamp, name:b.name, custId:b.custId, detail:'Booking — '+(b.service||'—')+(b.bookingDate?' on '+b.bookingDate:'')}));
+  (state.redemptions||[]).forEach(r => items.push({type:'redemption', ts:r.timestamp, name:r.name, custId:r.custId, detail:'Redeemed '+r.reward+' (-'+r.pointsSpent+' pts)'}));
+  items.sort((a,b) => new Date(b.ts) - new Date(a.ts));
+  return items;
+}
+function renderActivityRow(a){
+  const color = a.type==='points'?'var(--gold)':a.type==='booking'?'var(--teal)':'var(--purple)';
+  return `<div class="activity-row"><div><span style="color:${color};font-weight:700">${a.name||'—'}</span> — ${a.detail}</div><div style="color:var(--text-dim);white-space:nowrap;font-size:10px">${a.ts}</div></div>`;
+}
+function setActivityFilter(f, btn){
+  activityFilter = f;
+  document.querySelectorAll('#tab-activity .tab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderActivityFull();
+}
+function renderActivityFull(){
+  let items = buildActivityFeed();
+  if(activityFilter==='points') items = items.filter(a=>a.type==='points');
+  if(activityFilter==='bookings') items = items.filter(a=>a.type==='booking');
+  if(activityFilter==='redemptions') items = items.filter(a=>a.type==='redemption');
+  document.getElementById('activityFullList').innerHTML = items.length ? items.slice(0,150).map(renderActivityRow).join('') : '<div class="empty">No activity yet</div>';
+}
+
+async function submitBooking(){
+  const name = document.getElementById('bkName').value.trim();
+  const phone = document.getElementById('bkPhone').value.trim();
+  const result = document.getElementById('bkResult');
+  if(!name || !phone){ result.innerHTML = '<span class="err-msg">Name and phone are required.</span>'; return; }
+  result.innerHTML = '<span style="color:var(--muted)">Saving...</span>';
+  const payload = {
+    action: 'addBooking', name, phone,
+    service: document.getElementById('bkService').value,
+    bookingDate: document.getElementById('bkDate').value,
+    partySize: document.getElementById('bkParty').value,
+    notes: document.getElementById('bkNotes').value.trim(),
+    addedBy: document.getElementById('bkAddedBy').value.trim() || 'Dashboard',
+    source: 'Walk-In / Manual'
+  };
+  const qs = Object.entries(payload).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
+  try{
+    const res = await fetch(API_URL+'?'+qs); const data = await res.json();
+    if(data.success){
+      result.innerHTML = '<span style="color:var(--green);font-weight:700">✓ Booking added — '+data.custId+'</span>';
+      showToast('Booking added — '+data.custId);
+      ['bkName','bkPhone','bkParty','bkNotes'].forEach(id=>document.getElementById(id).value='');
+      loadData();
+    } else { result.innerHTML = '<span class="err-msg">'+(data.error||'Could not add')+'</span>'; }
+  }catch(e){ result.innerHTML = '<span class="err-msg">Connection error — try again</span>'; }
+}
+
+async function submitRedeem(){
+  const custId = document.getElementById('rdCustId').value.trim();
+  const reward = document.getElementById('rdReward').value;
+  const result = document.getElementById('rdResult');
+  if(!custId || !reward){ result.innerHTML = '<span class="err-msg">Member ID/phone and reward are required.</span>'; return; }
+  result.innerHTML = '<span style="color:var(--muted)">Redeeming...</span>';
+  const payload = { action:'redeemReward', custId, reward, givenBy: document.getElementById('rdGivenBy').value.trim()||'Dashboard', notes: document.getElementById('rdNotes').value.trim() };
+  const qs = Object.entries(payload).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
+  try{
+    const res = await fetch(API_URL+'?'+qs); const data = await res.json();
+    if(data.success){
+      result.innerHTML = '<span style="color:var(--green);font-weight:700">✓ Redeemed — '+data.custId+' now has '+data.newTotal+' pts</span>';
+      showToast('Reward redeemed');
+      document.getElementById('rdCustId').value=''; document.getElementById('rdNotes').value='';
+      loadData();
+    } else { result.innerHTML = '<span class="err-msg">'+(data.error||'Could not redeem')+'</span>'; }
+  }catch(e){ result.innerHTML = '<span class="err-msg">Connection error — try again</span>'; }
+}
+
+async function submitAdjustPoints(){
+  const custId = document.getElementById('apCustId').value.trim();
+  const points = document.getElementById('apPoints').value;
+  const result = document.getElementById('apResult');
+  if(!custId || !points){ result.innerHTML = '<span class="err-msg">Member ID/phone and a points value are required.</span>'; return; }
+  result.innerHTML = '<span style="color:var(--muted)">Applying...</span>';
+  const payload = { action:'addPoints', custId, points, reason: document.getElementById('apReason').value.trim(), enteredBy:'Dashboard' };
+  const qs = Object.entries(payload).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
+  try{
+    const res = await fetch(API_URL+'?'+qs); const data = await res.json();
+    if(data.success){
+      result.innerHTML = '<span style="color:var(--green);font-weight:700">✓ '+data.custId+' now has '+data.newTotal+' pts</span>';
+      showToast('Points updated');
+      document.getElementById('apPoints').value=''; document.getElementById('apReason').value='';
+      loadData();
+    } else { result.innerHTML = '<span class="err-msg">'+(data.error||'Could not update')+'</span>'; }
+  }catch(e){ result.innerHTML = '<span class="err-msg">Connection error — try again</span>'; }
+}
+
+loadData();
+setInterval(loadData, 60000);
+</script>
+</body>
+</html>
