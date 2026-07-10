@@ -1,5 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
+<!--
+  THE WHITE HOUSE GH — BAR DASHBOARD (v4.4)
+  New in v4.4: Quick Sell card (ring up sales without the sheet, via
+  the quickSell endpoint), camera-based QR/barcode scan-to-lookup for
+  customers + generate a printable QR ID card, and a Shift Summary
+  card with one-tap "copy as text" for sharing on WhatsApp/SMS.
+  Requires Code.gs v4.4 or later on the backend (for the quickSell
+  endpoint) — redeploy Code.gs first if you haven't already.
+-->
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -87,6 +96,30 @@ tr.low-row{background:#1a0a0a;}
 .error-banner.active{display:block;}
 .error-banner b{color:var(--gold);}
 .flash{color:var(--green);}
+.quick-sell-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;max-height:280px;overflow-y:auto;margin-top:4px;}
+.quick-sell-item{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 12px;cursor:pointer;transition:border-color .15s;text-align:left;}
+.quick-sell-item:hover{border-color:var(--gold);}
+.quick-sell-item.selected{border-color:var(--gold);background:#1e1706;}
+.quick-sell-item .qs-name{font-size:12px;font-weight:700;line-height:1.3;}
+.quick-sell-item .qs-price{font-size:11px;color:var(--gold);font-family:'Space Mono',monospace;margin-top:4px;}
+.quick-sell-item .qs-cat{font-size:9px;color:var(--muted);margin-top:2px;}
+.quick-sell-panel{display:none;background:var(--surface);border:1px solid var(--gold);border-radius:8px;padding:16px;margin-top:14px;}
+.quick-sell-panel.show{display:block;}
+.quick-sell-panel .qs-title{font-size:13px;font-weight:800;color:var(--gold);margin-bottom:12px;}
+.qs-field-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.scanner-modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.9);z-index:1000;align-items:center;justify-content:center;flex-direction:column;padding:20px;}
+.scanner-modal.show{display:flex;}
+.scanner-modal video{width:100%;max-width:420px;border-radius:8px;border:2px solid var(--teal);}
+.scanner-modal .scanner-hint{color:var(--text-dim);font-size:12px;margin-top:14px;text-align:center;max-width:400px;}
+.scanner-modal .scanner-close{margin-top:16px;background:var(--red);color:#fff;border:none;padding:10px 24px;border-radius:5px;cursor:pointer;font-weight:700;font-family:'Syne',sans-serif;}
+.shift-summary-box{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:14px 16px;font-size:12px;line-height:1.7;}
+.shift-summary-box h4{color:var(--gold);font-size:11px;letter-spacing:1px;margin:12px 0 6px;text-transform:uppercase;}
+.shift-summary-box h4:first-child{margin-top:0;}
+.shift-summary-row{display:flex;justify-content:space-between;padding:3px 0;}
+.qr-card-box{margin-top:12px;text-align:center;background:#fff;border-radius:8px;padding:16px;display:none;}
+.qr-card-box.show{display:block;}
+.qr-card-box #qrCanvasHolder{display:flex;justify-content:center;}
+.qr-card-box .qr-cust-id{color:#0a0a0a;font-weight:800;font-family:'Space Mono',monospace;margin-top:8px;font-size:13px;}
 </style>
 </head>
 <body>
@@ -109,6 +142,14 @@ tr.low-row{background:#1a0a0a;}
   <div class="metrics-grid" id="topMetrics"><div class="loading">Loading bar data</div></div>
   <div id="metricDetails"></div>
 
+  <div class="card" id="quickSellCard">
+    <div class="card-title">&#9889; QUICK SELL <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(ring up a sale without opening the sheet)</span></div>
+    <input class="search-input" id="quickSellSearch" placeholder="Search menu items..." oninput="renderQuickSellMenu()">
+    <div class="tab-row" id="quickSellTabs"></div>
+    <div class="quick-sell-grid" id="quickSellGrid"><div class="empty">Loading menu...</div></div>
+    <div class="quick-sell-panel" id="quickSellPanel"></div>
+  </div>
+
   <div class="two-col">
     <div>
       <div class="card">
@@ -120,8 +161,15 @@ tr.low-row{background:#1a0a0a;}
       <div class="card">
         <div class="card-title">&#128100; CUSTOMER LOOKUP <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(so staff can check points/history without opening the sheet)</span></div>
         <input class="search-input" id="custPhoneInput" placeholder="Phone number, or ID like THWGH1 / GH1 / 1" onkeydown="if(event.key==='Enter')lookupCustomer()">
-        <button class="btn" onclick="lookupCustomer()">LOOK UP</button>
+        <div class="restock-grid">
+          <button class="btn" onclick="lookupCustomer()" style="margin:0">LOOK UP</button>
+          <button class="btn" id="scanBtn" onclick="openScanner()" style="margin:0;background:var(--teal);color:#0a0a0a">&#128247; SCAN QR/ID CARD</button>
+        </div>
         <div class="customer-result" id="customerResult"></div>
+        <div class="qr-card-box" id="qrCardBox">
+          <div id="qrCanvasHolder"></div>
+          <div class="qr-cust-id" id="qrCardLabel"></div>
+        </div>
       </div>
       <div class="card">
         <div class="card-title">&#128230; RESTOCK AN ITEM</div>
@@ -158,6 +206,12 @@ tr.low-row{background:#1a0a0a;}
   </div>
 
   <div class="card">
+    <div class="card-title">&#128274; SHIFT SUMMARY <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(today's totals — copy to share on WhatsApp/SMS manually)</span></div>
+    <button class="btn" onclick="generateShiftSummary()">GENERATE SHIFT SUMMARY</button>
+    <div id="shiftSummaryBody" style="margin-top:12px"></div>
+  </div>
+
+  <div class="card">
     <div class="card-title">&#129489;&#8205;&#128188; STAFF ON DUTY <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(edit names/hours in the 🧑‍💼 Staff sheet)</span></div>
     <div class="staff-grid" id="staffGrid"><div class="empty">Loading staff...</div></div>
   </div>
@@ -170,6 +224,14 @@ tr.low-row{background:#1a0a0a;}
   </div>
 </div>
 
+<div class="scanner-modal" id="scannerModal">
+  <video id="scannerVideo" playsinline muted></video>
+  <div class="scanner-hint" id="scannerHint">Point the camera at a customer's QR ID card. Works for QR codes generated by this dashboard (see Customer Lookup after finding someone).</div>
+  <button class="scanner-close" onclick="closeScanner()">CLOSE</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
 // Fill this in once the Bar system's Apps Script web app is deployed
 // (Deploy > New deployment > Web app > copy the /exec URL). If you
@@ -212,6 +274,8 @@ async function loadData(){
     renderRestockLog();
     populateStaffDropdowns();
     populateStockDatalist();
+    renderQuickSellTabs();
+    renderQuickSellMenu();
   }catch(e){
     document.getElementById('lastRefresh').textContent = 'Offline — see message above';
     showApiError(e.message || 'Could not load data (unknown error).');
@@ -428,9 +492,14 @@ function populateStockDatalist(){
 
 // Accepts a phone number OR a customer ID in any short form
 // (THWGH1 / GH1 / 1) — matched flexibly on the backend.
-async function lookupCustomer(){
-  const query = document.getElementById('custPhoneInput').value.trim();
+let lastFoundCustomer = null;
+async function lookupCustomer(prefillQuery){
+  const input = document.getElementById('custPhoneInput');
+  if(prefillQuery !== undefined) input.value = prefillQuery;
+  const query = input.value.trim();
   const resultEl = document.getElementById('customerResult');
+  document.getElementById('qrCardBox').classList.remove('show');
+  lastFoundCustomer = null;
   if(!query){ resultEl.classList.remove('show'); return; }
   resultEl.classList.add('show');
   resultEl.innerHTML = 'Looking up...';
@@ -442,7 +511,8 @@ async function lookupCustomer(){
     if(!data.found){
       resultEl.innerHTML = "No customer found matching that — they'll be registered next time they order.";
     }else{
-      resultEl.innerHTML = `<b>${data.custId}</b> — ${data.name}<br>Phone: ${data.phone||'—'}<br>Loyalty points: ${data.loyaltyPoints}<br>Total visits: ${data.totalVisits}<br>Last visit: ${data.lastVisit||'—'}`;
+      lastFoundCustomer = data;
+      resultEl.innerHTML = `<b>${data.custId}</b> — ${data.name}<br>Phone: ${data.phone||'—'}<br>Loyalty points: ${data.loyaltyPoints}<br>Total visits: ${data.totalVisits}<br>Last visit: ${data.lastVisit||'—'}<br><button class="btn" style="margin-top:10px" onclick="generateCustomerQR()">&#127915; GENERATE QR ID CARD</button>`;
     }
   }catch(e){
     // v4.3: show the real error instead of a generic message, so a
@@ -450,6 +520,25 @@ async function lookupCustomer(){
     resultEl.innerHTML = '<span style="color:var(--red)">Error: ' + (e.message||'connection failed') + '. See the yellow banner at the top of the page for the likely cause.</span>';
     showApiError(e.message || 'Customer lookup failed.');
   }
+}
+
+// v4.4: renders a scannable QR code containing the customer's ID —
+// print/laminate it as a loyalty card so next time staff scan it
+// instead of typing the ID in. Uses the qrcodejs library (loaded via
+// CDN at the top of the page) purely client-side, no external API.
+function generateCustomerQR(){
+  if(!lastFoundCustomer) return;
+  const box = document.getElementById('qrCardBox');
+  const holder = document.getElementById('qrCanvasHolder');
+  holder.innerHTML = '';
+  if(typeof QRCode === 'undefined'){
+    holder.innerHTML = '<div style="color:#900;font-size:12px">QR library did not load — check your internet connection and reload.</div>';
+    box.classList.add('show');
+    return;
+  }
+  new QRCode(holder, { text: lastFoundCustomer.custId, width: 180, height: 180 });
+  document.getElementById('qrCardLabel').textContent = lastFoundCustomer.custId + ' — ' + lastFoundCustomer.name;
+  box.classList.add('show');
 }
 
 async function submitRestock(){
@@ -480,6 +569,238 @@ async function submitRestock(){
   }catch(e){
     resultEl.innerHTML = '<span style="color:var(--red)">' + (e.message||'Error') + '</span>';
   }
+}
+
+// =====================
+// v4.4 — QR / BARCODE SCANNER (camera-based, no external service)
+// =====================
+let scannerStream = null;
+let scannerRAF = null;
+
+async function openScanner(){
+  const modal = document.getElementById('scannerModal');
+  const video = document.getElementById('scannerVideo');
+  const hint = document.getElementById('scannerHint');
+  if(typeof jsQR === 'undefined'){
+    alert('QR scanner library did not load — check your internet connection and try again.');
+    return;
+  }
+  modal.classList.add('show');
+  try{
+    scannerStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    video.srcObject = scannerStream;
+    await video.play();
+    hint.textContent = "Point the camera at a customer's QR ID card. Works for QR codes generated by this dashboard.";
+    scanLoop();
+  }catch(e){
+    hint.textContent = 'Could not access the camera (' + (e.message||'permission denied') + '). Check your browser lets this page use the camera, or type the ID/phone in manually instead.';
+  }
+}
+
+function closeScanner(){
+  const modal = document.getElementById('scannerModal');
+  modal.classList.remove('show');
+  if(scannerRAF) cancelAnimationFrame(scannerRAF);
+  if(scannerStream){ scannerStream.getTracks().forEach(t=>t.stop()); scannerStream = null; }
+}
+
+function scanLoop(){
+  const video = document.getElementById('scannerVideo');
+  if(!scannerStream){ return; }
+  if(video.readyState === video.HAVE_ENOUGH_DATA){
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const code = jsQR(imageData.data, imageData.width, imageData.height);
+    if(code && code.data){
+      closeScanner();
+      lookupCustomer(code.data);
+      return;
+    }
+  }
+  scannerRAF = requestAnimationFrame(scanLoop);
+}
+
+// =====================
+// v4.4 — QUICK SELL
+// =====================
+let quickSellCategory = 'All';
+let quickSellSelectedItem = null;
+
+function renderQuickSellTabs(){
+  const menu = barData.menu || [];
+  const counts = {};
+  menu.forEach(m => { const c = m.category || 'Other'; counts[c] = (counts[c]||0)+1; });
+  const cats = Object.keys(counts).sort((a,b)=>counts[b]-counts[a]);
+  if(!cats.includes(quickSellCategory) && quickSellCategory !== 'All') quickSellCategory = 'All';
+  const tabs = [{key:'All', label:'All', count: menu.length}, ...cats.map(c=>({key:c,label:c,count:counts[c]}))];
+  document.getElementById('quickSellTabs').innerHTML = tabs.map(t =>
+    `<button class="tab-pill ${quickSellCategory===t.key?'active':''}" onclick="setQuickSellCategory('${t.key.replace(/'/g,"\\'")}')">${t.label}<span class="tab-count">${t.count}</span></button>`
+  ).join('');
+}
+
+function setQuickSellCategory(cat){
+  quickSellCategory = cat;
+  renderQuickSellTabs();
+  renderQuickSellMenu();
+}
+
+function renderQuickSellMenu(){
+  const q = (document.getElementById('quickSellSearch').value||'').toLowerCase();
+  let menu = barData.menu || [];
+  if(quickSellCategory !== 'All') menu = menu.filter(m => (m.category||'Other') === quickSellCategory);
+  if(q) menu = menu.filter(m => m.item.toLowerCase().includes(q));
+  const grid = document.getElementById('quickSellGrid');
+  if(menu.length===0){ grid.innerHTML = '<div class="empty">No menu items match</div>'; return; }
+  grid.innerHTML = menu.map(m => `
+    <button class="quick-sell-item ${quickSellSelectedItem===m.item?'selected':''}" onclick="openQuickSellPanel('${m.item.replace(/'/g,"\\'")}')">
+      <div class="qs-name">${m.item}</div>
+      <div class="qs-price">&#8373;${m.price.toFixed(2)}</div>
+      <div class="qs-cat">${m.category||''}</div>
+    </button>`).join('');
+}
+
+function openQuickSellPanel(itemName){
+  quickSellSelectedItem = itemName;
+  renderQuickSellMenu();
+  const menuItem = (barData.menu||[]).find(m => m.item === itemName);
+  const staff = (barData.staff||[]).filter(s=>s.initials && s.initials.trim());
+  const panel = document.getElementById('quickSellPanel');
+  panel.classList.add('show');
+  panel.innerHTML = `
+    <div class="qs-title">&#9889; ${itemName} — &#8373;${menuItem?menuItem.price.toFixed(2):'—'} each</div>
+    <div class="qs-field-grid">
+      <input class="search-input" id="qsQty" type="number" min="1" value="1" placeholder="Qty" style="margin:0">
+      <select class="select-input" id="qsStaff" style="margin:0">
+        <option value="">Served by... (required)</option>
+        ${staff.map(s=>`<option value="${s.initials}">${s.initials}${s.name?' — '+s.name:''}</option>`).join('')}
+      </select>
+    </div>
+    <input class="search-input" id="qsCustomer" placeholder="Customer phone/ID (optional — leave blank for walk-in)" style="margin-top:8px">
+    <input class="search-input" id="qsNewName" placeholder="New customer name (only if the ID above is new)">
+    <select class="select-input" id="qsPayment">
+      <option value="">Payment method (optional)</option>
+      <option>Cash</option><option>Mobile Money</option><option>Card</option><option>Room Charge</option>
+    </select>
+    <div class="restock-grid">
+      <button class="btn" onclick="submitQuickSell()" style="margin:0">&#10003; CONFIRM SALE</button>
+      <button class="btn" onclick="cancelQuickSell()" style="margin:0;background:var(--border);color:var(--text)">CANCEL</button>
+    </div>
+    <div id="qsResult" style="margin-top:8px;font-size:12px"></div>`;
+  panel.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+function cancelQuickSell(){
+  quickSellSelectedItem = null;
+  document.getElementById('quickSellPanel').classList.remove('show');
+  document.getElementById('quickSellPanel').innerHTML = '';
+  renderQuickSellMenu();
+}
+
+async function submitQuickSell(){
+  const item = quickSellSelectedItem;
+  const qty = document.getElementById('qsQty').value;
+  const staffInitials = document.getElementById('qsStaff').value;
+  const custQuery = document.getElementById('qsCustomer').value.trim();
+  const newCustomerName = document.getElementById('qsNewName').value.trim();
+  const payment = document.getElementById('qsPayment').value;
+  const resultEl = document.getElementById('qsResult');
+  if(!staffInitials){ resultEl.innerHTML = '<span style="color:var(--red)">Pick who is serving.</span>'; return; }
+  if(!qty || qty <= 0){ resultEl.innerHTML = '<span style="color:var(--red)">Enter a quantity.</span>'; return; }
+  resultEl.innerHTML = 'Processing sale...';
+  try{
+    let url = API_URL + '?action=quickSell&item=' + encodeURIComponent(item) + '&qty=' + encodeURIComponent(qty) + '&staffInitials=' + encodeURIComponent(staffInitials) + '&payment=' + encodeURIComponent(payment);
+    if(custQuery) url += '&custQuery=' + encodeURIComponent(custQuery);
+    if(newCustomerName) url += '&newCustomerName=' + encodeURIComponent(newCustomerName);
+    url += '&t=' + Date.now();
+    const res = await fetch(url);
+    if(!res.ok){ throw new Error('Server responded with status ' + res.status); }
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error||'Could not log sale');
+    let msg = `<span class="flash">&#10003; ${data.qty} x ${data.item} — &#8373;${data.lineTotal.toFixed(2)}`;
+    if(data.custId && data.custId !== '—') msg += ' · ' + data.custId + (data.pointsNow!==null?' ('+data.pointsNow+' pts)':'');
+    msg += ' · served by ' + data.staff + '</span>';
+    if(data.lowStockNames && data.lowStockNames.length) msg += `<br><span style="color:var(--red)">&#9888; Low stock: ${data.lowStockNames.join(', ')}</span>`;
+    resultEl.innerHTML = msg;
+    setTimeout(()=>{ cancelQuickSell(); loadData(); }, 1800);
+  }catch(e){
+    resultEl.innerHTML = '<span style="color:var(--red)">' + (e.message||'Error') + '</span>';
+  }
+}
+
+// =====================
+// v4.4 — SHIFT SUMMARY (built entirely from data already loaded —
+// no extra server round-trip)
+// =====================
+function generateShiftSummary(){
+  const orders = barData.todayOrders || [];
+  const el = document.getElementById('shiftSummaryBody');
+  if(orders.length === 0){
+    el.innerHTML = '<div class="shift-summary-box"><div class="empty">No sales logged yet today.</div></div>';
+    return;
+  }
+  const byStaff = {}, byPayment = {}, byItem = {};
+  let totalRevenue = 0, totalItems = 0;
+  orders.forEach(o => {
+    const staffKey = o.staffInitials || 'Unassigned';
+    const payKey = o.payment || 'Unspecified';
+    if(!byStaff[staffKey]) byStaff[staffKey] = {revenue:0, items:0, orders:0};
+    byStaff[staffKey].revenue += o.lineTotal; byStaff[staffKey].items += o.qty; byStaff[staffKey].orders += 1;
+    if(!byPayment[payKey]) byPayment[payKey] = 0;
+    byPayment[payKey] += o.lineTotal;
+    if(!byItem[o.item]) byItem[o.item] = {qty:0, revenue:0};
+    byItem[o.item].qty += o.qty; byItem[o.item].revenue += o.lineTotal;
+    totalRevenue += o.lineTotal; totalItems += o.qty;
+  });
+  const topItems = Object.keys(byItem).map(k=>({item:k, ...byItem[k]})).sort((a,b)=>b.qty-a.qty).slice(0,5);
+  const lowStock = (barData.stock||[]).filter(s=>s.lowStock);
+  const dateStr = new Date().toLocaleDateString('en-GB', {weekday:'long', day:'numeric', month:'long'});
+
+  window._shiftSummaryText =
+`THE WHITE HOUSE GH — SHIFT SUMMARY (${dateStr})
+Total revenue: GHS ${totalRevenue.toFixed(2)} (${totalItems} items, ${orders.length} orders)
+
+By staff:
+${Object.keys(byStaff).map(s=>`  ${s}: GHS ${byStaff[s].revenue.toFixed(2)} — ${byStaff[s].orders} orders, ${byStaff[s].items} items`).join('\n')}
+
+By payment method:
+${Object.keys(byPayment).map(p=>`  ${p}: GHS ${byPayment[p].toFixed(2)}`).join('\n')}
+
+Top items today:
+${topItems.map(i=>`  ${i.item}: ${i.qty} sold — GHS ${i.revenue.toFixed(2)}`).join('\n')}
+
+Low stock (${lowStock.length}):${lowStock.length ? '\n' + lowStock.map(s=>`  ${s.item}: ${s.currentQty}${s.unit} (par ${s.parLevel})`).join('\n') : ' none'}`;
+
+  el.innerHTML = `
+    <div class="shift-summary-box">
+      <h4>Revenue</h4>
+      <div class="shift-summary-row"><span>Total</span><span style="color:var(--gold);font-family:'Space Mono',monospace">&#8373;${totalRevenue.toFixed(2)}</span></div>
+      <div class="shift-summary-row"><span>Items sold</span><span style="font-family:'Space Mono',monospace">${totalItems}</span></div>
+      <div class="shift-summary-row"><span>Orders</span><span style="font-family:'Space Mono',monospace">${orders.length}</span></div>
+      <h4>By Staff</h4>
+      ${Object.keys(byStaff).map(s=>`<div class="shift-summary-row"><span>${s}</span><span style="font-family:'Space Mono',monospace">&#8373;${byStaff[s].revenue.toFixed(2)} · ${byStaff[s].items} items</span></div>`).join('')}
+      <h4>By Payment Method</h4>
+      ${Object.keys(byPayment).map(p=>`<div class="shift-summary-row"><span>${p}</span><span style="font-family:'Space Mono',monospace">&#8373;${byPayment[p].toFixed(2)}</span></div>`).join('')}
+      <h4>Top Items Today</h4>
+      ${topItems.map(i=>`<div class="shift-summary-row"><span>${i.item}</span><span style="font-family:'Space Mono',monospace">${i.qty} sold</span></div>`).join('')}
+      <h4>Low Stock (${lowStock.length})</h4>
+      ${lowStock.length ? lowStock.map(s=>`<div class="shift-summary-row" style="color:var(--red)"><span>${s.item}</span><span style="font-family:'Space Mono',monospace">${s.currentQty}${s.unit}</span></div>`).join('') : '<div class="metric-detail-empty">None</div>'}
+      <button class="btn" style="margin-top:12px" onclick="copyShiftSummary()">&#128203; COPY AS TEXT (for WhatsApp/SMS)</button>
+      <div id="shiftCopyResult" style="margin-top:6px;font-size:11px"></div>
+    </div>`;
+}
+
+function copyShiftSummary(){
+  const resultEl = document.getElementById('shiftCopyResult');
+  if(!window._shiftSummaryText){ resultEl.textContent = 'Generate the summary first.'; return; }
+  navigator.clipboard.writeText(window._shiftSummaryText).then(()=>{
+    resultEl.innerHTML = '<span class="flash">&#10003; Copied — paste it into WhatsApp, SMS, or email to send.</span>';
+  }).catch(()=>{
+    resultEl.innerHTML = '<span style="color:var(--red)">Could not copy automatically — select the text manually.</span>';
+  });
 }
 
 loadData();
