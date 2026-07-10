@@ -3,13 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>The White House Koforidua — Bar Dashboard</title>
+<title>The White House GH — Bar Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
-:root{--black:#0a0a0a;--surface:#111111;--card:#181818;--border:#2a2a2a;--gold:#f5a623;--gold-dim:#c9861a;--teal:#3fb6a8;--red:#ef4444;--green:#22c55e;--text:#f2f2f2;--text-dim:#b5b5b5;--muted:#888;}
+:root{--black:#0a0a0a;--surface:#111111;--card:#181818;--border:#2a2a2a;--gold:#f5a623;--gold-dim:#c9861a;--teal:#3fb6a8;--red:#ef4444;--green:#22c55e;--purple:#8b5cf6;--text:#f2f2f2;--text-dim:#b5b5b5;--muted:#888;}
 *{margin:0;padding:0;box-sizing:border-box;}
 body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min-height:100vh;}
 .header{background:var(--surface);border-bottom:1px solid var(--border);padding:16px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;flex-wrap:wrap;gap:10px;}
+.brand{display:flex;align-items:center;gap:12px;}
+.brand-logo{height:38px;width:auto;border-radius:6px;display:block;}
 .logo{font-size:18px;font-weight:800;letter-spacing:1px;color:var(--gold);}
 .logo span{color:var(--text-dim);font-weight:400;font-size:11px;display:block;letter-spacing:2px;margin-top:2px;}
 .header-right{display:flex;align-items:center;gap:14px;}
@@ -50,11 +52,19 @@ tr.low-row{background:#1a0a0a;}
 .restock-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;}
 .scroll-table{max-height:420px;overflow-y:auto;}
 .badge-unit{font-size:9px;color:var(--muted);font-family:'Space Mono',monospace;}
+.staff-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;}
+.staff-card{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--purple);border-radius:6px;padding:12px 14px;}
+.staff-card .staff-initials{color:var(--purple);font-weight:800;font-family:'Space Mono',monospace;font-size:13px;}
+.staff-card .staff-name{font-size:13px;font-weight:700;margin-top:2px;}
+.staff-card .staff-meta{font-size:11px;color:var(--text-dim);margin-top:6px;line-height:1.5;}
 </style>
 </head>
 <body>
 <div class="header">
-  <div class="logo">THE WHITE HOUSE KOFORIDUA <span>BAR DASHBOARD</span></div>
+  <div class="brand">
+    <img src="logo.jpg" alt="The White House GH" class="brand-logo" onerror="this.style.display='none'">
+    <div class="logo">THE WHITE HOUSE GH <span>BAR DASHBOARD</span></div>
+  </div>
   <div class="header-right"><span class="last-refresh" id="lastRefresh">Loading...</span><button class="refresh-btn" onclick="loadData()">&#8635; REFRESH</button></div>
 </div>
 
@@ -95,6 +105,11 @@ tr.low-row{background:#1a0a0a;}
   </div>
 
   <div class="card">
+    <div class="card-title">&#129489;&#8205;&#128188; STAFF ON DUTY <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(edit names/hours in the 🧑‍💼 Staff sheet)</span></div>
+    <div class="staff-grid" id="staffGrid"><div class="empty">Loading staff...</div></div>
+  </div>
+
+  <div class="card">
     <div class="card-title">&#128230; BAR STOCK — ALL ITEMS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(red rows = at or below par level)</span></div>
     <input class="search-input" id="stockSearch" placeholder="Search stock..." oninput="renderStock()">
     <div class="scroll-table"><table><thead><tr><th>ITEM</th><th>UNIT</th><th>CURRENT QTY</th><th>PAR LEVEL</th><th>COST/UNIT</th><th>LAST RESTOCKED</th></tr></thead><tbody id="stockBody"></tbody></table></div>
@@ -105,7 +120,7 @@ tr.low-row{background:#1a0a0a;}
 // Fill this in once the Bar system's Apps Script web app is deployed
 // (Deploy > New deployment > Web app > copy the /exec URL).
 const API_URL = 'https://script.google.com/macros/s/AKfycbyycYKCEtRchk0eToXIlMLgs3RmWIsKuUppD3UprPO8zLi9N5a9PIgn9uN4IKeip24E/exec';
-let barData = {stock: [], todayOrders: []};
+let barData = {stock: [], todayOrders: [], staff: []};
 
 async function loadData(){
   document.getElementById('lastRefresh').textContent = 'Refreshing...';
@@ -119,6 +134,7 @@ async function loadData(){
     renderLowStockBanner();
     renderOrders();
     renderStock();
+    renderStaff();
   }catch(e){
     document.getElementById('lastRefresh').textContent = 'Offline — check connection';
     console.log('Load error:', e.message);
@@ -164,6 +180,18 @@ function renderStock(){
       <td style="font-family:'Space Mono',monospace">&#8373;${s.costPerUnit.toFixed(2)}</td>
       <td style="font-size:11px;color:var(--text-dim)">${s.lastRestocked||'—'}</td>
     </tr>`).join('');
+}
+
+function renderStaff(){
+  const staff = (barData.staff||[]).filter(s=>s.name || (s.initials && s.initials.trim()));
+  const el = document.getElementById('staffGrid');
+  if(staff.length===0){ el.innerHTML = '<div class="empty">No staff profiles filled in yet — add names in the 🧑‍💼 Staff sheet.</div>'; return; }
+  el.innerHTML = staff.map(s=>`
+    <div class="staff-card">
+      <div class="staff-initials">${s.initials||'—'}</div>
+      <div class="staff-name">${s.name||'(name not set)'}</div>
+      <div class="staff-meta">${s.workingDays||'Days not set'}<br>${s.workingHours||'Hours not set'}</div>
+    </div>`).join('');
 }
 
 async function lookupCustomer(){
