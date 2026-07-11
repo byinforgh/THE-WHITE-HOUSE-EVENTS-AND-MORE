@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+  THE WHITE HOUSE GH — FACILITIES DASHBOARD (v1.0)
+  Fill in API_URL below once the Facilities Apps Script is deployed
+  (see setup notes at the top of Code.gs). This is a SEPARATE
+  deployment from the Bar and Members dashboards.
+-->
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The White House GH — Facilities Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--black:#0a0a0a;--surface:#111111;--card:#181818;--border:#2a2a2a;--gold:#f5a623;--gold-dim:#c9861a;--teal:#3fb6a8;--red:#ef4444;--green:#22c55e;--purple:#8b5cf6;--text:#f2f2f2;--text-dim:#b5b5b5;--muted:#888;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min-height:100vh;}
+.header{background:var(--surface);border-bottom:1px solid var(--border);padding:16px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;flex-wrap:wrap;gap:10px;}
+.logo{font-size:18px;font-weight:800;letter-spacing:1px;color:var(--gold);}
+.logo span{color:var(--text-dim);font-weight:400;font-size:11px;display:block;letter-spacing:2px;margin-top:2px;}
+.header-right{display:flex;align-items:center;gap:14px;}
+.last-refresh{font-size:11px;color:var(--muted);font-family:'Space Mono',monospace;}
+.refresh-btn{background:var(--border);border:none;color:var(--text);padding:8px 16px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:700;letter-spacing:1px;font-family:'Syne',sans-serif;}
+.refresh-btn:hover{background:var(--gold);color:var(--black);}
+.main{padding:20px 24px;max-width:1300px;margin:0 auto;}
+.error-banner{display:none;background:#2a1a0a;border:1px solid var(--gold-dim);border-radius:8px;padding:14px 18px;margin-bottom:20px;font-size:12px;line-height:1.6;color:#ffdca8;}
+.error-banner.active{display:block;}
+.urgent-banner{display:none;background:#2a0a0a;border:1px solid var(--red);border-radius:8px;padding:16px 20px;margin-bottom:20px;}
+.urgent-banner.active{display:block;}
+.urgent-banner-title{color:var(--red);font-weight:800;font-size:13px;letter-spacing:1px;margin-bottom:8px;}
+.urgent-pill{display:inline-block;background:#3a1010;border:1px solid var(--red);color:#ffb3b3;padding:5px 12px;border-radius:20px;font-size:12px;margin:3px 4px 0 0;font-family:'Space Mono',monospace;cursor:pointer;}
+.metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px;}
+.metric-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:18px;position:relative;overflow:hidden;cursor:pointer;transition:border-color .15s;}
+.metric-card:hover{border-color:var(--muted);}
+.metric-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;}
+.metric-card.gold::before{background:var(--gold);}.metric-card.teal::before{background:var(--teal);}.metric-card.red::before{background:var(--red);}.metric-card.green::before{background:var(--green);}.metric-card.purple::before{background:var(--purple);}
+.metric-label{font-size:10px;font-weight:700;letter-spacing:2px;color:var(--muted);margin-bottom:8px;}
+.metric-value{font-size:30px;font-weight:800;font-family:'Space Mono',monospace;line-height:1;}
+.metric-card.gold .metric-value{color:var(--gold);}.metric-card.teal .metric-value{color:var(--teal);}.metric-card.red .metric-value{color:var(--red);}.metric-card.green .metric-value{color:var(--green);}.metric-card.purple .metric-value{color:var(--purple);}
+.metric-sub{font-size:11px;color:var(--text-dim);margin-top:6px;}
+.tab-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;}
+.tab-pill{background:var(--surface);border:1px solid var(--border);color:var(--text-dim);padding:9px 16px;border-radius:20px;font-size:12px;font-weight:700;letter-spacing:0.5px;cursor:pointer;font-family:'Syne',sans-serif;transition:all .15s;}
+.tab-pill:hover{border-color:var(--gold);color:var(--text);}
+.tab-pill.active{background:var(--gold);color:var(--black);border-color:var(--gold);}
+.tab-pill .tab-count{opacity:0.7;margin-left:4px;}
+.section{display:none;}
+.section.active{display:block;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:18px;margin-bottom:16px;}
+.card-title{font-size:11px;font-weight:700;letter-spacing:2px;color:var(--muted);margin-bottom:14px;text-transform:uppercase;}
+.search-input,.select-input,textarea.ta{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 14px;color:var(--text);font-size:13px;font-family:'Syne',sans-serif;width:100%;margin-bottom:10px;outline:none;}
+.search-input:focus,.select-input:focus,textarea.ta:focus{border-color:var(--gold);}
+textarea.ta{min-height:64px;resize:vertical;}
+.btn{background:var(--gold);color:var(--black);border:none;padding:10px 18px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:800;letter-spacing:1px;font-family:'Syne',sans-serif;width:100%;}
+.btn:hover{background:var(--gold-dim);}
+.btn.teal{background:var(--teal);color:#0a0a0a;}
+.btn.red{background:var(--red);color:#fff;}
+.btn.ghost{background:var(--border);color:var(--text);}
+.field-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.empty{text-align:center;padding:24px;color:var(--muted);font-size:12px;}
+.loading{text-align:center;padding:24px;color:var(--muted);font-size:12px;font-family:'Space Mono',monospace;}
+.ticket-card{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--muted);border-radius:6px;padding:14px 16px;margin-bottom:10px;}
+.ticket-card.priority-Urgent{border-left-color:var(--red);}
+.ticket-card.priority-High{border-left-color:var(--gold);}
+.ticket-card.priority-Medium{border-left-color:var(--teal);}
+.ticket-card.priority-Low{border-left-color:var(--muted);}
+.ticket-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;}
+.ticket-loc{font-size:14px;font-weight:800;}
+.ticket-meta{font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;margin-top:2px;}
+.ticket-desc{font-size:12px;color:var(--text-dim);margin:8px 0;line-height:1.5;}
+.priority-tag{font-size:9px;font-weight:800;letter-spacing:1px;padding:3px 9px;border-radius:12px;font-family:'Space Mono',monospace;flex-shrink:0;}
+.priority-tag.Urgent{background:#3a1010;color:var(--red);border:1px solid var(--red);}
+.priority-tag.High{background:#2a1f06;color:var(--gold);border:1px solid var(--gold);}
+.priority-tag.Medium{background:#062a26;color:var(--teal);border:1px solid var(--teal);}
+.priority-tag.Low{background:#1e1e1e;color:var(--muted);border:1px solid var(--border);}
+.unverified-tag{font-size:9px;font-weight:800;letter-spacing:1px;padding:3px 9px;border-radius:12px;background:#1a1500;color:var(--gold);border:1px solid var(--gold-dim);margin-left:6px;}
+.ticket-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;}
+.ticket-actions .btn{width:auto;padding:8px 14px;font-size:11px;}
+.resolution-box{background:#0e1a0e;border:1px solid var(--green);border-radius:6px;padding:10px 12px;margin-top:8px;font-size:11px;color:#b9f0c0;}
+.inline-form{margin-top:10px;display:none;}
+.inline-form.show{display:block;}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+@media(max-width:900px){.two-col{grid-template-columns:1fr;}.field-grid{grid-template-columns:1fr;}}
+.asset-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;}
+.asset-card{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-size:12px;}
+.asset-card.planned{border-style:dashed;opacity:0.75;}
+.asset-name{font-weight:700;}
+.asset-meta{font-size:10px;color:var(--muted);margin-top:3px;font-family:'Space Mono',monospace;}
+.project-card{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--purple);border-radius:6px;padding:14px 16px;margin-bottom:10px;}
+.status-chip{font-size:9px;font-weight:800;letter-spacing:1px;padding:3px 9px;border-radius:12px;font-family:'Space Mono',monospace;}
+.status-chip.Planned{background:#1e1e1e;color:var(--muted);border:1px solid var(--border);}
+.status-chip.Ongoing{background:#1a1500;color:var(--gold);border:1px solid var(--gold-dim);}
+.status-chip.Complete{background:#0e1a0e;color:var(--green);border:1px solid var(--green);}
+.staff-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;}
+.staff-card{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--purple);border-radius:6px;padding:12px 14px;}
+.staff-card .staff-initials{color:var(--purple);font-weight:800;font-family:'Space Mono',monospace;font-size:13px;}
+.result-msg{font-size:12px;margin-top:8px;}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="logo">THE WHITE HOUSE GH <span>FACILITIES &amp; MAINTENANCE</span></div>
+  <div class="header-right"><span class="last-refresh" id="lastRefresh">Loading...</span><button class="refresh-btn" onclick="loadData()">&#8635; REFRESH</button></div>
+</div>
+
+<div class="main">
+  <div class="error-banner" id="errorBanner"></div>
+  <div class="urgent-banner" id="urgentBanner">
+    <div class="urgent-banner-title">&#9888; URGENT — OPEN TICKETS NEEDING ATTENTION</div>
+    <div id="urgentPills"></div>
+  </div>
+
+  <div class="metrics-grid" id="topMetrics"><div class="loading">Loading facilities data</div></div>
+
+  <div class="tab-row">
+    <button class="tab-pill active" data-sec="report" onclick="switchSection('report',this)">+ LOG A REPAIR</button>
+    <button class="tab-pill" data-sec="open" onclick="switchSection('open',this)">OPEN TICKETS <span class="tab-count" id="cntOpen"></span></button>
+    <button class="tab-pill" data-sec="unverified" onclick="switchSection('unverified',this)">UNVERIFIED (GUEST) <span class="tab-count" id="cntUnverified"></span></button>
+    <button class="tab-pill" data-sec="complete" onclick="switchSection('complete',this)">COMPLETED <span class="tab-count" id="cntComplete"></span></button>
+    <button class="tab-pill" data-sec="projects" onclick="switchSection('projects',this)">PROJECTS <span class="tab-count" id="cntProjects"></span></button>
+    <button class="tab-pill" data-sec="assets" onclick="switchSection('assets',this)">ROOMS &amp; AREAS <span class="tab-count" id="cntAssets"></span></button>
+    <button class="tab-pill" data-sec="staff" onclick="switchSection('staff',this)">MAINTENANCE STAFF</button>
+  </div>
+
+  <!-- LOG A REPAIR -->
+  <div class="section active" id="sec-report">
+    <div class="card">
+      <div class="card-title">&#128295; LOG A REPAIR (STAFF)</div>
+      <input class="search-input" id="rptLocation" list="locationList" placeholder="Location (room or area)">
+      <datalist id="locationList"></datalist>
+      <div class="field-grid">
+        <select class="select-input" id="rptCategory">
+          <option>Electrical</option><option>Plumbing</option><option>AC/Ventilation</option>
+          <option>Furniture</option><option>Structural</option><option>Pool Equipment</option>
+          <option>IT/Internet</option><option>Kitchen Equipment</option><option>Landscaping</option>
+          <option>Security/CCTV</option><option>Other</option>
+        </select>
+        <select class="select-input" id="rptPriority">
+          <option>Low</option><option selected>Medium</option><option>High</option><option>Urgent</option>
+        </select>
+      </div>
+      <textarea class="ta" id="rptDescription" placeholder="Describe the issue..."></textarea>
+      <div class="field-grid">
+        <input class="search-input" id="rptReporterName" placeholder="Your name (staff)">
+        <select class="select-input" id="rptAssignTo"><option value="">Assign to... (optional)</option></select>
+      </div>
+      <button class="btn" onclick="submitStaffTicket()">SUBMIT TICKET</button>
+      <div id="rptResult" class="result-msg"></div>
+    </div>
+    <div class="card" style="border-color:var(--teal)">
+      <div class="card-title" style="color:var(--teal)">&#128241; GUEST REPORT LINK</div>
+      <div style="font-size:12px;color:var(--text-dim);line-height:1.6">Share this link (or a QR code pointing to it) so guests can report issues themselves — e.g. printed and stuck inside each room door, or at the pool. Guest-submitted tickets show up under <b>Unverified (Guest)</b> until a staff member confirms them.</div>
+    </div>
+  </div>
+
+  <!-- OPEN TICKETS -->
+  <div class="section" id="sec-open">
+    <div class="card">
+      <div class="card-title">&#128203; OPEN &amp; IN-PROGRESS TICKETS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(sorted by priority)</span></div>
+      <div id="openTicketsList"><div class="empty">Loading...</div></div>
+    </div>
+  </div>
+
+  <!-- UNVERIFIED -->
+  <div class="section" id="sec-unverified">
+    <div class="card">
+      <div class="card-title">&#10067; GUEST-SUBMITTED — NEEDS VERIFICATION</div>
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Confirm a real ticket to move it into the normal queue, or dismiss anything spam/mistaken.</div>
+      <div id="unverifiedList"><div class="empty">Loading...</div></div>
+    </div>
+  </div>
+
+  <!-- COMPLETED -->
+  <div class="section" id="sec-complete">
+    <div class="card">
+      <div class="card-title">&#9989; COMPLETED TICKETS</div>
+      <div id="completeTicketsList"><div class="empty">Loading...</div></div>
+    </div>
+  </div>
+
+  <!-- PROJECTS -->
+  <div class="section" id="sec-projects">
+    <div class="card">
+      <div class="card-title">&#127959; NEW / UPDATE PROJECT</div>
+      <div class="field-grid">
+        <input class="search-input" id="prjTitle" placeholder="Project title">
+        <select class="select-input" id="prjStatus"><option>Planned</option><option>Ongoing</option><option>Complete</option></select>
+      </div>
+      <div class="field-grid">
+        <input class="search-input" id="prjStart" type="date">
+        <input class="search-input" id="prjTarget" type="date">
+      </div>
+      <input class="search-input" id="prjOwner" placeholder="Owner / lead">
+      <textarea class="ta" id="prjDescription" placeholder="Project description..."></textarea>
+      <button class="btn" style="background:var(--purple);color:#fff" onclick="submitProject()">+ ADD PROJECT</button>
+      <div id="prjResult" class="result-msg"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">&#128203; ALL PROJECTS</div>
+      <div id="projectsList"><div class="empty">Loading...</div></div>
+    </div>
+  </div>
+
+  <!-- ASSETS -->
+  <div class="section" id="sec-assets">
+    <div class="card">
+      <div class="card-title">&#127976; ROOMS &amp; AREAS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(edit/add more directly in the 🏢 Facilities Assets sheet)</span></div>
+      <input class="search-input" id="assetSearch" placeholder="Search rooms/areas..." oninput="renderAssets()">
+      <div class="asset-grid" id="assetGrid"><div class="empty">Loading...</div></div>
+    </div>
+  </div>
+
+  <!-- STAFF -->
+  <div class="section" id="sec-staff">
+    <div class="card">
+      <div class="card-title">&#129489;&#8205;&#128295; MAINTENANCE STAFF <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(edit names/specialty in the 🧑‍🔧 Maintenance Staff sheet)</span></div>
+      <div class="staff-grid" id="staffGrid"><div class="empty">Loading...</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Fill in once the Facilities Apps Script is deployed (see Code.gs setup notes).
+const API_URL = 'https://script.google.com/macros/s/AKfycbxdXWHqohz78kNcgtFrI_dVO6k5s6SqFL4wd-c00OB4xCfbFg4TrFyPwd2VGYz4j3Ry/exec';
+
+let facData = {tickets: [], openSorted: [], assets: [], projects: [], staff: [], counts: {}};
+
+function showApiError(msg){
+  const el = document.getElementById('errorBanner');
+  el.innerHTML = "<b>&#9888; Dashboard can't reach the sheet:</b> " + msg + " — check API_URL at the top of the script, and that the Apps Script deployment is live (Deploy &gt; Manage deployments).";
+  el.classList.add('active');
+}
+function clearApiError(){ document.getElementById('errorBanner').classList.remove('active'); }
+
+function switchSection(sec, btn){
+  document.querySelectorAll('.tab-pill').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('sec-'+sec).classList.add('active');
+}
+
+async function loadData(){
+  document.getElementById('lastRefresh').textContent = 'Refreshing...';
+  if(API_URL.indexOf('PASTE_YOUR') === 0){
+    showApiError('API_URL has not been set yet in this file.');
+    document.getElementById('lastRefresh').textContent = 'Not configured';
+    return;
+  }
+  try{
+    const res = await fetch(API_URL + '?action=getFacilitiesData&t=' + Date.now());
+    if(!res.ok) throw new Error('Server responded with status ' + res.status);
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error || 'Unknown error');
+    facData = data;
+    clearApiError();
+    document.getElementById('lastRefresh').textContent = 'Updated: ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+    renderMetrics();
+    renderUrgentBanner();
+    renderOpenTickets();
+    renderUnverified();
+    renderCompleteTickets();
+    renderProjects();
+    renderAssets();
+    renderStaff();
+    populateLocationList();
+    populateAssignDropdown();
+  }catch(e){
+    document.getElementById('lastRefresh').textContent = 'Offline — see message above';
+    showApiError(e.message || 'Could not load data.');
+  }
+}
+
+function renderMetrics(){
+  const c = facData.counts || {};
+  document.getElementById('topMetrics').innerHTML = `
+    <div class="metric-card red" onclick="switchSection('open', document.querySelector('[data-sec=open]'))">
+      <div class="metric-label">OPEN TICKETS</div>
+      <div class="metric-value">${c.open||0}</div>
+      <div class="metric-sub">${c.urgentOpen||0} urgent</div>
+    </div>
+    <div class="metric-card gold" onclick="switchSection('open', document.querySelector('[data-sec=open]'))">
+      <div class="metric-label">IN PROGRESS</div>
+      <div class="metric-value">${c.inProgress||0}</div>
+      <div class="metric-sub">being worked on</div>
+    </div>
+    <div class="metric-card green" onclick="switchSection('complete', document.querySelector('[data-sec=complete]'))">
+      <div class="metric-label">COMPLETED</div>
+      <div class="metric-value">${c.complete||0}</div>
+      <div class="metric-sub">all-time</div>
+    </div>
+    <div class="metric-card teal" onclick="switchSection('unverified', document.querySelector('[data-sec=unverified]'))">
+      <div class="metric-label">NEEDS VERIFICATION</div>
+      <div class="metric-value">${c.unverified||0}</div>
+      <div class="metric-sub">guest-submitted</div>
+    </div>
+    <div class="metric-card purple" onclick="switchSection('assets', document.querySelector('[data-sec=assets]'))">
+      <div class="metric-label">ROOMS &amp; AREAS</div>
+      <div class="metric-value">${c.totalAssets||0}</div>
+      <div class="metric-sub">tracked locations</div>
+    </div>`;
+  document.getElementById('cntOpen').textContent = (c.open||0)+(c.inProgress||0);
+  document.getElementById('cntUnverified').textContent = c.unverified||0;
+  document.getElementById('cntComplete').textContent = c.complete||0;
+  document.getElementById('cntProjects').textContent = (facData.projects||[]).length;
+  document.getElementById('cntAssets').textContent = (facData.assets||[]).length;
+}
+
+function renderUrgentBanner(){
+  const urgent = (facData.openSorted||[]).filter(t=>t.priority==='Urgent');
+  const banner = document.getElementById('urgentBanner');
+  if(urgent.length===0){ banner.classList.remove('active'); return; }
+  banner.classList.add('active');
+  document.getElementById('urgentPills').innerHTML = urgent.map(t=>`<span class="urgent-pill" onclick="switchSection('open', document.querySelector('[data-sec=open]'))">${t.location} — ${t.description.slice(0,40)}${t.description.length>40?'...':''}</span>`).join('');
+}
+
+function ticketCardHtml(t, showActions){
+  const timeStr = t.timestamp ? new Date(t.timestamp).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '—';
+  let actionsHtml = '';
+  if(showActions){
+    actionsHtml = `
+      <div class="ticket-actions">
+        ${t.status==='Open' ? `<button class="btn ghost" onclick="quickUpdateStatus('${t.ticketId}','In Progress')">MARK IN PROGRESS</button>` : ''}
+        <button class="btn teal" onclick="toggleCompleteForm('${t.ticketId}')">MARK COMPLETE</button>
+      </div>
+      <div class="inline-form" id="completeForm-${t.ticketId}">
+        <textarea class="ta" id="resNotes-${t.ticketId}" placeholder="What was fixed? (required)"></textarea>
+        <select class="select-input" id="resAssigned-${t.ticketId}"><option value="">Assigned to... (optional)</option></select>
+        <button class="btn teal" onclick="submitComplete('${t.ticketId}')">&#10003; CONFIRM COMPLETE</button>
+        <div class="result-msg" id="completeResult-${t.ticketId}"></div>
+      </div>`;
+  }
+  const resolutionHtml = t.status==='Complete' && t.resolutionNotes ? `<div class="resolution-box">&#10003; ${t.resolutionNotes} ${t.assignedTo?'— '+t.assignedTo:''}</div>` : '';
+  return `
+    <div class="ticket-card priority-${t.priority}">
+      <div class="ticket-top">
+        <div>
+          <div class="ticket-loc">${t.location}${t.verified==='NO'?'<span class="unverified-tag">UNVERIFIED</span>':''}</div>
+          <div class="ticket-meta">${t.category} · ${t.reportedByType}${t.reporterName?' ('+t.reporterName+')':''} · ${timeStr} · ${t.ticketId}</div>
+        </div>
+        <span class="priority-tag ${t.priority}">${t.priority}</span>
+      </div>
+      <div class="ticket-desc">${t.description}</div>
+      ${t.assignedTo && t.status!=='Complete' ? `<div class="ticket-meta">Assigned: ${t.assignedTo}</div>` : ''}
+      ${resolutionHtml}
+      ${actionsHtml}
+    </div>`;
+}
+
+function renderOpenTickets(){
+  const open = (facData.openSorted||[]).filter(t=>t.verified!=='NO');
+  const el = document.getElementById('openTicketsList');
+  el.innerHTML = open.length ? open.map(t=>ticketCardHtml(t,true)).join('') : '<div class="empty">No open tickets — nothing needs attention right now.</div>';
+  populateAllAssignDropdowns();
+}
+
+function renderUnverified(){
+  const unv = (facData.tickets||[]).filter(t=>t.verified==='NO');
+  const el = document.getElementById('unverifiedList');
+  if(unv.length===0){ el.innerHTML = '<div class="empty">Nothing waiting on verification.</div>'; return; }
+  el.innerHTML = unv.map(t=>{
+    const timeStr = t.timestamp ? new Date(t.timestamp).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '—';
+    return `
+    <div class="ticket-card priority-${t.priority}">
+      <div class="ticket-top">
+        <div>
+          <div class="ticket-loc">${t.location}</div>
+          <div class="ticket-meta">${t.category} · Guest${t.reporterName?' — '+t.reporterName:''}${t.reporterContact?' ('+t.reporterContact+')':''} · ${timeStr}</div>
+        </div>
+        <span class="priority-tag ${t.priority}">${t.priority}</span>
+      </div>
+      <div class="ticket-desc">${t.description}</div>
+      <div class="ticket-actions">
+        <button class="btn teal" onclick="verifyTicket('${t.ticketId}','YES')">&#10003; CONFIRM — MOVE TO QUEUE</button>
+        <button class="btn red" onclick="verifyTicket('${t.ticketId}','NO')">&times; DISMISS</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderCompleteTickets(){
+  const done = (facData.tickets||[]).filter(t=>t.status==='Complete' && t.verified!=='DISMISSED');
+  const el = document.getElementById('completeTicketsList');
+  el.innerHTML = done.length ? done.slice(0,50).map(t=>ticketCardHtml(t,false)).join('') : '<div class="empty">No completed tickets yet.</div>';
+}
+
+async function quickUpdateStatus(ticketId, status){
+  try{
+    const res = await fetch(API_URL + '?action=updateTicketStatus&ticketId=' + encodeURIComponent(ticketId) + '&status=' + encodeURIComponent(status) + '&t=' + Date.now());
+    const data = await res.json();
+    if(data.success) loadData(); else alert(data.error||'Could not update.');
+  }catch(e){ alert('Connection error — try again.'); }
+}
+
+function toggleCompleteForm(ticketId){
+  const form = document.getElementById('completeForm-'+ticketId);
+  form.classList.toggle('show');
+}
+
+async function submitComplete(ticketId){
+  const notes = document.getElementById('resNotes-'+ticketId).value.trim();
+  const assigned = document.getElementById('resAssigned-'+ticketId).value;
+  const resultEl = document.getElementById('completeResult-'+ticketId);
+  if(!notes){ resultEl.innerHTML = '<span style="color:var(--red)">Add a note describing what was fixed.</span>'; return; }
+  resultEl.innerHTML = 'Saving...';
+  try{
+    let url = API_URL + '?action=updateTicketStatus&ticketId=' + encodeURIComponent(ticketId) + '&status=Complete&resolutionNotes=' + encodeURIComponent(notes);
+    if(assigned) url += '&assignedTo=' + encodeURIComponent(assigned);
+    url += '&t=' + Date.now();
+    const res = await fetch(url);
+    const data = await res.json();
+    if(data.success){ loadData(); } else { resultEl.innerHTML = '<span style="color:var(--red)">'+(data.error||'Failed')+'</span>'; }
+  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">Connection error — try again.</span>'; }
+}
+
+async function verifyTicket(ticketId, verified){
+  try{
+    const res = await fetch(API_URL + '?action=verifyTicket&ticketId=' + encodeURIComponent(ticketId) + '&verified=' + verified + '&t=' + Date.now());
+    const data = await res.json();
+    if(data.success) loadData(); else alert(data.error||'Could not update.');
+  }catch(e){ alert('Connection error — try again.'); }
+}
+
+function populateLocationList(){
+  const items = (facData.assets||[]).map(a=>a.location);
+  document.getElementById('locationList').innerHTML = items.map(i=>`<option value="${i}">`).join('');
+}
+
+function populateAssignDropdown(){
+  const staff = (facData.staff||[]).filter(s=>s.name||s.initials);
+  const sel = document.getElementById('rptAssignTo');
+  sel.innerHTML = '<option value="">Assign to... (optional)</option>' + staff.map(s=>`<option value="${s.initials}">${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
+}
+function populateAllAssignDropdowns(){
+  const staff = (facData.staff||[]).filter(s=>s.name||s.initials);
+  document.querySelectorAll('[id^="resAssigned-"]').forEach(sel=>{
+    sel.innerHTML = '<option value="">Assigned to... (optional)</option>' + staff.map(s=>`<option value="${s.initials}">${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
+  });
+}
+
+async function submitStaffTicket(){
+  const location = document.getElementById('rptLocation').value.trim();
+  const category = document.getElementById('rptCategory').value;
+  const priority = document.getElementById('rptPriority').value;
+  const description = document.getElementById('rptDescription').value.trim();
+  const reporterName = document.getElementById('rptReporterName').value.trim();
+  const assignTo = document.getElementById('rptAssignTo').value;
+  const resultEl = document.getElementById('rptResult');
+  if(!location || !description){ resultEl.innerHTML = '<span style="color:var(--red)">Location and description are required.</span>'; return; }
+  resultEl.innerHTML = 'Saving...';
+  try{
+    let url = API_URL + '?action=submitTicket&location=' + encodeURIComponent(location) + '&category=' + encodeURIComponent(category) + '&priority=' + encodeURIComponent(priority) + '&description=' + encodeURIComponent(description) + '&reportedByType=Staff';
+    if(reporterName) url += '&reporterName=' + encodeURIComponent(reporterName);
+    url += '&clientId=' + (Date.now()+'-'+Math.random().toString(36).slice(2)) + '&t=' + Date.now();
+    const res = await fetch(url);
+    const data = await res.json();
+    if(data.success){
+      resultEl.innerHTML = '<span style="color:var(--green)">&#10003; Ticket '+data.ticketId+' logged.</span>';
+      document.getElementById('rptLocation').value='';
+      document.getElementById('rptDescription').value='';
+      if(assignTo){
+        await fetch(API_URL + '?action=updateTicketStatus&ticketId=' + encodeURIComponent(data.ticketId) + '&status=Open&assignedTo=' + encodeURIComponent(assignTo));
+      }
+      loadData();
+    } else { resultEl.innerHTML = '<span style="color:var(--red)">'+(data.error||'Failed')+'</span>'; }
+  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">Connection error — try again.</span>'; }
+}
+
+function renderProjects(){
+  const projects = facData.projects || [];
+  const el = document.getElementById('projectsList');
+  el.innerHTML = projects.length ? projects.map(p=>`
+    <div class="project-card">
+      <div class="ticket-top">
+        <div><div class="ticket-loc">${p.title}</div><div class="ticket-meta">${p.owner?p.owner+' · ':''}${p.startDate?'from '+p.startDate:''}${p.targetDate?' → '+p.targetDate:''}</div></div>
+        <span class="status-chip ${p.status}">${p.status}</span>
+      </div>
+      <div class="ticket-desc">${p.description||''}</div>
+      ${p.lastUpdateNote?'<div class="resolution-box" style="background:#0e1420;border-color:var(--teal);color:#bfe8e2">Latest: '+p.lastUpdateNote+'</div>':''}
+      <div class="field-grid" style="margin-top:10px">
+        <select class="select-input" id="prjStatusUpdate-${p.projectId}" style="margin:0"><option>Planned</option><option>Ongoing</option><option>Complete</option></select>
+        <button class="btn ghost" style="width:auto;padding:8px 14px" onclick="quickProjectUpdate('${p.projectId}')">UPDATE STATUS</button>
+      </div>
+    </div>`).join('') : '<div class="empty">No projects logged yet.</div>';
+  projects.forEach(p=>{
+    const sel = document.getElementById('prjStatusUpdate-'+p.projectId);
+    if(sel) sel.value = p.status;
+  });
+}
+
+async function quickProjectUpdate(projectId){
+  const status = document.getElementById('prjStatusUpdate-'+projectId).value;
+  try{
+    const res = await fetch(API_URL + '?action=updateProject&projectId=' + encodeURIComponent(projectId) + '&status=' + encodeURIComponent(status) + '&t=' + Date.now());
+    const data = await res.json();
+    if(data.success) loadData(); else alert(data.error||'Failed');
+  }catch(e){ alert('Connection error.'); }
+}
+
+async function submitProject(){
+  const title = document.getElementById('prjTitle').value.trim();
+  const status = document.getElementById('prjStatus').value;
+  const startDate = document.getElementById('prjStart').value;
+  const targetDate = document.getElementById('prjTarget').value;
+  const owner = document.getElementById('prjOwner').value.trim();
+  const description = document.getElementById('prjDescription').value.trim();
+  const resultEl = document.getElementById('prjResult');
+  if(!title){ resultEl.innerHTML = '<span style="color:var(--red)">Title is required.</span>'; return; }
+  resultEl.innerHTML = 'Saving...';
+  try{
+    let url = API_URL + '?action=addProject&title=' + encodeURIComponent(title) + '&status=' + encodeURIComponent(status);
+    if(startDate) url += '&startDate=' + encodeURIComponent(startDate);
+    if(targetDate) url += '&targetDate=' + encodeURIComponent(targetDate);
+    if(owner) url += '&owner=' + encodeURIComponent(owner);
+    if(description) url += '&description=' + encodeURIComponent(description);
+    url += '&t=' + Date.now();
+    const res = await fetch(url);
+    const data = await res.json();
+    if(data.success){
+      resultEl.innerHTML = '<span style="color:var(--green)">&#10003; Project added.</span>';
+      ['prjTitle','prjStart','prjTarget','prjOwner','prjDescription'].forEach(id=>document.getElementById(id).value='');
+      loadData();
+    } else { resultEl.innerHTML = '<span style="color:var(--red)">'+(data.error||'Failed')+'</span>'; }
+  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">Connection error.</span>'; }
+}
+
+function renderAssets(){
+  const q = (document.getElementById('assetSearch').value||'').toLowerCase();
+  let assets = facData.assets || [];
+  if(q) assets = assets.filter(a=>a.location.toLowerCase().includes(q) || a.category.toLowerCase().includes(q));
+  const el = document.getElementById('assetGrid');
+  el.innerHTML = assets.length ? assets.map(a=>`
+    <div class="asset-card ${a.status==='Planned'?'planned':''}">
+      <div class="asset-name">${a.location}</div>
+      <div class="asset-meta">${a.category} · ${a.zone}${a.status==='Planned'?' · PLANNED':''}</div>
+    </div>`).join('') : '<div class="empty">No matches.</div>';
+}
+
+function renderStaff(){
+  const staff = (facData.staff||[]).filter(s=>s.name||s.initials);
+  const el = document.getElementById('staffGrid');
+  el.innerHTML = staff.length ? staff.map(s=>`
+    <div class="staff-card">
+      <div class="staff-initials">${s.initials||'—'}</div>
+      <div style="font-size:13px;font-weight:700;margin-top:2px">${s.name||'(name not set)'}</div>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:6px">${s.specialty||'Specialty not set'}<br>${s.phone||''}</div>
+    </div>`).join('') : '<div class="empty">No staff profiles filled in yet — add names in the 🧑‍🔧 Maintenance Staff sheet.</div>';
+}
+
+loadData();
+setInterval(loadData, 30000);
+</script>
+</body>
+</html>
