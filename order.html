@@ -1,7 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE GH — TABLE ORDER PAGE (v2.0, paired with Code.gs v5.1)
+  THE WHITE HOUSE GH — TABLE ORDER PAGE (v2.1, paired with Code.gs v5.2)
+
+  v2.1: the "no connection, retrying" screen now backs off instead of
+  retrying every 5 seconds flat — see canteen-order.html for why.
 
   v2.0: now shares the same location picker as canteen-order.html —
   Table (1-50), Pickup, Delivery, Room Number, Bar Area, VIP Area,
@@ -478,14 +481,20 @@ async function resumePendingOrder(){
     const result = await trySendOrder(payload);
     if(result.ok){
       clearPendingOrder(payload.clientId);
+      resumeAttempts = 0;
       showConfirmation(result.data, payload.payment);
       return;
     }
   }
   showQueuedScreen();
-  setTimeout(resumePendingOrder, 5000);
+  // v5.2: back off instead of retrying every 5s flat — see
+  // canteen-order.html for the full rationale.
+  resumeAttempts = Math.min(resumeAttempts + 1, 6);
+  const delay = Math.min(30000, 3000 * Math.pow(2, resumeAttempts)) * (0.6 + Math.random() * 0.4);
+  setTimeout(resumePendingOrder, delay);
 }
-window.addEventListener('online', resumePendingOrder);
+let resumeAttempts = 0;
+window.addEventListener('online', function(){ resumeAttempts = 0; resumePendingOrder(); });
 
 function showQueuedScreen(){
   const el = document.getElementById('confirmContent');
