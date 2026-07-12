@@ -337,11 +337,11 @@ tr.low-row{background:#1a0a0a;}
 // live at this same URL.
 const API_URL = 'https://script.google.com/macros/s/AKfycbyycYKCEtRchk0eToXIlMLgs3RmWIsKuUppD3UprPO8zLi9N5a9PIgn9uN4IKeip24E/exec';
 
-// v5.1: the version this bar-dashboard.html was built to work with.
+// v5.2: the version this bar-dashboard.html was built to work with.
 // If the backend reports anything else (or nothing), that's proof
 // the live deployment is stale — see renderVersionBanner(). MUST
 // match BACKEND_VERSION in Code.gs.
-const EXPECTED_BACKEND_VERSION = '5.1';
+const EXPECTED_BACKEND_VERSION = '5.2';
 
 let barData = {stock: [], todayOrders: [], staff: [], topSellers: [], staleStock: [], restockLog: [], revenueByPayment: []};
 let activeStockCategory = 'All';
@@ -357,6 +357,20 @@ function genClientId(){
   return 'cid-' + Date.now() + '-' + Math.random().toString(36).slice(2);
 }
 
+// v5.2: exponential backoff with jitter for queued-action retries.
+// Without this, every device with something queued retries on the
+// exact same fixed interval — fine for one device, but if a real
+// overload queues actions on many devices at once, everyone retrying
+// in lockstep every 30s just recreates the burst that caused the
+// problem. Backoff spaces retries out over time; jitter (randomizing
+// within that window) spreads devices that started at the same
+// moment so they don't stay synchronized.
+function backoffDelayMs(attempts){
+  const base = 4000, cap = 60000;
+  const raw = Math.min(cap, base * Math.pow(2, attempts));
+  return raw * (0.5 + Math.random() * 0.5); // jittered to 50-100% of the raw delay
+}
+
 function getPendingQueue(){
   try{ return JSON.parse(localStorage.getItem(PENDING_KEY) || '[]'); }
   catch(e){ return []; }
@@ -366,7 +380,7 @@ function savePendingQueue(queue){
 }
 function queueAction(kind, label, url, clientId){
   const queue = getPendingQueue();
-  queue.push({ id: clientId, kind, label, url, queuedAt: new Date().toISOString() });
+  queue.push({ id: clientId, kind, label, url, queuedAt: new Date().toISOString(), attempts: 0, nextRetryAt: 0 });
   savePendingQueue(queue);
   renderPendingBanner();
 }
@@ -390,17 +404,23 @@ async function fetchOrQueue(url, kind, label, clientId){
 async function flushPendingQueue(silent){
   let queue = getPendingQueue();
   if(queue.length === 0) return;
+  const now = Date.now();
   const stillPending = [];
   let succeeded = 0;
   for(const action of queue){
+    if(action.nextRetryAt && action.nextRetryAt > now){ stillPending.push(action); continue; } // not due yet — back off
     try{
       const res = await fetch(action.url + '&clientId=' + encodeURIComponent(action.id));
       if(!res.ok) throw new Error('status ' + res.status);
       const data = await res.json();
       if(data.success) { succeeded++; continue; }
       action.error = data.error || 'Failed';
+      action.attempts = (action.attempts || 0) + 1;
+      action.nextRetryAt = Date.now() + backoffDelayMs(action.attempts);
       stillPending.push(action);
     }catch(e){
+      action.attempts = (action.attempts || 0) + 1;
+      action.nextRetryAt = Date.now() + backoffDelayMs(action.attempts);
       stillPending.push(action);
     }
   }
@@ -1310,10 +1330,23 @@ async function tableOrderAction(orderId, newStatus){
   }
 }
 
+// v5.2: jittered, self-rescheduling polling instead of a fixed
+// setInterval. If every staff device loaded the page around the
+// same time (e.g. right before an event), fixed intervals mean they
+// all poll at the exact same moment forever — jitter spreads that
+// out so the read load is smoother over time instead of arriving in
+// synchronized spikes every 10/30 seconds.
+function scheduleNext(fn, baseMs, jitterMs){
+  const delay = baseMs + Math.random() * jitterMs;
+  setTimeout(function(){
+    Promise.resolve(fn()).catch(function(){}).finally(function(){ scheduleNext(fn, baseMs, jitterMs); });
+  }, delay);
+}
+
 loadData();
-setInterval(loadData, 30000);
+scheduleNext(loadData, 25000, 10000); // ~25-35s
 loadTableOrders();
-setInterval(loadTableOrders, 10000); // faster refresh — customers are waiting
+scheduleNext(loadTableOrders, 8000, 4000); // ~8-12s — customers are waiting
 </script>
 </body>
 </html>
