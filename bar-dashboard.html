@@ -337,11 +337,11 @@ tr.low-row{background:#1a0a0a;}
 // live at this same URL.
 const API_URL = 'https://script.google.com/macros/s/AKfycbyycYKCEtRchk0eToXIlMLgs3RmWIsKuUppD3UprPO8zLi9N5a9PIgn9uN4IKeip24E/exec';
 
-// v5.0: the version this bar-dashboard.html was built to work with.
+// v5.1: the version this bar-dashboard.html was built to work with.
 // If the backend reports anything else (or nothing), that's proof
 // the live deployment is stale — see renderVersionBanner(). MUST
 // match BACKEND_VERSION in Code.gs.
-const EXPECTED_BACKEND_VERSION = '5.0';
+const EXPECTED_BACKEND_VERSION = '5.1';
 
 let barData = {stock: [], todayOrders: [], staff: [], topSellers: [], staleStock: [], restockLog: [], revenueByPayment: []};
 let activeStockCategory = 'All';
@@ -1237,6 +1237,11 @@ function orderAge(timestamp){
   return mins + ' min ago';
 }
 
+function locationLabel(o){
+  const loc = o.locationType === 'Table' ? ('Table ' + (o.locationDetail || '?')) : (o.locationType + (o.locationDetail ? ' — ' + o.locationDetail : ''));
+  return loc;
+}
+
 function renderTableOrders(){
   const el = document.getElementById('tableOrdersBody');
   const active = (tableOrdersData.active || []).slice().sort((a,b) => {
@@ -1265,10 +1270,11 @@ function renderTableOrders(){
 
     return `<div class="order-card ${statusClass(o.status)}${isNew && o.status==='Placed' ? ' is-new':''}">
       <div class="order-card-top">
-        <div><span class="order-card-table">Table ${o.table}</span> &nbsp; <span class="order-status-pill ${statusPillClass(o.status)}">${o.status}</span></div>
+        <div><span class="order-card-table">${locationLabel(o)}</span> &nbsp; <span class="order-status-pill ${statusPillClass(o.status)}">${o.status}</span></div>
         <div class="order-card-age">${orderAge(o.timestamp)}</div>
       </div>
-      <div class="order-items-list">${itemsHtml}${o.phone ? ' &middot; ' + o.phone : ''}</div>
+      <div class="order-items-list">${itemsHtml}</div>
+      <div class="order-items-list" style="margin-top:-4px;color:var(--text-dim)">${o.customerName || 'no name given'}${o.phone ? ' &middot; ' + o.phone : ''}</div>
       <div class="order-card-footer">
         <span class="order-total">GHS ${o.total.toFixed(2)}</span>
         <span class="order-pay-badge">${o.payment}</span>
