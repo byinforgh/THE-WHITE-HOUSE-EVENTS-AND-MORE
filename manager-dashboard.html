@@ -1,9 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE GH — MANAGER COMMAND CENTRE (v1.0)
+  THE WHITE HOUSE GH — MANAGER COMMAND CENTRE (v1.1)
   Paired with ManagerCommandCentre_Code.gs bound to the Manager
   Command Centre spreadsheet. Fill in API_URL below once deployed.
+
+  v1.1: added a dedicated COCKTAILS tab. Cocktail-family sales (from
+  the Bar system's 🍹 Cocktail Sales sheet — see BarSystem_
+  CocktailSeparation_PATCH.gs) now have their own read-only summary
+  here, separate from the general Bar/Canteen "Running Costing" tab.
 
   This dashboard pulls Bar/Canteen, Facilities, and Members data
   READ-ONLY from your existing systems — edits to those still happen
@@ -16,7 +21,7 @@
 <title>The White House GH — Manager Command Centre</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
-:root{--black:#0a0a0a;--surface:#111111;--card:#181818;--border:#2a2a2a;--gold:#f5a623;--gold-dim:#c9861a;--teal:#3fb6a8;--red:#ef4444;--green:#22c55e;--purple:#8b5cf6;--text:#f2f2f2;--text-dim:#b5b5b5;--muted:#888;}
+:root{--black:#0a0a0a;--surface:#111111;--card:#181818;--border:#2a2a2a;--gold:#f5a623;--gold-dim:#c9861a;--teal:#3fb6a8;--red:#ef4444;--green:#22c55e;--purple:#8b5cf6;--pink:#ec4899;--text:#f2f2f2;--text-dim:#b5b5b5;--muted:#888;}
 *{margin:0;padding:0;box-sizing:border-box;}
 body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min-height:100vh;}
 .header{background:var(--surface);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;flex-wrap:wrap;gap:10px;}
@@ -38,10 +43,10 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 .metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:16px;}
 .metric-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px;position:relative;overflow:hidden;}
 .metric-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;}
-.metric-card.gold::before{background:var(--gold);}.metric-card.teal::before{background:var(--teal);}.metric-card.red::before{background:var(--red);}.metric-card.green::before{background:var(--green);}.metric-card.purple::before{background:var(--purple);}
+.metric-card.gold::before{background:var(--gold);}.metric-card.teal::before{background:var(--teal);}.metric-card.red::before{background:var(--red);}.metric-card.green::before{background:var(--green);}.metric-card.purple::before{background:var(--purple);}.metric-card.pink::before{background:var(--pink);}
 .metric-label{font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--muted);margin-bottom:8px;}
 .metric-value{font-size:26px;font-weight:800;font-family:'Space Mono',monospace;line-height:1;}
-.metric-card.gold .metric-value{color:var(--gold);}.metric-card.teal .metric-value{color:var(--teal);}.metric-card.red .metric-value{color:var(--red);}.metric-card.green .metric-value{color:var(--green);}.metric-card.purple .metric-value{color:var(--purple);}
+.metric-card.gold .metric-value{color:var(--gold);}.metric-card.teal .metric-value{color:var(--teal);}.metric-card.red .metric-value{color:var(--red);}.metric-card.green .metric-value{color:var(--green);}.metric-card.purple .metric-value{color:var(--purple);}.metric-card.pink .metric-value{color:var(--pink);}
 .metric-sub{font-size:11px;color:var(--text-dim);margin-top:6px;}
 .card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px;}
 .card-title{font-size:11px;font-weight:700;letter-spacing:2px;color:var(--muted);margin-bottom:12px;text-transform:uppercase;}
@@ -67,6 +72,7 @@ textarea{min-height:60px;resize:vertical;}
 .pill.pos{background:#0e1a0e;color:var(--green);border:1px solid var(--green);}
 .pill.neg{background:#2a0a0a;color:var(--red);border:1px solid var(--red);}
 .pill.warn{background:#2a2006;color:var(--gold);border:1px solid var(--gold-dim);}
+.pill.cocktail{background:#2a0e22;color:var(--pink);border:1px solid var(--pink);}
 .bar-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
 .bar-row .b-label{width:170px;font-size:11px;flex-shrink:0;}
 .bar-track{flex:1;height:16px;background:var(--surface);border-radius:4px;overflow:hidden;border:1px solid var(--border);}
@@ -96,6 +102,7 @@ textarea{min-height:60px;resize:vertical;}
     <button class="tab" data-sec="payroll" onclick="switchSection('payroll',this)">PAYROLL &amp; STAFF</button>
     <button class="tab" data-sec="budgets" onclick="switchSection('budgets',this)">BUDGETS &amp; ACTUAL</button>
     <button class="tab" data-sec="costing" onclick="switchSection('costing',this)">RUNNING COSTING</button>
+    <button class="tab" data-sec="cocktails" onclick="switchSection('cocktails',this)">COCKTAILS</button>
     <button class="tab" data-sec="barcanteen" onclick="switchSection('barcanteen',this)">BAR &amp; CANTEEN</button>
     <button class="tab" data-sec="facilities" onclick="switchSection('facilities',this)">FACILITIES</button>
     <button class="tab" data-sec="members" onclick="switchSection('members',this)">MEMBERS</button>
@@ -200,11 +207,11 @@ textarea{min-height:60px;resize:vertical;}
     </div>
   </div>
 
-  <!-- RUNNING COSTING -->
+  <!-- RUNNING COSTING (general — cocktail-family items now excluded, see COCKTAILS tab) -->
   <div class="section" id="sec-costing">
     <div class="metrics-grid" id="costingMetrics"></div>
     <div class="card">
-      <div class="card-title">&#129380; TOP SELLERS — REVENUE VS TRUE COST OF GOODS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(cost pulled live from Bar Stock cost-per-unit &times; recipe quantities)</span></div>
+      <div class="card-title">&#129380; TOP SELLERS — REVENUE VS TRUE COST OF GOODS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(cost pulled live from Bar Stock cost-per-unit &times; recipe quantities — cocktail-family items excluded, see the COCKTAILS tab)</span></div>
       <div class="scroll-table"><table><thead><tr><th>ITEM</th><th>QTY SOLD</th><th>REVENUE</th><th>COGS USED</th><th>MARGIN</th></tr></thead><tbody id="costingBody"></tbody></table></div>
     </div>
     <div class="card" style="border-color:var(--gold-dim)">
@@ -212,6 +219,20 @@ textarea{min-height:60px;resize:vertical;}
       <div style="font-size:12px;color:var(--text-dim);line-height:1.6">If "Purchases Logged" (money spent buying stock, from Expenses) is running well above "COGS Used in Sales" (calculated from what was actually sold), that's a signal worth investigating — waste, over-ordering, or shrinkage.</div>
       <div id="cogsCompare" style="margin-top:12px"></div>
     </div>
+  </div>
+
+  <!-- COCKTAILS (new — reads the Bar system's 🍹 Cocktail Sales sheet) -->
+  <div class="section" id="sec-cocktails">
+    <div class="metrics-grid" id="cocktailMetrics"><div class="loading">Loading...</div></div>
+    <div class="card">
+      <div class="card-title">&#127864; TOP COCKTAILS — REVENUE, INGREDIENT COST &amp; MARGIN <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(Cocktail, Mocktail, Milkshake, Smoothie, Juice, VIP Special — cost recorded at the moment of sale on the Bar system)</span></div>
+      <div class="scroll-table"><table><thead><tr><th>ITEM</th><th>CATEGORY</th><th>QTY SOLD</th><th>REVENUE</th><th>INGREDIENT COST</th><th>MARGIN</th></tr></thead><tbody id="cocktailTopBody"></tbody></table></div>
+    </div>
+    <div class="card">
+      <div class="card-title">&#128203; RECENT COCKTAIL SALES</div>
+      <div class="scroll-table"><table><thead><tr><th>WHEN</th><th>ITEM</th><th>QTY</th><th>REVENUE</th><th>COST</th><th>MARGIN</th><th>STAFF</th></tr></thead><tbody id="cocktailRecentBody"></tbody></table></div>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:-8px;margin-bottom:16px">Read-only — cocktail sales are recorded automatically on the Bar system whenever a cocktail-family item is sold; nothing is edited here.</div>
   </div>
 
   <!-- BAR & CANTEEN (read-only) -->
@@ -241,7 +262,7 @@ textarea{min-height:60px;resize:vertical;}
       <div class="card-title">&#127942; TOP MEMBERS BY POINTS</div>
       <div id="memberTop"><div class="empty">Loading...</div></div>
     </div>
-    <div style="font-size:11px;color:var(--muted);margin-top:-8px;margin-bottom:16px">Read-only — manage members/rewards on the Members dashboard directly.</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:-8px;margin-bottom:16px">Read-only — manage members, rewards, and Regular/VIP status on the Members dashboard directly.</div>
   </div>
 
   <!-- SHIFTS -->
@@ -332,6 +353,7 @@ function renderAll(){
   renderPayrollTable();
   renderBudgets();
   renderCosting();
+  renderCocktails();
   renderBarCanteen();
   renderFacilities();
   renderMembers();
@@ -543,7 +565,7 @@ function renderBudgets(){
   }).join('') : '<div class="empty">No budget categories yet — run seedCategoriesAndBudgets from the Apps Script editor.</div>';
 }
 
-// ---------- RUNNING COSTING ----------
+// ---------- RUNNING COSTING (general, cocktail-family items excluded) ----------
 function renderCosting(){
   const bar = data.bar || {};
   document.getElementById('costingMetrics').innerHTML = `
@@ -560,6 +582,25 @@ function renderCosting(){
   document.getElementById('cogsCompare').innerHTML = `
     <div class="bar-row"><div class="b-label">Food/Bar purchases logged</div><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><div class="b-value">${fmt(foodPurchased+barPurchased)}</div></div>
     <div class="bar-row"><div class="b-label">COGS actually used in sales</div><div class="bar-track"><div class="bar-fill" style="width:${bar.allTimeCOGSUsed && (foodPurchased+barPurchased) ? Math.min(100,(bar.allTimeCOGSUsed/(foodPurchased+barPurchased))*100) : 0}%"></div></div><div class="b-value">${fmt(bar.allTimeCOGSUsed)}</div></div>`;
+}
+
+// ---------- COCKTAILS (new — separate sheet, separate calculation) ----------
+function renderCocktails(){
+  const ck = data.cocktails || {};
+  if(ck.error) { document.getElementById('cocktailMetrics').innerHTML = `<div class="empty" style="grid-column:1/-1">${ck.error}</div>`; document.getElementById('cocktailTopBody').innerHTML=''; document.getElementById('cocktailRecentBody').innerHTML=''; return; }
+  document.getElementById('cocktailMetrics').innerHTML = `
+    <div class="metric-card pink"><div class="metric-label">COCKTAIL REVENUE TODAY</div><div class="metric-value" style="font-size:20px">${fmt(ck.todayRevenue)}</div><div class="metric-sub">${ck.todayCount||0} sold</div></div>
+    <div class="metric-card gold"><div class="metric-label">ALL-TIME REVENUE</div><div class="metric-value" style="font-size:20px">${fmt(ck.allTimeRevenue)}</div></div>
+    <div class="metric-card red"><div class="metric-label">ALL-TIME INGREDIENT COST</div><div class="metric-value" style="font-size:20px">${fmt(ck.allTimeCost)}</div></div>
+    <div class="metric-card green"><div class="metric-label">ALL-TIME MARGIN</div><div class="metric-value" style="font-size:20px">${fmt(ck.allTimeMargin)}</div></div>`;
+
+  const top = ck.topCocktails || [];
+  document.getElementById('cocktailTopBody').innerHTML = top.length ? top.map(t=>`
+    <tr><td>${t.item}</td><td><span class="pill cocktail">${t.category}</span></td><td style="font-family:'Space Mono',monospace">${t.qty}</td><td style="color:var(--gold);font-family:'Space Mono',monospace">${fmt(t.revenue)}</td><td style="color:var(--red);font-family:'Space Mono',monospace">${fmt(t.cost)}</td><td style="color:var(--green);font-family:'Space Mono',monospace;font-weight:700">${fmt(t.margin)}</td></tr>`).join('') : '<tr><td colspan="6" class="empty">No cocktail sales logged yet.</td></tr>';
+
+  const recent = ck.recent || [];
+  document.getElementById('cocktailRecentBody').innerHTML = recent.length ? recent.map(r=>`
+    <tr><td style="font-size:11px;font-family:'Space Mono',monospace">${new Date(r.timestamp).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</td><td>${r.item}</td><td style="font-family:'Space Mono',monospace">${r.qty}</td><td style="color:var(--gold);font-family:'Space Mono',monospace">${fmt(r.revenue)}</td><td style="color:var(--red);font-family:'Space Mono',monospace">${fmt(r.cost)}</td><td style="color:var(--green);font-family:'Space Mono',monospace">${fmt(r.margin)}</td><td style="font-size:11px">${r.staff||'—'}</td></tr>`).join('') : '<tr><td colspan="7" class="empty">No cocktail sales logged yet.</td></tr>';
 }
 
 // ---------- BAR & CANTEEN ----------
