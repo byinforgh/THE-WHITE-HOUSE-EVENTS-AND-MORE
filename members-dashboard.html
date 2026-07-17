@@ -53,6 +53,16 @@ select:focus,input:focus,textarea:focus{border-color:var(--gold);}
 .activity-row{padding:8px 0;border-bottom:1px solid #1a1a1a;font-size:12px;display:flex;justify-content:space-between;gap:10px;}
 .badge-source{font-size:9px;padding:2px 6px;border-radius:3px;font-weight:700;letter-spacing:1px;}
 .src-bar{background:#1a1500;color:var(--gold);}.src-booking{background:#001a10;color:var(--teal);}.src-landing{background:#0a0020;color:var(--purple);}
+/* Membership status badges — Regular (free, default) vs VIP (paid subscription) */
+.badge-membership{font-size:9px;padding:3px 9px;border-radius:12px;font-weight:800;letter-spacing:0.5px;font-family:'Space Mono',monospace;display:inline-block;}
+.badge-membership.regular{background:#161616;color:var(--text-dim);border:1px solid var(--border);}
+.badge-membership.vip{background:#2a2006;color:var(--gold);border:1px solid var(--gold-dim);}
+.vip-request-row{background:var(--surface);border:1px solid var(--gold-dim);border-radius:6px;padding:12px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:12px;}
+.vip-request-row .vr-name{font-weight:700;font-size:13px;}
+.vip-request-row .vr-meta{font-size:11px;color:var(--text-dim);font-family:'Space Mono',monospace;margin-top:2px;}
+.small-btn{background:var(--gold);color:var(--black);border:none;padding:7px 14px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:800;letter-spacing:0.5px;font-family:'Syne',sans-serif;white-space:nowrap;}
+.small-btn:hover{background:var(--gold-dim);}
+.small-btn.ghost{background:var(--border);color:var(--text);}
 /* Footer follow/website links — inactive (plain text) until a URL is filled in below in JS config */
 .footer-links{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;padding:18px 0 6px;}
 .footer-link{font-size:11px;color:var(--muted);text-decoration:none;padding:6px 12px;border:1px solid var(--border);border-radius:20px;}
@@ -103,7 +113,7 @@ select:focus,input:focus,textarea:focus{border-color:var(--gold);}
 <!-- ALL CUSTOMERS -->
 <div class="tab-content" id="tab-customers">
   <input class="search-input" type="text" id="customerSearch" placeholder="Search by name, ID, phone, business..." oninput="renderCustomers()">
-  <div class="scroll-table" style="overflow-x:auto"><table class="contact-table"><thead><tr><th>ID</th><th>NAME</th><th>SERVICE</th><th>SOURCE</th><th>VISITS</th><th>POINTS</th><th>LAST ACTIVITY</th><th>ADJUST</th></tr></thead><tbody id="customersBody"></tbody></table></div>
+  <div class="scroll-table" style="overflow-x:auto"><table class="contact-table"><thead><tr><th>ID</th><th>NAME</th><th>SERVICE</th><th>SOURCE</th><th>MEMBERSHIP</th><th>VISITS</th><th>POINTS</th><th>LAST ACTIVITY</th><th>ADJUST</th></tr></thead><tbody id="customersBody"></tbody></table></div>
 </div>
 
 <!-- ADD BOOKING -->
@@ -135,6 +145,24 @@ select:focus,input:focus,textarea:focus{border-color:var(--gold);}
 
 <!-- REWARDS & REDEEM -->
 <div class="tab-content" id="tab-rewards">
+
+  <div class="card" style="border-color:var(--gold-dim)">
+    <div class="card-title" style="color:var(--gold)">&#128081; MEMBERSHIP — REGULAR &amp; VIP</div>
+    <div style="font-size:11px;color:var(--text-dim);margin-bottom:14px;line-height:1.7">
+      Regular membership is free and automatic. VIP is a <b>paid subscription</b> — never set on the spot. A guest (or staff on their behalf) requests VIP, which lands in the queue below; a manager contacts them to arrange payment, then sets their status to VIP once that's confirmed.
+    </div>
+    <div id="vipRequestsList"></div>
+    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+      <div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:1px;margin-bottom:8px">SET MEMBERSHIP STATUS MANUALLY</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <input type="text" id="msCustId" placeholder="Member ID or phone">
+        <select id="msStatus"><option value="VIP">Set to VIP</option><option value="Regular">Set to Regular</option></select>
+        <button class="small-btn" onclick="submitMembershipStatus()" style="width:100%">APPLY</button>
+      </div>
+      <div id="msResult" class="result-msg"></div>
+    </div>
+  </div>
+
   <div class="two-col">
     <div class="card">
       <div class="card-title">CURRENT REWARDS LIST</div>
@@ -202,7 +230,7 @@ const FOOTER_LINKS = [
   { name:'Website',         url:'https://www.thewhitehousegh.com' }
 ];
 
-let state = { customers: [], leaderboard: [], rewards: [], pointsLog: [], bookings: [], redemptions: [], totalCustomers: 0, newToday: 0 };
+let state = { customers: [], leaderboard: [], rewards: [], pointsLog: [], bookings: [], redemptions: [], totalCustomers: 0, newToday: 0, vipCount: 0, vipRequests: [] };
 let activityFilter = 'all';
 
 function renderFooterLinks(){
@@ -215,6 +243,11 @@ renderFooterLinks();
 
 function showToast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2500); }
 
+function membershipBadge(status){
+  const s = (status || 'Regular');
+  return s === 'VIP' ? '<span class="badge-membership vip">&#128081; VIP</span>' : '<span class="badge-membership regular">Regular</span>';
+}
+
 function switchTab(name, evt){
   document.querySelectorAll('.tabs .tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
@@ -222,7 +255,7 @@ function switchTab(name, evt){
   document.getElementById('tab-'+name).classList.add('active');
   if(name==='leaderboard') renderLeaderboard();
   if(name==='customers') renderCustomers();
-  if(name==='rewards') renderRewards();
+  if(name==='rewards'){ renderRewards(); renderVIPRequests(); }
   if(name==='activity') renderActivityFull();
 }
 
@@ -235,6 +268,11 @@ async function loadData(){
     state = data;
     document.getElementById('lastRefresh').textContent = 'Updated: ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
     renderToday();
+    // Keep whichever secondary tab is currently visible in sync too,
+    // since a refresh can happen while the person is on any tab.
+    if(document.getElementById('tab-rewards').classList.contains('active')){ renderRewards(); renderVIPRequests(); }
+    if(document.getElementById('tab-customers').classList.contains('active')) renderCustomers();
+    if(document.getElementById('tab-leaderboard').classList.contains('active')) renderLeaderboard();
   }catch(e){
     document.getElementById('lastRefresh').textContent = 'Offline — check connection';
     console.log('Load error:', e.message);
@@ -246,11 +284,11 @@ function renderToday(){
     <div class="metric-card gold"><div class="metric-label">TOTAL MEMBERS</div><div class="metric-value">${state.totalCustomers||0}</div><div class="metric-sub">across bar, bookings, landing page</div></div>
     <div class="metric-card green"><div class="metric-label">NEW TODAY</div><div class="metric-value">${state.newToday||0}</div><div class="metric-sub">registered today</div></div>
     <div class="metric-card teal"><div class="metric-label">TOTAL POINTS LIVE</div><div class="metric-value" style="font-size:24px">${(state.customers||[]).reduce((s,c)=>s+(parseFloat(c.totalPoints)||0),0).toLocaleString()}</div><div class="metric-sub">unredeemed, across all members</div></div>
-    <div class="metric-card purple"><div class="metric-label">REDEMPTIONS</div><div class="metric-value">${(state.redemptions||[]).length}</div><div class="metric-sub">rewards given so far</div></div>`;
+    <div class="metric-card purple"><div class="metric-label">VIP MEMBERS</div><div class="metric-value">${state.vipCount||0}</div><div class="metric-sub">${(state.vipRequests||[]).length} awaiting follow-up</div></div>`;
   const top5 = (state.leaderboard||[]).slice(0,5);
   document.getElementById('topFive').innerHTML = top5.length ? top5.map((c,i)=>`
     <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #1a1a1a">
-      <div style="display:flex;align-items:center;gap:10px"><span class="rank-badge rank-${i+1<=3?i+1:'x'}">${i+1}</span><span style="font-size:12px;font-weight:700">${c.fullName}</span></div>
+      <div style="display:flex;align-items:center;gap:10px"><span class="rank-badge rank-${i+1<=3?i+1:'x'}">${i+1}</span><span style="font-size:12px;font-weight:700">${c.fullName}</span>${c.membershipStatus==='VIP'?' '+membershipBadge('VIP'):''}</div>
       <span class="pts">${c.totalPoints||0} pts</span>
     </div>`).join('') : '<div class="empty">No members yet</div>';
   const acts = buildActivityFeed().slice(0,8);
@@ -259,15 +297,17 @@ function renderToday(){
 
 function renderLeaderboard(){
   const lb = state.leaderboard || [];
-  // v5.4: this view may be projected/shown publicly (e.g. a screen at
-  // the venue), so it deliberately shows ONLY rank, name, and points —
-  // no member ID, phone, business name, or anything else that could
-  // identify or expose a member's contact details.
+  // This view may be projected/shown publicly (e.g. a screen at the
+  // venue), so it deliberately shows ONLY rank, name, points, and a
+  // VIP badge — no member ID, phone, business name, or anything else
+  // that could identify or expose a member's contact details. A VIP
+  // tag is not contact info, so it's safe to include here.
   document.getElementById('leaderboardList').innerHTML = lb.length ? lb.map((c,i)=>`
     <div class="reward-item">
       <div style="display:flex;align-items:center;gap:14px">
         <span class="rank-badge rank-${i+1<=3?i+1:'x'}">${i+1}</span>
         <div style="font-weight:700;font-size:13px">${c.fullName}</div>
+        ${c.membershipStatus==='VIP'?membershipBadge('VIP'):''}
       </div>
       <span class="pts" style="font-size:16px">${c.totalPoints||0} pts</span>
     </div>`).join('') : '<div class="empty">No members yet</div>';
@@ -284,10 +324,16 @@ function renderCustomers(){
       <td><strong>${c.fullName}</strong>${c.businessName?'<br><span style="font-size:10px;color:var(--text-dim)">'+c.businessName+'</span>':''}</td>
       <td style="font-size:11px">${c.service||'—'}</td>
       <td><span class="badge-source ${c.source==='Bar'?'src-bar':c.source&&c.source.indexOf('Bar')===0?'src-bar':'src-landing'}">${c.source||'—'}</span></td>
+      <td>${membershipBadge(c.membershipStatus)}</td>
       <td style="text-align:center">${c.totalVisits||0}</td>
       <td class="pts">${c.totalPoints||0}</td>
       <td style="font-size:10px;color:var(--text-dim)">${c.lastActivity||'—'}</td>
-      <td><button class="refresh-btn" style="padding:4px 10px;font-size:10px" onclick="quickAdjust('${c.custId}')">+/-</button></td>
+      <td style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="refresh-btn" style="padding:4px 10px;font-size:10px" onclick="quickAdjust('${c.custId}')">+/-</button>
+        ${c.membershipStatus==='VIP'
+          ? `<button class="refresh-btn" style="padding:4px 10px;font-size:10px;background:var(--border)" onclick="quickSetMembership('${c.custId}','Regular')">→ Regular</button>`
+          : `<button class="refresh-btn" style="padding:4px 10px;font-size:10px;background:var(--gold);color:var(--black)" onclick="quickSetMembership('${c.custId}','VIP')">→ VIP</button>`}
+      </td>
     </tr>`).join('') : '<tr><td colspan="9" class="empty">No members match this search</td></tr>';
 }
 function quickAdjust(custId){
@@ -296,6 +342,69 @@ function quickAdjust(custId){
   document.getElementById('apCustId').value = custId;
   document.getElementById('apCustId').focus();
   showToast('Jumped to points adjustment for ' + custId);
+}
+function quickSetMembership(custId, status){
+  document.querySelectorAll('.tabs .tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('tab-customers').classList.remove('active');
+  switchTab('rewards', {target:document.querySelectorAll('.tabs .tab')[4]});
+  document.getElementById('msCustId').value = custId;
+  document.getElementById('msStatus').value = status;
+  showToast('Confirm the status change for ' + custId + ' below');
+}
+
+// =====================
+// MEMBERSHIP — Regular (free) / VIP (paid subscription)
+// =====================
+function renderVIPRequests(){
+  const reqs = state.vipRequests || [];
+  const el = document.getElementById('vipRequestsList');
+  if(!el) return;
+  if(reqs.length === 0){
+    el.innerHTML = '<div class="empty">No pending VIP requests right now.</div>';
+    return;
+  }
+  el.innerHTML = reqs.map(r => `
+    <div class="vip-request-row" data-cust="${r.custId}">
+      <div>
+        <div class="vr-name">${r.name || r.custId}</div>
+        <div class="vr-meta">${r.custId}${r.phone ? ' · ' + r.phone : ''}</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="small-btn ghost" onclick="dismissVIPRequestRow('${r.custId}')">DISMISS</button>
+        <button class="small-btn" onclick="confirmVIPFromRequest('${r.custId}')">&#10003; CONFIRM VIP</button>
+      </div>
+    </div>`).join('');
+}
+function dismissVIPRequestRow(custId){
+  // Purely a local UI dismiss (the underlying "VIP REQUESTED" stamp
+  // stays in Notes on the sheet either way) — lets staff clear a row
+  // they've already actioned off-system without setting VIP status.
+  const row = document.querySelector(`.vip-request-row[data-cust="${CSS.escape(custId)}"]`);
+  if(row) row.remove();
+}
+function confirmVIPFromRequest(custId){
+  document.getElementById('msCustId').value = custId;
+  document.getElementById('msStatus').value = 'VIP';
+  submitMembershipStatus();
+}
+
+async function submitMembershipStatus(){
+  const custId = document.getElementById('msCustId').value.trim();
+  const status = document.getElementById('msStatus').value;
+  const result = document.getElementById('msResult');
+  if(!custId){ result.innerHTML = '<span class="err-msg">Member ID or phone is required.</span>'; return; }
+  result.innerHTML = '<span style="color:var(--muted)">Applying...</span>';
+  const payload = { action:'setMembershipStatus', custId, status, setBy:'Dashboard' };
+  const qs = Object.entries(payload).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
+  try{
+    const res = await fetch(API_URL+'?'+qs); const data = await res.json();
+    if(data.success){
+      result.innerHTML = '<span style="color:var(--green);font-weight:700">✓ '+data.custId+' is now '+data.membershipStatus+'</span>';
+      showToast(data.custId + ' set to ' + data.membershipStatus);
+      document.getElementById('msCustId').value = '';
+      loadData();
+    } else { result.innerHTML = '<span class="err-msg">'+(data.error||'Could not update')+'</span>'; }
+  }catch(e){ result.innerHTML = '<span class="err-msg">Connection error — try again</span>'; }
 }
 
 function renderRewards(){
