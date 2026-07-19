@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>THE WHITE HOUSE GH — Report an Issue</title>
+<title>THE WHITE HOUSE EVENTS & MORE — Report an Issue</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Space+Mono:wght@400;700&display=swap');
   :root{
@@ -33,9 +33,10 @@
   p.sub{ color:var(--muted); font-size:13px; line-height:1.5; margin:0 0 20px;}
   label{ display:block; font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--gold); margin:16px 0 6px; }
   label.req::after{ content:" *"; color:var(--teal); }
+  /* v1.1: font-size raised from 15px to 16px to fix the iOS pinch-zoom bug. */
   input[type=text], input[type=tel], select, textarea{
     width:100%; background:#1c1a15; border:1px solid var(--line); color:var(--text);
-    font-family:'Space Mono',monospace; font-size:15px; padding:14px; border-radius:10px; outline:none;
+    font-family:'Space Mono',monospace; font-size:16px; padding:14px; border-radius:10px; outline:none;
   }
   input:focus, select:focus, textarea:focus{ border-color:var(--gold); }
   textarea{ resize:vertical; min-height:90px; }
@@ -72,7 +73,7 @@
 
 <div class="card">
   <div class="brand">
-    <div class="brand-fallback">THE WHITE HOUSE GH</div>
+    <div class="brand-fallback">THE WHITE HOUSE EVENTS & MORE</div>
   </div>
   <div style="margin-bottom:6px"><span class="tagline" style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);letter-spacing:1px;text-transform:uppercase">Facilities Report</span></div>
 
@@ -147,9 +148,6 @@
 const API_URL = 'https://script.google.com/macros/s/AKfycbxdXWHqohz78kNcgtFrI_dVO6k5s6SqFL4wd-c00OB4xCfbFg4TrFyPwd2VGYz4j3Ry/exec';
 
 // Static fallback list, mirrors the seeded 🏢 Facilities Assets sheet.
-// This form tries to load the live list from the sheet first; if that
-// fails (offline, not deployed yet), it falls back to this list so
-// the form still works.
 const FALLBACK_LOCATIONS = (function(){
   const rooms = [];
   for(let floor=1; floor<=5; floor++){
@@ -200,7 +198,6 @@ function selectPriority(val, el){
   if(val === 'Urgent') el.classList.add('urgent');
   document.getElementById('priority').value = val;
 }
-// default Medium selected visually
 document.addEventListener('DOMContentLoaded', ()=>{
   const def = document.querySelector('.priority-btn[data-val="Medium"]');
   if(def) def.classList.add('tapped');
