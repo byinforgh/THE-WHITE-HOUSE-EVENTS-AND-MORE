@@ -848,6 +848,11 @@ function renderQuickSellPanel(){
 
 function clearCart(){
   cart = {};
+  // BUG FIX (backlog #4): the search box text (e.g. "coke") was never
+  // cleared after a sale completed, so it looked like the order was
+  // "stuck" on screen even though it had gone through.
+  const searchEl = document.getElementById('quickSellSearch');
+  if(searchEl) searchEl.value = '';
   renderQuickSellMenu();
   renderQuickSellPanel();
 }
