@@ -360,16 +360,19 @@ async function loadAll(){
   if(navigator.onLine) flushPendingQueue(true);
   document.getElementById('lastRefresh').textContent = 'Refreshing...';
   try{
+    // SUPABASE MIGRATION: food menu now comes from Supabase's food_menu
+    // table (the live source, kept in sync with what's actually sellable
+    // — see FULL_SIGN_OFF for why this matters). Staff list + backend
+    // version still come from Apps Script/Sheets.
     const [menuRes, barRes] = await Promise.all([
-      fetch(API_URL + '?action=getFoodMenuPublic&t=' + Date.now()),
-      fetch(API_URL + '?action=getBarData&t=' + Date.now()) // reused only for staff list + backend version
+      supabaseClient.from('food_menu').select('item_name, category, price_ghs'),
+      fetch(API_URL + '?action=getBarData&t=' + Date.now())
     ]);
-    const menuData = await menuRes.json();
+    if(menuRes.error) throw new Error(menuRes.error.message);
     const barData = await barRes.json();
-    if(!menuData.success) throw new Error(menuData.error || 'Could not load food menu');
     if(!barData.success) throw new Error(barData.error || 'Could not load staff list');
 
-    foodMenu = menuData.menu || [];
+    foodMenu = menuRes.data.map(r => ({ item: r.item_name, category: r.category||'', price: parseFloat(r.price_ghs)||0 }));
     staffList = (barData.staff || []).filter(s => s.initials && s.initials.trim());
 
     document.getElementById('lastRefresh').textContent = 'Updated: ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
@@ -884,13 +887,18 @@ async function submitQuickSellCart(){
   const lineResults = [];
   for(const itemName of itemNames){
     const qty = cart[itemName];
-    let url = API_URL + '?action=quickSell&item=' + encodeURIComponent(itemName) + '&qty=' + encodeURIComponent(qty) + '&staffInitials=' + encodeURIComponent(staffInitials) + '&payment=' + encodeURIComponent(payment);
-    if(custQuery) url += '&custQuery=' + encodeURIComponent(custQuery);
-    if(newCustomerName) url += '&newCustomerName=' + encodeURIComponent(newCustomerName);
-    url += '&t=' + Date.now();
     const clientId = genClientId();
-    const label = `Sale: ${qty} x ${itemName} (${staffInitials})`;
-    const result = await fetchOrQueue(url, 'quickSell', label, clientId);
+    let result;
+    try{
+      const { data, error } = await supabaseClient.rpc('quick_sell_item', {
+        p_item: itemName, p_qty: qty, p_staff: staffInitials, p_payment: payment,
+        p_cust_query: custQuery || null, p_new_customer_name: newCustomerName || null, p_client_id: clientId
+      });
+      if(error) throw new Error(error.message);
+      result = { ok: true, data: { lineTotal: data.lineTotal, custId: data.custId, pointsNow: data.pointsNow, lowStockNames: data.lowStockNames || [] } };
+    }catch(e){
+      result = { ok: false, queued: false, error: e.message };
+    }
     lineResults.push({ itemName, qty, result });
   }
 
