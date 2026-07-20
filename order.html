@@ -570,6 +570,7 @@ async function submitOrder(){
 
   succeeded.concat(queued).forEach(o => o.names.forEach(n => delete cart[n]));
   updateCartBar();
+  renderMenu();
   queued.forEach(o => savePendingOrder(o.payload));
   
   btn.disabled = false;
