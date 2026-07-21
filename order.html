@@ -149,6 +149,10 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
   <div class="loc-pill" id="locPill">Table Order</div>
 </div>
 
+<div id="memberBarWrap" style="display:none;padding:14px 14px 0;max-width:640px;margin:0 auto">
+  <div class="momo-box" id="memberBarContent" style="margin-top:0"></div>
+</div>
+
 <div class="main">
   <div id="locationBox" class="loc-box">
     <div class="field-label">Where is this order for?</div>
@@ -164,7 +168,10 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
     <div style="font-size:11px;color:var(--muted);margin-bottom:8px">TODAY'S MENU — some items may only be available on certain days</div>
     <div class="group-tab-row" id="groupTabs"></div>
     <div class="tab-row" id="menuTabs"></div>
-    <input class="search-input" id="menuSearch" placeholder="Search drinks + food menu..." oninput="renderMenu()">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+      <input class="search-input" id="menuSearch" placeholder="Search drinks + food menu..." oninput="renderMenu()" style="margin-bottom:0;flex:1">
+      <button type="button" class="btn secondary" style="width:auto;padding:12px 16px;margin:0" onclick="document.getElementById('menuSearch').value='';renderMenu();">&#10005;</button>
+    </div>
     <div class="menu-grid" id="menuGrid"><div class="loading">Loading menu…</div></div>
   </div>
 </div>
@@ -258,6 +265,7 @@ function init(){
   const loc = params.get('location');
   const detail = params.get('detail');
   const legacyTable = params.get('table'); // backward compatibility with existing printed QR codes
+  loadMemberAccount();
   loadFoodMenu(function(){
     if(loc && locationTypes.indexOf(loc) !== -1){
       selectLocation(loc, true);
@@ -413,8 +421,13 @@ function renderTabs(){
 function renderMenu(){
   const q = (document.getElementById('menuSearch').value||'').toLowerCase();
   let items = groupFilteredMenu();
-  if(activeCategory !== 'All') items = items.filter(m => (m.category||'Other') === activeCategory);
-  if(q) items = items.filter(m => m.item.toLowerCase().includes(q));
+  if(q){
+    // v3.2: a search term searches everything in the current BAR/
+    // CANTEEN/COCKTAILS group tab, ignoring the category tab underneath it.
+    items = items.filter(m => m.item.toLowerCase().includes(q));
+  } else if(activeCategory !== 'All'){
+    items = items.filter(m => (m.category||'Other') === activeCategory);
+  }
   const grid = document.getElementById('menuGrid');
   if(items.length === 0){ grid.innerHTML = '<div class="empty" style="grid-column:1/-1">No items match</div>'; return; }
   grid.innerHTML = '';
@@ -538,6 +551,14 @@ async function submitOrder(){
   if(!selectedPayment){ document.getElementById('submitError').textContent = 'Choose Cash or MoMo first.'; return; }
   const names = Object.keys(cart).filter(k => cart[k] > 0);
   if(names.length === 0){ document.getElementById('submitError').textContent = 'Your cart is empty.'; return; }
+
+  // v3.2: find-or-create the customer record now, at submit time,
+  // instead of waiting for staff to mark the order Paid — so the
+  // confirmation and any future visit already has their ID/points.
+  try{
+    const { data: memberData, error: memberErr } = await supabaseClient.rpc('find_or_create_bar_customer', { p_phone: phone, p_name: custName });
+    if(!memberErr && memberData) saveMember(memberData.custId, custName, phone);
+  }catch(e){ console.log('find_or_create_bar_customer failed (non-fatal):', e); }
 
   // v5.3: this page shows drinks AND food together, but they have to
   // land on two different staff queues (bar vs canteen) \u2014 a mixed
@@ -682,6 +703,64 @@ async function resumePendingOrder(){
 }
 let resumeAttempts = 0;
 window.addEventListener('online', function(){ resumeAttempts = 0; resumePendingOrder(); });
+
+// v3.2: membership persistence — once a customer gives name+phone, keep
+// their ID on this device so returning (even re-scanning the same QR)
+// shows their points/history immediately instead of starting over.
+const MEMBER_KEY = 'whgh_member_v2';
+function getSavedMember(){ try{ return JSON.parse(localStorage.getItem(MEMBER_KEY)||'null'); }catch(e){ return null; } }
+function saveMember(custId, name, phone){
+  try{ localStorage.setItem(MEMBER_KEY, JSON.stringify({custId, name, phone})); }catch(e){}
+}
+
+async function loadMemberAccount(){
+  const member = getSavedMember();
+  if(!member) return;
+  const nameInput = document.getElementById('custName');
+  const phoneInput = document.getElementById('custPhone');
+  if(nameInput && !nameInput.value) nameInput.value = member.name;
+  if(phoneInput && !phoneInput.value) phoneInput.value = member.phone;
+
+  try{
+    const { data: cust } = await supabaseClient.from('bar_customers').select('*').eq('customer_id', member.custId).maybeSingle();
+    const [{ data: tableOrders }, { data: canteenOrders }] = await Promise.all([
+      supabaseClient.from('table_orders').select('items_json, created_at, total_ghs').eq('customer_phone', member.phone).order('created_at', { ascending:false }).limit(20),
+      supabaseClient.from('canteen_orders').select('items_json, created_at, total_ghs').eq('customer_phone', member.phone).order('created_at', { ascending:false }).limit(20)
+    ]);
+    const allOrders = [...(tableOrders||[]), ...(canteenOrders||[])].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+
+    const freq = {};
+    allOrders.forEach(o => (o.items_json||[]).forEach(i => { freq[i.item] = (freq[i.item]||0) + (i.qty||1); }));
+    const favorites = Object.keys(freq).sort((a,b)=>freq[b]-freq[a]).slice(0,3);
+
+    const wrap = document.getElementById('memberBarWrap');
+    const content = document.getElementById('memberBarContent');
+    let html = `<b>Welcome back, ${member.name}</b> — ${member.custId}`;
+    if(cust) html += ` · ${cust.loyalty_points||0} points · ${cust.total_visits||0} visits`;
+    if(favorites.length){
+      html += `<div style="margin-top:10px;font-size:12px;color:var(--text-dim)">Your usual — tap to add:</div>`;
+      html += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">` +
+        favorites.map(f => `<button type="button" class="btn" style="width:auto;padding:8px 14px;margin:0" onclick="reorderFavorite('${f.replace(/'/g,"\\'")}')">+ ${f}</button>`).join('') + `</div>`;
+    }
+    if(allOrders.length){
+      html += `<div style="margin-top:12px;font-size:12px;color:var(--text-dim)">Recent orders:</div>` +
+        allOrders.slice(0,5).map(o => {
+          const d = new Date(o.created_at);
+          const itemsStr = (o.items_json||[]).map(i=>`${i.qty}x ${i.item}`).join(', ');
+          return `<div style="font-size:11px;color:var(--text-dim);margin-top:4px">${d.toLocaleDateString('en-GB')} — ${itemsStr} — GHS ${(o.total_ghs||0).toFixed(2)}</div>`;
+        }).join('');
+    }
+    content.innerHTML = html;
+    wrap.style.display = 'block';
+  }catch(e){ console.log('loadMemberAccount error:', e); }
+}
+
+function reorderFavorite(itemName){
+  cart[itemName] = (cart[itemName]||0) + 1;
+  updateMenuCardQty(itemName);
+  updateCartBar();
+  window.scrollTo({top:0, behavior:'smooth'});
+}
 
 function showQueuedScreen(){
   const el = document.getElementById('confirmContent');
