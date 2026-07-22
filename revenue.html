@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+  THE WHITE HOUSE EVENTS & MORE — REVENUE & REPORTS (v1.0)
+
+  New file. Opens separately from bar-dashboard.html (a link/button on
+  that page opens this in a new tab — the dashboard itself no longer
+  shows GHS figures at all, only a locked card).
+
+  WHAT'S BEHIND THE PASSWORD:
+  - Daily / weekly / monthly / quarterly / half-yearly / yearly
+    revenue trend
+  - Staff performance (who's selling the most)
+  - Top sellers and lowest sellers (by quantity)
+  - Cash vs MoMo split
+  - Shift summaries — every summary generated on the bar dashboard is
+    now saved here automatically, and the full history is browsable
+    on this page too
+
+  HOW THE PASSWORD ACTUALLY WORKS — READ THIS:
+  This is a password PROMPT, not a login system. The password is
+  checked against Supabase every time (via check_revenue_password),
+  and the underlying `transactions` table (where the GHS figures live)
+  no longer has a public read policy — only the password-checking
+  functions can read it. That means someone can no longer just open
+  dev tools and query transactions directly the way they could with
+  everything else in this system.
+  BUT: bar_orders (item names + quantities, used for top/lowest
+  seller) still has to stay publicly readable because the main bar
+  dashboard needs it for Today's Orders — so item/quantity data was
+  never fully hidden, only the GHS totals are newly protected.
+  This is the same category of trade-off already flagged for payroll
+  in the master sign-off: a real login system (Supabase Auth) is the
+  only way to make this fully solid. Treat this password as "keeps
+  casual staff/customers out", not "bank-grade access control".
+
+  SETUP: nothing to fill in — same Supabase project as the rest of
+  the system. Starting password is whgh2026 — change it immediately
+  using the "Change Password" link once you're in, from the Settings
+  section at the bottom.
+-->
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The White House Events & More — Revenue & Reports</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--black:#0a0a0a;--surface:#111111;--card:#181818;--border:#2a2a2a;--gold:#f5a623;--gold-dim:#c9861a;--teal:#3fb6a8;--red:#ef4444;--green:#22c55e;--text:#f2f2f2;--text-dim:#b5b5b5;--muted:#888;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min-height:100vh;}
+.header{background:var(--surface);border-bottom:1px solid var(--border);padding:16px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;flex-wrap:wrap;gap:10px;}
+.logo{font-size:18px;font-weight:800;letter-spacing:1px;color:var(--gold);}
+.logo span{color:var(--text-dim);font-weight:400;font-size:11px;display:block;letter-spacing:2px;margin-top:2px;}
+.main{padding:20px 24px;max-width:1200px;margin:0 auto;}
+.lock-screen{max-width:400px;margin:80px auto;text-align:center;}
+.lock-screen .lock-icon{font-size:44px;margin-bottom:14px;}
+.lock-screen h2{color:var(--gold);font-size:18px;margin-bottom:6px;}
+.lock-screen p{color:var(--text-dim);font-size:12px;margin-bottom:20px;line-height:1.6;}
+.search-input,.select-input{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:12px 14px;color:var(--text);font-size:16px;font-family:'Syne',sans-serif;width:100%;margin-bottom:10px;outline:none;}
+.search-input:focus,.select-input:focus{border-color:var(--gold);}
+.btn{background:var(--gold);color:var(--black);border:none;padding:12px 18px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:800;letter-spacing:1px;font-family:'Syne',sans-serif;width:100%;}
+.btn:hover{background:var(--gold-dim);}
+.btn.secondary{background:var(--border);color:var(--text);}
+.error-msg{color:var(--red);font-size:12px;margin-top:8px;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:18px;margin-bottom:16px;}
+.card-title{font-size:11px;font-weight:700;letter-spacing:2px;color:var(--muted);margin-bottom:14px;text-transform:uppercase;display:flex;justify-content:space-between;align-items:center;}
+.tab-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;}
+.tab-pill{background:var(--surface);border:1px solid var(--border);color:var(--text-dim);padding:8px 16px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;font-family:'Syne',sans-serif;}
+.tab-pill.active{background:var(--gold);color:var(--black);border-color:var(--gold);}
+.metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px;}
+.metric-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px;}
+.metric-label{font-size:10px;font-weight:700;letter-spacing:2px;color:var(--muted);margin-bottom:8px;}
+.metric-value{font-size:26px;font-weight:800;font-family:'Space Mono',monospace;color:var(--gold);}
+.two-col{display:grid;grid-template-columns:1.2fr 1fr;gap:16px;}
+@media(max-width:900px){.two-col{grid-template-columns:1fr;}}
+table{width:100%;border-collapse:collapse;font-size:12px;}
+th{text-align:left;padding:8px 10px;color:var(--muted);font-weight:700;letter-spacing:1px;border-bottom:1px solid var(--border);font-size:10px;}
+td{padding:7px 10px;border-bottom:1px solid #1a1a1a;}
+.bar-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #1a1a1a;}
+.bar-row:last-child{border-bottom:none;}
+.bar-label{width:120px;font-size:12px;flex-shrink:0;}
+.bar-track{flex:1;background:var(--surface);border-radius:4px;height:18px;position:relative;overflow:hidden;}
+.bar-fill{background:var(--gold);height:100%;border-radius:4px;}
+.bar-value{width:80px;text-align:right;font-family:'Space Mono',monospace;font-size:12px;color:var(--gold);flex-shrink:0;}
+.rank-row{display:flex;align-items:center;gap:12px;padding:9px 4px;border-bottom:1px solid #1a1a1a;}
+.rank-row:last-child{border-bottom:none;}
+.rank-num{font-family:'Space Mono',monospace;font-weight:800;font-size:13px;color:var(--muted);width:20px;flex-shrink:0;}
+.rank-info{flex:1;min-width:0;}
+.rank-name{font-size:12px;font-weight:700;}
+.rank-sub{font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;margin-top:2px;}
+.rank-value{font-family:'Space Mono',monospace;font-weight:700;font-size:12px;color:var(--teal);flex-shrink:0;}
+.empty{text-align:center;padding:24px;color:var(--muted);font-size:12px;}
+.loading{text-align:center;padding:24px;color:var(--muted);font-size:12px;font-family:'Space Mono',monospace;}
+.chart-wrap{overflow-x:auto;}
+.trend-bars{display:flex;align-items:flex-end;gap:6px;height:160px;min-width:100%;padding-top:10px;}
+.trend-col{flex:1;min-width:26px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;}
+.trend-col .tcol-bar{width:100%;background:var(--gold);border-radius:3px 3px 0 0;min-height:2px;}
+.trend-col .tcol-label{font-size:9px;color:var(--muted);margin-top:6px;font-family:'Space Mono',monospace;white-space:nowrap;}
+.trend-col .tcol-value{font-size:9px;color:var(--text-dim);font-family:'Space Mono',monospace;margin-bottom:3px;}
+.summary-item{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:12px 14px;margin-bottom:8px;font-size:12px;}
+.summary-item pre{white-space:pre-wrap;font-family:'Space Mono',monospace;font-size:11px;color:var(--text-dim);margin-top:8px;line-height:1.6;}
+.summary-item .si-head{display:flex;justify-content:space-between;color:var(--text-dim);font-size:11px;}
+.settings-row{display:flex;gap:8px;}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">THE WHITE HOUSE EVENTS & MORE <span>REVENUE &amp; REPORTS</span></div>
+</div>
+
+<div class="main">
+  <div id="lockScreen" class="lock-screen">
+    <div class="lock-icon">&#128274;</div>
+    <h2>Enter Revenue Password</h2>
+    <p>This page shows real GHS figures — daily/weekly/monthly sales, staff performance, and shift summaries. Not shared publicly.</p>
+    <input class="search-input" id="passwordInput" type="password" placeholder="Password" onkeydown="if(event.key==='Enter')tryUnlock()">
+    <button class="btn" onclick="tryUnlock()">UNLOCK</button>
+    <div class="error-msg" id="lockError"></div>
+  </div>
+
+  <div id="reportArea" style="display:none">
+    <div class="tab-row" id="periodTabs"></div>
+
+    <div class="metrics-grid" id="summaryMetrics"><div class="loading">Loading...</div></div>
+
+    <div class="card">
+      <div class="card-title">REVENUE TREND</div>
+      <div class="tab-row" id="trendTabs"></div>
+      <div class="chart-wrap"><div class="trend-bars" id="trendChart"><div class="loading">Loading...</div></div></div>
+    </div>
+
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title">STAFF PERFORMANCE <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(this period, by revenue)</span></div>
+        <div id="staffBody"><div class="empty">Loading...</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">CASH VS MOMO</div>
+        <div id="paymentBody"><div class="empty">Loading...</div></div>
+      </div>
+    </div>
+
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title">&#128293; TOP SELLERS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(this period, by qty)</span></div>
+        <div id="topSellersBody"><div class="empty">Loading...</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">&#128173; LOWEST SELLERS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(this period, by qty — needs at least 1 sale)</span></div>
+        <div id="lowestSellersBody"><div class="empty">Loading...</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">&#128274; SHIFT SUMMARIES <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(every summary generated on the bar dashboard is saved here automatically)</span></div>
+      <div id="shiftSummariesBody"><div class="empty">Loading...</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">SETTINGS</div>
+      <div style="font-size:11px;color:var(--text-dim);margin-bottom:10px">Change the revenue password. Whoever knows the current one can set a new one — there's no separate account per staff member yet.</div>
+      <div class="settings-row">
+        <input class="search-input" id="newPasswordInput" type="password" placeholder="New password" style="margin:0">
+        <button class="btn secondary" style="width:auto;padding:12px 20px" onclick="changePassword()">CHANGE</button>
+      </div>
+      <div class="error-msg" id="settingsMsg"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNydnV6a3lmcnFiZm1hbWVneGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MzI5NjQsImV4cCI6MjEwMDAwODk2NH0.gMsv3yvw6plDCherA2YdU4UgWRMXUc9H1Hr_IdR9GxA';
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Not a session token — just kept in memory for this tab so every RPC
+// call can re-send it. Closing the tab clears it; there's no "stay
+// logged in", by design (this isn't a real login system).
+let revenuePassword = null;
+
+let activePeriod = '7d';
+let activeTrendBucket = 'day';
+
+const PERIODS = [
+  {key:'today', label:'Today'},
+  {key:'7d', label:'This Week'},
+  {key:'30d', label:'This Month'},
+  {key:'90d', label:'Quarter'},
+  {key:'180d', label:'6 Months'},
+  {key:'365d', label:'1 Year'},
+  {key:'730d', label:'2 Years'},
+  {key:'1095d', label:'3 Years'}
+];
+const TREND_BUCKETS = [
+  {key:'day', label:'Daily', periods:30},
+  {key:'week', label:'Weekly', periods:12},
+  {key:'month', label:'Monthly', periods:12},
+  {key:'quarter', label:'Quarterly', periods:8},
+  {key:'half_year', label:'Half-Yearly', periods:6},
+  {key:'year', label:'Yearly', periods:3}
+];
+
+function periodRange(key){
+  const end = new Date(Date.now() + 24*3600*1000);
+  let start;
+  if(key === 'today'){
+    start = new Date(); start.setHours(0,0,0,0);
+  }else{
+    const days = parseInt(key);
+    start = new Date(Date.now() - days*24*3600*1000);
+  }
+  return { start: start.toISOString(), end: end.toISOString() };
+}
+
+async function tryUnlock(){
+  const pw = document.getElementById('passwordInput').value;
+  const errEl = document.getElementById('lockError');
+  if(!pw){ errEl.textContent = 'Enter the password.'; return; }
+  errEl.textContent = 'Checking...';
+  try{
+    const { data, error } = await supabaseClient.rpc('check_revenue_password', { p_password: pw });
+    if(error) throw new Error(error.message);
+    if(!data){ errEl.textContent = 'Incorrect password.'; return; }
+    revenuePassword = pw;
+    document.getElementById('lockScreen').style.display = 'none';
+    document.getElementById('reportArea').style.display = 'block';
+    renderPeriodTabs();
+    renderTrendTabs();
+    loadAll();
+  }catch(e){
+    errEl.textContent = 'Could not check password: ' + e.message;
+  }
+}
+
+async function changePassword(){
+  const newPw = document.getElementById('newPasswordInput').value;
+  const msgEl = document.getElementById('settingsMsg');
+  if(!newPw){ msgEl.textContent = 'Enter a new password first.'; msgEl.style.color = 'var(--red)'; return; }
+  msgEl.textContent = 'Saving...'; msgEl.style.color = 'var(--text-dim)';
+  try{
+    const { data, error } = await supabaseClient.rpc('set_revenue_password', { p_current_password: revenuePassword, p_new_password: newPw });
+    if(error) throw new Error(error.message);
+    revenuePassword = newPw;
+    document.getElementById('newPasswordInput').value = '';
+    msgEl.textContent = 'Password changed. Use the new one next time.'; msgEl.style.color = 'var(--green)';
+  }catch(e){
+    msgEl.textContent = e.message; msgEl.style.color = 'var(--red)';
+  }
+}
+
+function renderPeriodTabs(){
+  const row = document.getElementById('periodTabs');
+  row.innerHTML = '';
+  PERIODS.forEach(p => {
+    const btn = document.createElement('button');
+    btn.className = 'tab-pill' + (activePeriod===p.key?' active':'');
+    btn.textContent = p.label;
+    btn.onclick = () => { activePeriod = p.key; renderPeriodTabs(); loadAll(); };
+    row.appendChild(btn);
+  });
+}
+
+function renderTrendTabs(){
+  const row = document.getElementById('trendTabs');
+  row.innerHTML = '';
+  TREND_BUCKETS.forEach(b => {
+    const btn = document.createElement('button');
+    btn.className = 'tab-pill' + (activeTrendBucket===b.key?' active':'');
+    btn.textContent = b.label;
+    btn.onclick = () => { activeTrendBucket = b.key; renderTrendTabs(); loadTrend(); };
+    row.appendChild(btn);
+  });
+}
+
+async function loadAll(){
+  await Promise.all([loadSummary(), loadTrend(), loadStaff(), loadItems(), loadShiftSummaries()]);
+}
+
+async function loadSummary(){
+  const { start, end } = periodRange(activePeriod);
+  try{
+    const { data, error } = await supabaseClient.rpc('get_revenue_summary', { p_password: revenuePassword, p_start: start, p_end: end });
+    if(error) throw new Error(error.message);
+    const byPayment = data.byPayment || {};
+    document.getElementById('summaryMetrics').innerHTML = `
+      <div class="metric-card"><div class="metric-label">TOTAL REVENUE</div><div class="metric-value">&#8373;${(data.totalRevenue||0).toFixed(2)}</div></div>
+      <div class="metric-card"><div class="metric-label">TRANSACTIONS</div><div class="metric-value">${data.txnCount||0}</div></div>
+      <div class="metric-card"><div class="metric-label">CASH</div><div class="metric-value">&#8373;${(byPayment.Cash||0).toFixed(2)}</div></div>
+      <div class="metric-card"><div class="metric-label">MOMO</div><div class="metric-value">&#8373;${(byPayment.MoMo||0).toFixed(2)}</div></div>`;
+
+    const paymentEl = document.getElementById('paymentBody');
+    const entries = Object.keys(byPayment).map(k=>({method:k, revenue:byPayment[k]})).sort((a,b)=>b.revenue-a.revenue);
+    const maxRev = Math.max(1, ...entries.map(e=>e.revenue));
+    paymentEl.innerHTML = entries.length ? entries.map(e => `
+      <div class="bar-row">
+        <div class="bar-label">${e.method}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${(e.revenue/maxRev*100).toFixed(1)}%"></div></div>
+        <div class="bar-value">&#8373;${e.revenue.toFixed(2)}</div>
+      </div>`).join('') : '<div class="empty">No sales in this period.</div>';
+  }catch(e){
+    document.getElementById('summaryMetrics').innerHTML = `<div class="empty">Could not load: ${e.message}</div>`;
+  }
+}
+
+async function loadTrend(){
+  const bucketDef = TREND_BUCKETS.find(b=>b.key===activeTrendBucket);
+  try{
+    const { data, error } = await supabaseClient.rpc('get_revenue_trend', { p_password: revenuePassword, p_bucket: activeTrendBucket, p_periods: bucketDef.periods });
+    if(error) throw new Error(error.message);
+    const maxRev = Math.max(1, ...data.map(d=>parseFloat(d.revenue)));
+    document.getElementById('trendChart').innerHTML = data.map(d => `
+      <div class="trend-col">
+        <div class="tcol-value">${parseFloat(d.revenue)>0 ? '\u20b5'+parseFloat(d.revenue).toFixed(0) : ''}</div>
+        <div class="tcol-bar" style="height:${Math.max(2, parseFloat(d.revenue)/maxRev*130)}px"></div>
+        <div class="tcol-label">${d.bucket_label}</div>
+      </div>`).join('');
+  }catch(e){
+    document.getElementById('trendChart').innerHTML = `<div class="empty">Could not load: ${e.message}</div>`;
+  }
+}
+
+async function loadStaff(){
+  const { start, end } = periodRange(activePeriod);
+  try{
+    const { data, error } = await supabaseClient.rpc('get_staff_performance', { p_password: revenuePassword, p_start: start, p_end: end });
+    if(error) throw new Error(error.message);
+    const el = document.getElementById('staffBody');
+    if(!data.length){ el.innerHTML = '<div class="empty">No sales in this period.</div>'; return; }
+    el.innerHTML = data.map((s,i) => `
+      <div class="rank-row">
+        <div class="rank-num">${i+1}</div>
+        <div class="rank-info"><div class="rank-name">${s.staff}</div><div class="rank-sub">${s.orders_count} orders &middot; ${s.items_sold} items</div></div>
+        <div class="rank-value">&#8373;${parseFloat(s.revenue).toFixed(2)}</div>
+      </div>`).join('');
+  }catch(e){
+    document.getElementById('staffBody').innerHTML = `<div class="empty">Could not load: ${e.message}</div>`;
+  }
+}
+
+async function loadItems(){
+  const { start, end } = periodRange(activePeriod);
+  try{
+    const { data, error } = await supabaseClient.rpc('get_item_performance', { p_password: revenuePassword, p_start: start, p_end: end });
+    if(error) throw new Error(error.message);
+    const top = data.slice(0,8);
+    const lowest = data.slice().reverse().slice(0,8);
+    const topEl = document.getElementById('topSellersBody');
+    const lowEl = document.getElementById('lowestSellersBody');
+    topEl.innerHTML = top.length ? top.map((it,i)=>`
+      <div class="rank-row"><div class="rank-num">${i+1}</div>
+      <div class="rank-info"><div class="rank-name">${it.item}</div><div class="rank-sub">&#8373;${parseFloat(it.revenue).toFixed(2)} revenue</div></div>
+      <div class="rank-value">${it.qty} sold</div></div>`).join('') : '<div class="empty">No sales in this period.</div>';
+    lowEl.innerHTML = lowest.length ? lowest.map((it,i)=>`
+      <div class="rank-row"><div class="rank-num">${i+1}</div>
+      <div class="rank-info"><div class="rank-name">${it.item}</div><div class="rank-sub">&#8373;${parseFloat(it.revenue).toFixed(2)} revenue</div></div>
+      <div class="rank-value">${it.qty} sold</div></div>`).join('') : '<div class="empty">No sales in this period.</div>';
+  }catch(e){
+    document.getElementById('topSellersBody').innerHTML = `<div class="empty">Could not load: ${e.message}</div>`;
+  }
+}
+
+async function loadShiftSummaries(){
+  try{
+    const { data, error } = await supabaseClient.rpc('get_shift_summaries', { p_password: revenuePassword, p_limit: 60 });
+    if(error) throw new Error(error.message);
+    const el = document.getElementById('shiftSummariesBody');
+    if(!data.length){ el.innerHTML = '<div class="empty">No shift summaries saved yet — generate one on the Bar Dashboard and it will show up here.</div>'; return; }
+    el.innerHTML = data.map(s => `
+      <div class="summary-item">
+        <div class="si-head"><span><b style="color:var(--gold)">${s.business_date}</b> &mdash; ${s.generated_by||'unknown'}</span><span>&#8373;${parseFloat(s.total_revenue||0).toFixed(2)}</span></div>
+        <pre>${(s.summary_text||'').replace(/</g,'&lt;')}</pre>
+      </div>`).join('');
+  }catch(e){
+    document.getElementById('shiftSummariesBody').innerHTML = `<div class="empty">Could not load: ${e.message}</div>`;
+  }
+}
+</script>
+</body>
+</html>
