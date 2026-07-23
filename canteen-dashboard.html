@@ -1,42 +1,24 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE EVENTS & MORE — CANTEEN DASHBOARD (v1.2, paired with Code.gs v5.7)
+  THE WHITE HOUSE EVENTS & MORE — CANTEEN DASHBOARD (v2.0, Supabase-only)
 
-  v1.2 CHANGES:
-  - REBRAND: "The White House GH" -> "The White House Events & More".
-  - PER-ORDER STAFF: the single header "acting as" dropdown is gone —
-    each incoming order card now has its own staff select, same fix
-    as bar-dashboard.html v5.6.
-  - ORDER LOCK-ON-CLICK: tapping an action on an order card instantly
-    disables/dims that card until the server responds.
-  - QUICK SELL PAYMENT: now required (was optional), and trimmed down
-    to Cash/MoMo only (was Cash/Mobile Money/Card/Room Charge).
-  - iOS ZOOM FIX: input/select font-size raised from 13px to 16px
-    (order-momo-input from 12px to 16px) — see bar-dashboard.html for
-    the full explanation of why this was causing the pinch-zoom bug.
-  - EXPECTED_BACKEND_VERSION bumped to '5.7' to match Code.gs.
-
-  v1.1: Quick Sell menu taps sometimes needed 2-4 attempts to
-  register — fixed by no longer rebuilding the entire grid on every
-  single tap (same fix applied to bar-dashboard.html and both
-  customer order pages).
-
-  Staff-facing dashboard for food orders placed via canteen-order.html.
-  Deliberately a SEPARATE page/queue from bar-dashboard.html — reads
-  the 🥡 Canteen Orders sheet instead of 📋 Table Orders, so canteen
-  staff aren't shown drink orders and bar staff aren't interrupted by
-  food orders. Same lifecycle as the bar: Placed -> Preparing ->
-  Delivered - Awaiting Payment -> Paid (or Cancelled), same offline
-  queue pattern, same idempotent status updates.
-
-  Revenue and stock ARE still recorded in the shared Bar Orders ledger
-  once an order is marked Paid (via the same processSale_ used
-  everywhere else) — so your accounting stays in one place even
-  though the live order queues are separate.
-
-  SETUP: fill in API_URL below with the SAME /exec URL as your other
-  dashboards (same Apps Script deployment).
+  v2.0 CHANGES:
+  - REMOVED Apps Script entirely. Staff now reads from Supabase's
+    staff table (same as bar-dashboard.html v6.0) instead of
+    getBarData via Apps Script. No more EXPECTED_BACKEND_VERSION /
+    version banner — there's no Code.gs left in this page's data path.
+  - COMBO ORDER BADGE: when a customer ordered both food and drinks in
+    one go (order.html splits this into a bar order + a canteen order
+    behind the scenes), each order's notes field now names the other's
+    order ID. This dashboard looks up that paired bar order's live
+    status and shows "🍹 Drinks also ordered — bar: Preparing" on the
+    canteen order card, so kitchen staff know a table has a second
+    order in flight at the bar instead of the two queues looking
+    unrelated.
+  - FULL WIDTH LAYOUT: responsive breakpoints so the dashboard uses
+    the screen properly on tablets/desktops instead of a narrow
+    centered column.
 -->
 <head>
 <meta charset="UTF-8">
@@ -54,9 +36,6 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 .logo span{color:var(--text-dim);font-weight:400;font-size:11px;display:block;letter-spacing:2px;margin-top:2px;}
 .header-right{display:flex;align-items:center;gap:14px;}
 .last-refresh{font-size:11px;color:var(--muted);font-family:'Space Mono',monospace;}
-.version-pill{font-size:10px;font-family:'Space Mono',monospace;padding:2px 8px;border-radius:10px;margin-left:6px;border:1px solid var(--border);}
-.version-pill.ok{color:var(--green);border-color:var(--green);}
-.version-pill.bad{color:var(--red);border-color:var(--red);}
 .conn-status{font-size:11px;font-family:'Space Mono',monospace;padding:4px 10px;border-radius:20px;background:var(--surface);border:1px solid var(--border);}
 .conn-status.online{color:var(--green);border-color:var(--green);}
 .conn-status.offline{color:var(--red);border-color:var(--red);}
@@ -70,13 +49,13 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 .refresh-btn{background:var(--border);border:none;color:var(--text);padding:8px 16px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:700;letter-spacing:1px;font-family:'Syne',sans-serif;}
 .refresh-btn:hover{background:var(--gold);color:var(--black);}
 .main{padding:20px 24px;max-width:1300px;margin:0 auto;}
+@media(min-width:1400px){.main{max-width:1680px;padding:24px 40px;}}
+@media(min-width:1800px){.main{max-width:2000px;padding:28px 56px;}}
 .card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:18px;margin-bottom:16px;}
 .card-title{font-size:11px;font-weight:700;letter-spacing:2px;color:var(--muted);margin-bottom:14px;text-transform:uppercase;}
 table{width:100%;border-collapse:collapse;font-size:12px;}
 th{text-align:left;padding:8px 10px;color:var(--muted);font-weight:700;letter-spacing:1px;border-bottom:1px solid var(--border);font-size:10px;}
 td{padding:7px 10px;border-bottom:1px solid #1a1a1a;}
-/* v1.2: font-size raised from 13px to 16px — see bar-dashboard.html
-   for why this fixes the iOS pinch-zoom bug. */
 .search-input,.select-input{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 14px;color:var(--text);font-size:16px;font-family:'Syne',sans-serif;width:100%;margin-bottom:10px;outline:none;}
 .search-input:focus,.select-input:focus{border-color:var(--gold);}
 .select-input{appearance:auto;}
@@ -94,11 +73,6 @@ td{padding:7px 10px;border-bottom:1px solid #1a1a1a;}
 .error-banner{display:none;background:#2a1a0a;border:1px solid var(--gold-dim);border-radius:8px;padding:14px 18px;margin-bottom:20px;font-size:12px;line-height:1.6;color:#ffdca8;}
 .error-banner.active{display:block;}
 .error-banner b{color:var(--gold);}
-.version-banner{display:none;background:#2a0a0a;border:1px solid var(--red);border-radius:8px;padding:14px 18px;margin-bottom:20px;font-size:12px;line-height:1.7;color:#ffc9c9;}
-.version-banner.active{display:block;}
-.version-banner b{color:var(--red);}
-.version-banner ol{margin:8px 0 0 18px;padding:0;}
-.version-banner li{margin-bottom:4px;}
 .flash{color:var(--green);}
 .metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px;}
 .metric-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:18px;position:relative;overflow:hidden;}
@@ -137,12 +111,14 @@ td{padding:7px 10px;border-bottom:1px solid #1a1a1a;}
 .cart-subtotal-row .cart-subtotal-value{color:var(--gold);font-family:'Space Mono',monospace;font-size:18px;}
 
 /* Incoming Canteen Orders */
+.order-cards-grid{display:block;}
+@media(min-width:1400px){.order-cards-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start;}}
+@media(min-width:1900px){.order-cards-grid{grid-template-columns:1fr 1fr 1fr;}}
 .order-card{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--gold);border-radius:8px;padding:14px 16px;margin-bottom:10px;transition:opacity .15s;}
 .order-card.status-placed{border-left-color:var(--gold);}
 .order-card.status-placed.is-new{animation:orderFlash 1.4s ease-in-out 3;}
 .order-card.status-preparing{border-left-color:var(--teal);}
 .order-card.status-delivered{border-left-color:#c9861a;}
-/* v1.2: order lock-on-click, same pattern as bar-dashboard.html */
 .order-card.is-processing{opacity:0.5;}
 @keyframes orderFlash{0%,100%{background:var(--surface);}50%{background:#3a2a06;}}
 .order-card-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;}
@@ -157,8 +133,6 @@ td{padding:7px 10px;border-bottom:1px solid #1a1a1a;}
 .order-card-footer{display:flex;justify-content:space-between;align-items:center;gap:10px;}
 .order-total{font-family:'Space Mono',monospace;font-weight:800;color:var(--gold);}
 .order-pay-badge{font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;}
-/* v1.2: per-order staff select — replaces the single global "acting
-   as" dropdown that used to sit in the card header. */
 .order-staff-select{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:16px;font-family:'Syne',sans-serif;width:100%;margin-top:8px;margin-bottom:2px;}
 .order-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;}
 .order-actions button{flex:1;min-width:110px;padding:8px 10px;font-size:11px;border-radius:6px;border:none;font-weight:800;cursor:pointer;font-family:'Syne',sans-serif;}
@@ -184,13 +158,12 @@ td{padding:7px 10px;border-bottom:1px solid #1a1a1a;}
 </div>
 
 <div class="main">
-  <div class="version-banner" id="versionBanner"></div>
   <div class="error-banner" id="errorBanner"></div>
   <div class="pending-banner" id="pendingBanner"></div>
 
   <div class="card" id="canteenOrdersCard">
     <div class="card-title">&#127859; INCOMING CANTEEN ORDERS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(from canteen-order.html — pick staff on each order card below)</span></div>
-    <div id="canteenOrdersBody"><div class="empty">Loading canteen orders...</div></div>
+    <div class="order-cards-grid" id="canteenOrdersBody"><div class="empty">Loading canteen orders...</div></div>
   </div>
 
   <div class="metrics-grid" id="topMetrics"><div class="loading">Loading canteen data</div></div>
@@ -212,7 +185,7 @@ td{padding:7px 10px;border-bottom:1px solid #1a1a1a;}
   </div>
 
   <div class="card">
-    <div class="card-title">&#127859; FOOD MENU — TODAY <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(this list is already filtered to today's set menu; edit items/prices or the "Days Available" column directly in the 🍽️ Food Menu sheet, then Refresh)</span></div>
+    <div class="card-title">&#127859; FOOD MENU — TODAY <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(edit items/prices directly in Supabase's food_menu table, then Refresh)</span></div>
     <div class="tab-row" id="foodMenuTabs"></div>
     <div class="food-menu-list" id="foodMenuList"><div class="empty">Loading...</div></div>
   </div>
@@ -220,19 +193,11 @@ td{padding:7px 10px;border-bottom:1px solid #1a1a1a;}
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-// SUPABASE MIGRATION: Canteen Orders read/write now goes straight to
-// Postgres, same pattern as bar-dashboard.html's Table Orders. Quick
-// Sell and everything else here is still on the Apps Script API_URL.
+// v2.0: Apps Script is gone from this page entirely. Menu, orders,
+// and staff all come from Supabase.
 const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNydnV6a3lmcnFiZm1hbWVneGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MzI5NjQsImV4cCI6MjEwMDAwODk2NH0.gMsv3yvw6plDCherA2YdU4UgWRMXUc9H1Hr_IdR9GxA';
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-// Same deployment/exec URL as bar-dashboard.html and members-dashboard.html.
-const API_URL = 'https://script.google.com/macros/s/AKfycbyycYKCEtRchk0eToXIlMLgs3RmWIsKuUppD3UprPO8zLi9N5a9PIgn9uN4IKeip24E/exec';
-
-// v1.2: bumped to match BarSystem_Code.gs v5.7 (payment methods
-// trimmed to Cash/MoMo only). MUST match BACKEND_VERSION in Code.gs.
-const EXPECTED_BACKEND_VERSION = '5.7';
 
 let foodMenu = [];
 let staffList = [];
@@ -240,9 +205,6 @@ let quickSellCategory = 'All';
 let foodMenuCategory = 'All';
 let cart = {};
 
-// =====================
-// OFFLINE QUEUE (same pattern as bar-dashboard.html, separate key)
-// =====================
 const PENDING_KEY = 'whgh_canteen_pending_actions_v1';
 
 function genClientId(){
@@ -250,136 +212,39 @@ function genClientId(){
   return 'cid-' + Date.now() + '-' + Math.random().toString(36).slice(2);
 }
 
-// v5.2: exponential backoff with jitter — see bar-dashboard.html for
-// the full rationale. Short version: without this, many devices with
-// something queued all retry on the same fixed timer and can recreate
-// the exact burst that caused the original failure.
-function backoffDelayMs(attempts){
-  const base = 4000, cap = 60000;
-  const raw = Math.min(cap, base * Math.pow(2, attempts));
-  return raw * (0.5 + Math.random() * 0.5);
-}
-
-function getPendingQueue(){
-  try{ return JSON.parse(localStorage.getItem(PENDING_KEY) || '[]'); }catch(e){ return []; }
-}
-function savePendingQueue(queue){
-  try{ localStorage.setItem(PENDING_KEY, JSON.stringify(queue)); }catch(e){ /* storage unavailable */ }
-}
-function queueAction(kind, label, url, clientId){
-  const queue = getPendingQueue();
-  queue.push({ id: clientId, kind, label, url, queuedAt: new Date().toISOString(), attempts: 0, nextRetryAt: 0 });
-  savePendingQueue(queue);
-  renderPendingBanner();
-}
-async function fetchOrQueue(url, kind, label, clientId){
-  try{
-    const res = await fetch(url + '&clientId=' + encodeURIComponent(clientId));
-    if(!res.ok) throw new Error('Server responded with status ' + res.status);
-    const data = await res.json();
-    if(!data.success) return { ok: false, error: data.error || 'Request failed', queued: false };
-    return { ok: true, data };
-  }catch(e){
-    if(e instanceof TypeError || /network|fetch/i.test(e.message||'')){
-      queueAction(kind, label, url, clientId);
-      return { ok: false, queued: true, error: 'No connection — queued, will send automatically once back online.' };
-    }
-    return { ok: false, queued: false, error: e.message || 'Request failed' };
-  }
-}
-async function flushPendingQueue(silent){
-  let queue = getPendingQueue();
-  if(queue.length === 0) return;
-  const now = Date.now();
-  const stillPending = [];
-  let succeeded = 0;
-  for(const action of queue){
-    if(action.nextRetryAt && action.nextRetryAt > now){ stillPending.push(action); continue; }
-    try{
-      const res = await fetch(action.url + '&clientId=' + encodeURIComponent(action.id));
-      if(!res.ok) throw new Error('status ' + res.status);
-      const data = await res.json();
-      if(data.success) { succeeded++; continue; }
-      action.error = data.error || 'Failed';
-      action.attempts = (action.attempts || 0) + 1;
-      action.nextRetryAt = Date.now() + backoffDelayMs(action.attempts);
-      stillPending.push(action);
-    }catch(e){
-      action.attempts = (action.attempts || 0) + 1;
-      action.nextRetryAt = Date.now() + backoffDelayMs(action.attempts);
-      stillPending.push(action);
-    }
-  }
-  savePendingQueue(stillPending);
-  renderPendingBanner();
-  if(succeeded > 0 && !silent) loadAll();
-}
-function renderPendingBanner(){
-  const queue = getPendingQueue();
-  const el = document.getElementById('pendingBanner');
-  if(queue.length === 0){ el.classList.remove('active'); el.innerHTML = ''; return; }
-  el.classList.add('active');
-  el.innerHTML = `<b>&#9203; ${queue.length} action${queue.length>1?'s':''} waiting to sync</b> — saved on this device, will send automatically once you're back online.` +
-    queue.map(a => `<div class="pending-item"><span>${a.label}</span><span style="color:var(--muted);font-family:'Space Mono',monospace">${new Date(a.queuedAt).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}${a.error?' — '+a.error:''}</span></div>`).join('') +
-    `<div class="pending-actions"><button class="btn" style="background:var(--teal);color:#0a0a0a" onclick="flushPendingQueue(false)">RETRY NOW</button></div>`;
-}
 function updateConnStatus(){
   const el = document.getElementById('connStatus');
   if(navigator.onLine){ el.textContent = '● online'; el.className = 'conn-status online'; }
   else{ el.textContent = '● offline'; el.className = 'conn-status offline'; }
 }
-window.addEventListener('online', () => { updateConnStatus(); flushPendingQueue(false); });
+window.addEventListener('online', updateConnStatus);
 window.addEventListener('offline', updateConnStatus);
 
 function showApiError(msg){
   const el = document.getElementById('errorBanner');
-  el.innerHTML = "<b>&#9888; Dashboard can't reach the sheet:</b> " + msg +
-    ' <br><br>Most common cause: Code.gs was edited but the deployment was not updated. In Apps Script, go to <b>Deploy &gt; Manage deployments</b>, click the pencil on the existing deployment, set Version to <b>New version</b>, and Deploy again.';
+  el.innerHTML = "<b>&#9888; Dashboard can't reach Supabase:</b> " + msg + ' Check your internet connection and hit Refresh.';
   el.classList.add('active');
 }
 function clearApiError(){ document.getElementById('errorBanner').classList.remove('active'); }
-
-function renderVersionBanner(reportedVersion){
-  const el = document.getElementById('versionBanner');
-  if(reportedVersion === EXPECTED_BACKEND_VERSION){ el.classList.remove('active'); el.innerHTML = ''; return; }
-  el.classList.add('active');
-  el.innerHTML = `<b>&#9888; Backend is not up to date.</b> This dashboard expects backend <b>v${EXPECTED_BACKEND_VERSION}</b>, but the live deployment ` +
-    (reportedVersion ? `is reporting <b>v${reportedVersion}</b>` : `didn't report a version at all`) +
-    `. Fix it now:` +
-    `<ol>
-       <li>Open the sheet &gt; <b>Extensions &gt; Apps Script</b>. Confirm Code.gs contains <code>var BACKEND_VERSION = '${EXPECTED_BACKEND_VERSION}';</code> near the top.</li>
-       <li><b>Deploy &gt; Manage deployments</b> &gt; click the pencil (&#9998;) icon on the <u>existing</u> deployment.</li>
-       <li>Set Version to <b>New version</b>, then click <b>Deploy</b>.</li>
-       <li>Hard-refresh this page (Cmd/Ctrl+Shift+R).</li>
-     </ol>`;
-}
 
 // =====================
 // LOAD
 // =====================
 async function loadAll(){
   updateConnStatus();
-  renderPendingBanner();
-  if(navigator.onLine) flushPendingQueue(true);
   document.getElementById('lastRefresh').textContent = 'Refreshing...';
   try{
-    // SUPABASE MIGRATION: food menu now comes from Supabase's food_menu
-    // table (the live source, kept in sync with what's actually sellable
-    // — see FULL_SIGN_OFF for why this matters). Staff list + backend
-    // version still come from Apps Script/Sheets.
-    const [menuRes, barRes] = await Promise.all([
+    const [menuRes, staffRes] = await Promise.all([
       supabaseClient.from('food_menu').select('item_name, category, price_ghs'),
-      fetch(API_URL + '?action=getBarData&t=' + Date.now())
+      supabaseClient.from('staff').select('*').eq('active', true).order('slot')
     ]);
     if(menuRes.error) throw new Error(menuRes.error.message);
-    const barData = await barRes.json();
-    if(!barData.success) throw new Error(barData.error || 'Could not load staff list');
+    if(staffRes.error) throw new Error(staffRes.error.message);
 
     foodMenu = menuRes.data.map(r => ({ item: r.item_name, category: r.category||'', price: parseFloat(r.price_ghs)||0 }));
-    staffList = (barData.staff || []).filter(s => s.initials && s.initials.trim());
+    staffList = staffRes.data.map(s => ({ initials: s.initials || s.staff_code || '', name: s.full_name || '' })).filter(s => s.initials);
 
     document.getElementById('lastRefresh').textContent = 'Updated: ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
-    renderVersionBanner(barData.backendVersion || null);
     clearApiError();
 
     renderQuickSellTabs();
@@ -403,9 +268,6 @@ let seenActiveOrderIds = new Set();
 let canteenOrdersFirstLoad = true;
 let lastActiveSignature = null;
 
-// v1.2: per-order staff assignment and the set of orders currently
-// mid-request (order lock-on-click) — same pattern as
-// bar-dashboard.html v5.6.
 let orderStaffSelections = {};
 let processingOrderIds = new Set();
 
@@ -418,15 +280,11 @@ function playOrderBeep(){
     osc.frequency.value = 660;
     gain.gain.setValueAtTime(0.15, ctx.currentTime);
     osc.start(); osc.stop(ctx.currentTime + 0.18);
-  }catch(e){ /* silent fail — visual flash still works */ }
+  }catch(e){ }
 }
 
-// v5.4: a signature of everything that actually affects what's on
-// screen (NOT the timestamp — see updateOrderAges below), PLUS the
-// processing state (v1.2) so a lock-on-click always forces a
-// re-render even if nothing else about the order changed.
 function activeOrdersSignature(active){
-  return JSON.stringify((active||[]).map(o => [o.orderId, o.status, o.total, o.payment, o.locationType, o.locationDetail, o.customerName, JSON.stringify(o.items)]))
+  return JSON.stringify((active||[]).map(o => [o.orderId, o.status, o.total, o.payment, o.locationType, o.locationDetail, o.customerName, JSON.stringify(o.items), o.comboStatus||'']))
     + '|proc:' + Array.from(processingOrderIds).sort().join(',');
 }
 
@@ -435,8 +293,30 @@ function shapeSupabaseOrderRow(r){
     orderId: r.order_id, locationType: r.location_type, locationDetail: r.location_detail || '',
     items: r.items_json || [], total: parseFloat(r.total_ghs) || 0, payment: r.payment_method,
     status: r.status, momoRef: r.momo_reference || '', customerName: r.customer_name,
-    phone: r.customer_phone, handledBy: r.handled_by || '', timestamp: r.created_at
+    phone: r.customer_phone, handledBy: r.handled_by || '', timestamp: r.created_at, notes: r.notes || ''
   };
+}
+
+// COMBO ORDERS: see bar-dashboard.html for the full explanation. Here
+// we look up the paired BAR order's status (table_orders) so the
+// canteen card can show "🍹 Drinks also ordered — bar: Preparing".
+const COMBO_NOTE_RE = /Also ordered: (.+?) — (CAN\d+|TBL\d+)/;
+async function attachComboStatus(orders){
+  const refs = [];
+  orders.forEach(o => {
+    const m = (o.notes||'').match(COMBO_NOTE_RE);
+    if(m) refs.push({ order: o, label: m[1], refId: m[2] });
+  });
+  if(refs.length === 0) return orders;
+  const ids = [...new Set(refs.map(r => r.refId))];
+  try{
+    const { data, error } = await supabaseClient.from('table_orders').select('order_id, status').in('order_id', ids);
+    if(error) throw error;
+    const statusMap = {};
+    (data||[]).forEach(row => { statusMap[row.order_id] = row.status; });
+    refs.forEach(r => { r.order.comboLabel = r.label; r.order.comboRefId = r.refId; r.order.comboStatus = statusMap[r.refId] || 'unknown'; });
+  }catch(e){ console.log('combo status lookup failed:', e); }
+  return orders;
 }
 
 async function loadCanteenOrders(){
@@ -451,6 +331,7 @@ async function loadCanteenOrders(){
     const shaped = data.map(shapeSupabaseOrderRow);
     const active = shaped.filter(o => o.status !== 'Paid' && o.status !== 'Cancelled');
     const recentFinal = shaped.filter(o => o.status === 'Paid' || o.status === 'Cancelled').slice(0, 15);
+    await attachComboStatus(active);
     canteenOrdersData = { success: true, active: active, recentFinal: recentFinal };
 
     const currentIds = new Set(active.map(o=>o.orderId));
@@ -509,7 +390,7 @@ function renderCanteenOrders(){
 
   const signature = activeOrdersSignature(active);
   if(signature === lastActiveSignature){
-    updateOrderAges(); // nothing actually changed — just refresh the "X min ago" text in place
+    updateOrderAges();
     return;
   }
   lastActiveSignature = signature;
@@ -524,6 +405,7 @@ function renderCanteenOrders(){
     const isNew = o.status === 'Placed' && !canteenOrdersFirstLoad;
     const isProcessing = processingOrderIds.has(o.orderId);
     const selectedStaff = orderStaffSelections[o.orderId] || '';
+    const comboHtml = o.comboStatus ? `<div style="font-size:11px;color:var(--gold);background:#1a1500;border:1px solid var(--gold-dim);border-radius:6px;padding:6px 10px;margin:6px 0">&#127864; ${o.comboLabel} also ordered — bar: <b>${o.comboStatus}</b> (${o.comboRefId})</div>` : '';
 
     let actionsHtml = '';
     if(isProcessing){
@@ -551,6 +433,7 @@ function renderCanteenOrders(){
       </div>
       <div class="order-items-list">${itemsHtml}</div>
       <div class="order-items-list" style="margin-top:-4px;color:var(--text-dim)">${o.customerName || 'no name given'}</div>
+      ${comboHtml}
       <div class="order-card-footer">
         <span class="order-total">GHS ${o.total.toFixed(2)}</span>
         <span class="order-pay-badge">${o.payment}</span>
@@ -573,7 +456,6 @@ function updateOrderAges(){
 }
 
 async function canteenOrderAction(orderId, newStatus){
-  // v1.2: order lock-on-click.
   if(processingOrderIds.has(orderId)) return;
 
   const staffInitials = orderStaffSelections[orderId] || '';
@@ -588,9 +470,6 @@ async function canteenOrderAction(orderId, newStatus){
   lastActiveSignature = null;
   renderCanteenOrders();
 
-  // SUPABASE MIGRATION: calls the same mark_location_order_paid /
-  // set_location_order_status functions as bar-dashboard.html, just
-  // pointed at canteen_orders instead of table_orders.
   let result;
   try{
     let rpcResult;
@@ -683,7 +562,7 @@ function renderFoodMenu(){
   let items = foodMenu;
   if(foodMenuCategory !== 'All') items = items.filter(m => (m.category||'Other') === foodMenuCategory);
   const el = document.getElementById('foodMenuList');
-  if(items.length===0){ el.innerHTML = '<div class="empty">No food items yet — add rows to the 🍽️ Food Menu sheet, then Refresh.</div>'; return; }
+  if(items.length===0){ el.innerHTML = '<div class="empty">No food items yet — add rows to Supabase\'s food_menu table, then Refresh.</div>'; return; }
   el.innerHTML = items.map(m=>`
     <div class="rank-row">
       <div class="rank-info"><div class="rank-name">${m.item}</div><div class="rank-sub">${m.category||'—'}</div></div>
@@ -734,9 +613,6 @@ function renderQuickSellMenu(){
       <span class="qs-cat"></span>`;
     btn.querySelector('.qs-name').textContent = m.item;
     btn.querySelector('.qs-cat').textContent = m.category || '';
-    // v5.3: tap only updates this one button in place (see addToCart) —
-    // rebuilding the whole grid on every tap is the classic cause of a
-    // tap "not registering the first time" on a phone.
     btn.addEventListener('click', () => addToCart(m.item));
     grid.appendChild(btn);
     updateQuickSellCardQtyEl(btn, m.item);
@@ -811,7 +687,7 @@ function renderQuickSellPanel(){
     <div class="qs-title"><span>&#128722; CART (${itemNames.length} item${itemNames.length>1?'s':''})</span><button type="button" class="cart-remove" id="qsClearCart" title="Clear cart" style="font-size:12px;color:var(--muted)">CLEAR</button></div>
     <div class="cart-list" id="cartList"></div>
     <div class="cart-subtotal-row"><span>Subtotal</span><span class="cart-subtotal-value">&#8373;${subtotal.toFixed(2)}</span></div>
-    ${staffList.length===0 ? '<div class="qs-warning">&#9888; No staff with initials found in the 🧑\u200d💼 Staff sheet — fill in Slot/Initials there, then hit Refresh.</div>' : ''}
+    ${staffList.length===0 ? '<div class="qs-warning">&#9888; No active staff with initials found in Supabase — add rows in the staff table, then hit Refresh.</div>' : ''}
     <div class="qs-field-grid" style="margin-top:10px">
       <div>
         <div class="qs-label">Served by (required)</div>
@@ -857,9 +733,6 @@ function renderQuickSellPanel(){
 
 function clearCart(){
   cart = {};
-  // BUG FIX (backlog #4): the search box text (e.g. "coke") was never
-  // cleared after a sale completed, so it looked like the order was
-  // "stuck" on screen even though it had gone through.
   const searchEl = document.getElementById('quickSellSearch');
   if(searchEl) searchEl.value = '';
   renderQuickSellMenu();
@@ -875,12 +748,10 @@ async function submitQuickSellCart(){
   const confirmBtn = document.getElementById('qsConfirmBtn');
 
   if(staffList.length === 0){
-    resultEl.innerHTML = '<span style="color:var(--red)">No staff are set up yet — add initials in the 🧑\u200d💼 Staff sheet, then Refresh before selling.</span>';
+    resultEl.innerHTML = '<span style="color:var(--red)">No active staff are set up yet — add rows in the Supabase staff table, then Refresh before selling.</span>';
     return;
   }
   if(!staffInitials){ resultEl.innerHTML = '<span style="color:var(--red)">Pick who is serving.</span>'; return; }
-  // v1.2: payment method is now mandatory on Quick Sell, matching the
-  // rule enforced server-side in processSale_ (Code.gs v5.6+).
   if(!payment){ resultEl.innerHTML = '<span style="color:var(--red)">Pick a payment method (Cash or MoMo).</span>'; return; }
 
   const itemNames = Object.keys(cart).filter(k => cart[k] > 0);
@@ -909,8 +780,7 @@ async function submitQuickSellCart(){
   }
 
   const succeeded = lineResults.filter(r => r.result.ok);
-  const queued = lineResults.filter(r => r.result.queued);
-  const failed = lineResults.filter(r => !r.result.ok && !r.result.queued);
+  const failed = lineResults.filter(r => !r.result.ok);
 
   if(failed.length === lineResults.length){
     resultEl.innerHTML = '<span style="color:var(--red)">' + (failed[0].result.error || 'Sale failed') + '</span>';
@@ -924,18 +794,15 @@ async function submitQuickSellCart(){
   if(succeeded.length){
     msg += `<span class="flash">&#10003; ${succeeded.length} item${succeeded.length>1?'s':''} rung up — &#8373;${subtotalRung.toFixed(2)} · served by ${staffInitials}</span><br>`;
   }
-  if(queued.length){
-    msg += `<span style="color:var(--teal)">&#9203; ${queued.length} item${queued.length>1?'s':''} queued (no connection) — will send automatically once back online.</span><br>`;
-  }
   if(failed.length){
     msg += `<span style="color:var(--red)">${failed.length} item${failed.length>1?'s':''} failed: ${failed.map(f=>f.itemName+' ('+f.result.error+')').join('; ')}</span>`;
   }
   resultEl.innerHTML = msg;
 
   if(failed.length === 0){
-    setTimeout(()=>{ clearCart(); loadAll(); }, queued.length ? 3200 : 1800);
+    setTimeout(()=>{ clearCart(); loadAll(); }, 1800);
   }else{
-    lineResults.forEach(r => { if(r.result.ok || r.result.queued) delete cart[r.itemName]; });
+    lineResults.forEach(r => { if(r.result.ok) delete cart[r.itemName]; });
     confirmBtn.disabled = false;
     confirmBtn.textContent = '\u2713 CONFIRM SALE — \u20b5' + cartSubtotal().toFixed(2);
     renderQuickSellMenu();
@@ -943,8 +810,6 @@ async function submitQuickSellCart(){
   }
 }
 
-// v5.2: jittered, self-rescheduling polling — see bar-dashboard.html
-// for the rationale.
 function scheduleNext(fn, baseMs, jitterMs){
   const delay = baseMs + Math.random() * jitterMs;
   setTimeout(function(){
@@ -953,8 +818,8 @@ function scheduleNext(fn, baseMs, jitterMs){
 }
 
 loadAll();
-scheduleNext(loadAll, 25000, 10000); // ~25-35s
-scheduleNext(loadCanteenOrders, 8000, 4000); // ~8-12s — customers are waiting
+scheduleNext(loadAll, 25000, 10000);
+scheduleNext(loadCanteenOrders, 8000, 4000);
 </script>
 </body>
 </html>
