@@ -1,43 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE EVENTS & MORE — REVENUE & REPORTS (v1.0)
+  THE WHITE HOUSE EVENTS & MORE — REVENUE & REPORTS (v2.0)
 
-  New file. Opens separately from bar-dashboard.html (a link/button on
-  that page opens this in a new tab — the dashboard itself no longer
-  shows GHS figures at all, only a locked card).
-
-  WHAT'S BEHIND THE PASSWORD:
-  - Daily / weekly / monthly / quarterly / half-yearly / yearly
-    revenue trend
-  - Staff performance (who's selling the most)
-  - Top sellers and lowest sellers (by quantity)
-  - Cash vs MoMo split
-  - Shift summaries — every summary generated on the bar dashboard is
-    now saved here automatically, and the full history is browsable
-    on this page too
-
-  HOW THE PASSWORD ACTUALLY WORKS — READ THIS:
-  This is a password PROMPT, not a login system. The password is
-  checked against Supabase every time (via check_revenue_password),
-  and the underlying `transactions` table (where the GHS figures live)
-  no longer has a public read policy — only the password-checking
-  functions can read it. That means someone can no longer just open
-  dev tools and query transactions directly the way they could with
-  everything else in this system.
-  BUT: bar_orders (item names + quantities, used for top/lowest
-  seller) still has to stay publicly readable because the main bar
-  dashboard needs it for Today's Orders — so item/quantity data was
-  never fully hidden, only the GHS totals are newly protected.
-  This is the same category of trade-off already flagged for payroll
-  in the master sign-off: a real login system (Supabase Auth) is the
-  only way to make this fully solid. Treat this password as "keeps
-  casual staff/customers out", not "bank-grade access control".
-
-  SETUP: nothing to fill in — same Supabase project as the rest of
-  the system. Starting password is whgh2026 — change it immediately
-  using the "Change Password" link once you're in, from the Settings
-  section at the bottom.
+  v2.0 CHANGES:
+  - NEW STAFF TAB: lists everyone who has ever rung up a sale. Click
+    a name to see their lifetime revenue, best single day, best week,
+    best month, and a 14-day trend — backed by two new password-gated
+    Postgres functions (get_staff_list, get_staff_detail).
+  - LOGO added to header, matching every other dashboard.
+  - FULL WIDTH LAYOUT: responsive breakpoints so this uses the screen
+    on tablets/desktops instead of a narrow centered column.
+  - Password unchanged from v1.0 (whgh2026 default) — not touched
+    this session per instruction.
 -->
 <head>
 <meta charset="UTF-8">
@@ -48,10 +23,13 @@
 :root{--black:#0a0a0a;--surface:#111111;--card:#181818;--border:#2a2a2a;--gold:#f5a623;--gold-dim:#c9861a;--teal:#3fb6a8;--red:#ef4444;--green:#22c55e;--text:#f2f2f2;--text-dim:#b5b5b5;--muted:#888;}
 *{margin:0;padding:0;box-sizing:border-box;}
 body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min-height:100vh;}
-.header{background:var(--surface);border-bottom:1px solid var(--border);padding:16px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;flex-wrap:wrap;gap:10px;}
+.header{background:var(--surface);border-bottom:1px solid var(--border);padding:16px 24px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:100;flex-wrap:wrap;}
+.brand-logo{height:36px;width:auto;border-radius:6px;display:block;}
 .logo{font-size:18px;font-weight:800;letter-spacing:1px;color:var(--gold);}
 .logo span{color:var(--text-dim);font-weight:400;font-size:11px;display:block;letter-spacing:2px;margin-top:2px;}
 .main{padding:20px 24px;max-width:1200px;margin:0 auto;}
+@media(min-width:1400px){.main{max-width:1600px;padding:24px 40px;}}
+@media(min-width:1800px){.main{max-width:1900px;padding:28px 56px;}}
 .lock-screen{max-width:400px;margin:80px auto;text-align:center;}
 .lock-screen .lock-icon{font-size:44px;margin-bottom:14px;}
 .lock-screen h2{color:var(--gold);font-size:18px;margin-bottom:6px;}
@@ -67,12 +45,19 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 .tab-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;}
 .tab-pill{background:var(--surface);border:1px solid var(--border);color:var(--text-dim);padding:8px 16px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;font-family:'Syne',sans-serif;}
 .tab-pill.active{background:var(--gold);color:var(--black);border-color:var(--gold);}
+.section-tabs{display:flex;gap:4px;margin-bottom:18px;background:var(--surface);padding:6px;border-radius:8px;border:1px solid var(--border);overflow-x:auto;}
+.section-tab{padding:9px 16px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:700;letter-spacing:0.5px;white-space:nowrap;color:var(--text-dim);border:none;background:none;font-family:'Syne',sans-serif;}
+.section-tab.active{background:var(--gold);color:var(--black);}
+.section{display:none;}
+.section.active{display:block;}
 .metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px;}
+@media(min-width:1400px){.metrics-grid{grid-template-columns:repeat(4,1fr);}}
 .metric-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px;}
 .metric-label{font-size:10px;font-weight:700;letter-spacing:2px;color:var(--muted);margin-bottom:8px;}
 .metric-value{font-size:26px;font-weight:800;font-family:'Space Mono',monospace;color:var(--gold);}
 .two-col{display:grid;grid-template-columns:1.2fr 1fr;gap:16px;}
 @media(max-width:900px){.two-col{grid-template-columns:1fr;}}
+@media(min-width:1600px){.two-col{grid-template-columns:1.6fr 1fr;}}
 table{width:100%;border-collapse:collapse;font-size:12px;}
 th{text-align:left;padding:8px 10px;color:var(--muted);font-weight:700;letter-spacing:1px;border-bottom:1px solid var(--border);font-size:10px;}
 td{padding:7px 10px;border-bottom:1px solid #1a1a1a;}
@@ -82,7 +67,8 @@ td{padding:7px 10px;border-bottom:1px solid #1a1a1a;}
 .bar-track{flex:1;background:var(--surface);border-radius:4px;height:18px;position:relative;overflow:hidden;}
 .bar-fill{background:var(--gold);height:100%;border-radius:4px;}
 .bar-value{width:80px;text-align:right;font-family:'Space Mono',monospace;font-size:12px;color:var(--gold);flex-shrink:0;}
-.rank-row{display:flex;align-items:center;gap:12px;padding:9px 4px;border-bottom:1px solid #1a1a1a;}
+.rank-row{display:flex;align-items:center;gap:12px;padding:9px 4px;border-bottom:1px solid #1a1a1a;cursor:pointer;}
+.rank-row:hover{background:#1c1c1c;}
 .rank-row:last-child{border-bottom:none;}
 .rank-num{font-family:'Space Mono',monospace;font-weight:800;font-size:13px;color:var(--muted);width:20px;flex-shrink:0;}
 .rank-info{flex:1;min-width:0;}
@@ -101,11 +87,14 @@ td{padding:7px 10px;border-bottom:1px solid #1a1a1a;}
 .summary-item pre{white-space:pre-wrap;font-family:'Space Mono',monospace;font-size:11px;color:var(--text-dim);margin-top:8px;line-height:1.6;}
 .summary-item .si-head{display:flex;justify-content:space-between;color:var(--text-dim);font-size:11px;}
 .settings-row{display:flex;gap:8px;}
+.back-link{color:var(--teal);font-size:12px;cursor:pointer;margin-bottom:12px;display:inline-block;}
+.staff-detail-card{background:var(--surface);border:1px solid var(--teal);border-radius:8px;padding:16px;margin-bottom:16px;}
 </style>
 </head>
 <body>
 
 <div class="header">
+  <img src="logo.jpg" alt="" class="brand-logo" onerror="this.style.display='none'">
   <div class="logo">THE WHITE HOUSE EVENTS & MORE <span>REVENUE &amp; REPORTS</span></div>
 </div>
 
@@ -120,51 +109,77 @@ td{padding:7px 10px;border-bottom:1px solid #1a1a1a;}
   </div>
 
   <div id="reportArea" style="display:none">
-    <div class="tab-row" id="periodTabs"></div>
-
-    <div class="metrics-grid" id="summaryMetrics"><div class="loading">Loading...</div></div>
-
-    <div class="card">
-      <div class="card-title">REVENUE TREND</div>
-      <div class="tab-row" id="trendTabs"></div>
-      <div class="chart-wrap"><div class="trend-bars" id="trendChart"><div class="loading">Loading...</div></div></div>
+    <div class="section-tabs">
+      <button class="section-tab active" data-sec="overview" onclick="switchSection('overview',this)">OVERVIEW</button>
+      <button class="section-tab" data-sec="staff" onclick="switchSection('staff',this)">STAFF</button>
+      <button class="section-tab" data-sec="settings" onclick="switchSection('settings',this)">SETTINGS</button>
     </div>
 
-    <div class="two-col">
+    <!-- OVERVIEW -->
+    <div class="section active" id="sec-overview">
+      <div class="tab-row" id="periodTabs"></div>
+
+      <div class="metrics-grid" id="summaryMetrics"><div class="loading">Loading...</div></div>
+
       <div class="card">
-        <div class="card-title">STAFF PERFORMANCE <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(this period, by revenue)</span></div>
-        <div id="staffBody"><div class="empty">Loading...</div></div>
+        <div class="card-title">REVENUE TREND</div>
+        <div class="tab-row" id="trendTabs"></div>
+        <div class="chart-wrap"><div class="trend-bars" id="trendChart"><div class="loading">Loading...</div></div></div>
       </div>
+
+      <div class="two-col">
+        <div class="card">
+          <div class="card-title">STAFF PERFORMANCE <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(this period, by revenue — click a name for full history)</span></div>
+          <div id="staffBody"><div class="empty">Loading...</div></div>
+        </div>
+        <div class="card">
+          <div class="card-title">CASH VS MOMO</div>
+          <div id="paymentBody"><div class="empty">Loading...</div></div>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <div class="card">
+          <div class="card-title">&#128293; TOP SELLERS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(this period, by qty)</span></div>
+          <div id="topSellersBody"><div class="empty">Loading...</div></div>
+        </div>
+        <div class="card">
+          <div class="card-title">&#128173; LOWEST SELLERS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(this period, by qty — needs at least 1 sale)</span></div>
+          <div id="lowestSellersBody"><div class="empty">Loading...</div></div>
+        </div>
+      </div>
+
       <div class="card">
-        <div class="card-title">CASH VS MOMO</div>
-        <div id="paymentBody"><div class="empty">Loading...</div></div>
+        <div class="card-title">&#128274; SHIFT SUMMARIES <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(every summary generated on the bar dashboard is saved here automatically)</span></div>
+        <div id="shiftSummariesBody"><div class="empty">Loading...</div></div>
       </div>
     </div>
 
-    <div class="two-col">
-      <div class="card">
-        <div class="card-title">&#128293; TOP SELLERS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(this period, by qty)</span></div>
-        <div id="topSellersBody"><div class="empty">Loading...</div></div>
+    <!-- STAFF -->
+    <div class="section" id="sec-staff">
+      <div id="staffListView">
+        <div class="card">
+          <div class="card-title">&#129489;&#8205;&#128188; ALL STAFF <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(lifetime, by revenue — click a name for their full record)</span></div>
+          <div id="staffListBody"><div class="empty">Loading...</div></div>
+        </div>
       </div>
-      <div class="card">
-        <div class="card-title">&#128173; LOWEST SELLERS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(this period, by qty — needs at least 1 sale)</span></div>
-        <div id="lowestSellersBody"><div class="empty">Loading...</div></div>
+      <div id="staffDetailView" style="display:none">
+        <span class="back-link" onclick="showStaffList()">&larr; Back to all staff</span>
+        <div id="staffDetailBody"></div>
       </div>
     </div>
 
-    <div class="card">
-      <div class="card-title">&#128274; SHIFT SUMMARIES <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(every summary generated on the bar dashboard is saved here automatically)</span></div>
-      <div id="shiftSummariesBody"><div class="empty">Loading...</div></div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">SETTINGS</div>
-      <div style="font-size:11px;color:var(--text-dim);margin-bottom:10px">Change the revenue password. Whoever knows the current one can set a new one — there's no separate account per staff member yet.</div>
-      <div class="settings-row">
-        <input class="search-input" id="newPasswordInput" type="password" placeholder="New password" style="margin:0">
-        <button class="btn secondary" style="width:auto;padding:12px 20px" onclick="changePassword()">CHANGE</button>
+    <!-- SETTINGS -->
+    <div class="section" id="sec-settings">
+      <div class="card">
+        <div class="card-title">SETTINGS</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:10px">Change the revenue password. Whoever knows the current one can set a new one — there's no separate account per staff member yet.</div>
+        <div class="settings-row">
+          <input class="search-input" id="newPasswordInput" type="password" placeholder="New password" style="margin:0">
+          <button class="btn secondary" style="width:auto;padding:12px 20px" onclick="changePassword()">CHANGE</button>
+        </div>
+        <div class="error-msg" id="settingsMsg"></div>
       </div>
-      <div class="error-msg" id="settingsMsg"></div>
     </div>
   </div>
 </div>
@@ -175,11 +190,7 @@ const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNydnV6a3lmcnFiZm1hbWVneGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MzI5NjQsImV4cCI6MjEwMDAwODk2NH0.gMsv3yvw6plDCherA2YdU4UgWRMXUc9H1Hr_IdR9GxA';
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// Not a session token — just kept in memory for this tab so every RPC
-// call can re-send it. Closing the tab clears it; there's no "stay
-// logged in", by design (this isn't a real login system).
 let revenuePassword = null;
-
 let activePeriod = '7d';
 let activeTrendBucket = 'day';
 
@@ -212,6 +223,14 @@ function periodRange(key){
     start = new Date(Date.now() - days*24*3600*1000);
   }
   return { start: start.toISOString(), end: end.toISOString() };
+}
+
+function switchSection(sec, btn){
+  document.querySelectorAll('.section-tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('sec-'+sec).classList.add('active');
+  if(sec === 'staff') loadStaffList();
 }
 
 async function tryUnlock(){
@@ -329,7 +348,7 @@ async function loadStaff(){
     const el = document.getElementById('staffBody');
     if(!data.length){ el.innerHTML = '<div class="empty">No sales in this period.</div>'; return; }
     el.innerHTML = data.map((s,i) => `
-      <div class="rank-row">
+      <div class="rank-row" onclick="switchSection('staff', document.querySelector('[data-sec=staff]')); openStaffDetail('${s.staff}')">
         <div class="rank-num">${i+1}</div>
         <div class="rank-info"><div class="rank-name">${s.staff}</div><div class="rank-sub">${s.orders_count} orders &middot; ${s.items_sold} items</div></div>
         <div class="rank-value">&#8373;${parseFloat(s.revenue).toFixed(2)}</div>
@@ -374,6 +393,90 @@ async function loadShiftSummaries(){
       </div>`).join('');
   }catch(e){
     document.getElementById('shiftSummariesBody').innerHTML = `<div class="empty">Could not load: ${e.message}</div>`;
+  }
+}
+
+// ---------- STAFF TAB ----------
+async function loadStaffList(){
+  const el = document.getElementById('staffListBody');
+  el.innerHTML = '<div class="loading">Loading...</div>';
+  try{
+    const { data, error } = await supabaseClient.rpc('get_staff_list', { p_password: revenuePassword });
+    if(error) throw new Error(error.message);
+    if(!data.length){ el.innerHTML = '<div class="empty">No sales recorded yet.</div>'; return; }
+    el.innerHTML = data.map((s,i) => `
+      <div class="rank-row" onclick="openStaffDetail('${s.staff}')">
+        <div class="rank-num">${i+1}</div>
+        <div class="rank-info"><div class="rank-name">${s.staff}</div><div class="rank-sub">${s.orders} lifetime orders</div></div>
+        <div class="rank-value">&#8373;${parseFloat(s.revenue).toFixed(2)}</div>
+      </div>`).join('');
+  }catch(e){
+    el.innerHTML = `<div class="empty">Could not load: ${e.message}</div>`;
+  }
+}
+
+function showStaffList(){
+  document.getElementById('staffListView').style.display = 'block';
+  document.getElementById('staffDetailView').style.display = 'none';
+}
+
+async function openStaffDetail(staffName){
+  document.getElementById('staffListView').style.display = 'none';
+  document.getElementById('staffDetailView').style.display = 'block';
+  const el = document.getElementById('staffDetailBody');
+  el.innerHTML = '<div class="loading">Loading...</div>';
+  try{
+    const [detailRes, periodsRes] = await Promise.all([
+      supabaseClient.rpc('get_staff_detail', { p_password: revenuePassword, p_staff: staffName }),
+      supabaseClient.rpc('get_staff_periods', { p_password: revenuePassword, p_staff: staffName })
+    ]);
+    if(detailRes.error) throw new Error(detailRes.error.message);
+    if(periodsRes.error) throw new Error(periodsRes.error.message);
+    const data = detailRes.data;
+    const periodsData = periodsRes.data;
+    const bestDay = data.bestDay || {};
+    const bestWeek = data.bestWeek || {};
+    const bestMonth = data.bestMonth || {};
+    const recent = (data.recentDays||[]).slice().reverse();
+    const maxRev = Math.max(1, ...recent.map(d=>parseFloat(d.revenue)));
+
+    const PERIOD_LABELS = {today:'Today', week:'This Week', month:'This Month', quarter:'Quarter', half_year:'6 Months', year:'1 Year', year2:'2 Years', year3:'3 Years'};
+    const periodList = periodsData.periods || [];
+    const maxPeriodRev = Math.max(1, ...periodList.map(p => parseFloat(p.revenue)||0));
+    const periodRows = periodList.map(p => `
+      <div class="bar-row">
+        <div class="bar-label">${PERIOD_LABELS[p.key]||p.key}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${Math.max(2, (parseFloat(p.revenue)||0)/maxPeriodRev*100)}%"></div></div>
+        <div class="bar-value">&#8373;${parseFloat(p.revenue).toFixed(2)}</div>
+      </div>`).join('');
+
+    el.innerHTML = `
+      <div class="staff-detail-card">
+        <div style="font-size:18px;font-weight:800;color:var(--teal);margin-bottom:4px">${data.staff}</div>
+        <div style="font-size:12px;color:var(--text-dim)">Lifetime: &#8373;${parseFloat(data.lifetimeRevenue||0).toFixed(2)} &middot; ${data.lifetimeOrders||0} orders &middot; ${data.lifetimeItems||0} items sold</div>
+      </div>
+      <div class="metrics-grid">
+        <div class="metric-card"><div class="metric-label">BEST DAY</div><div class="metric-value" style="font-size:20px">&#8373;${parseFloat(bestDay.revenue||0).toFixed(2)}</div><div style="font-size:11px;color:var(--text-dim);margin-top:4px">${bestDay.date||'—'}</div></div>
+        <div class="metric-card"><div class="metric-label">BEST WEEK</div><div class="metric-value" style="font-size:20px">&#8373;${parseFloat(bestWeek.revenue||0).toFixed(2)}</div><div style="font-size:11px;color:var(--text-dim);margin-top:4px">week of ${bestWeek.weekStart||'—'}</div></div>
+        <div class="metric-card"><div class="metric-label">BEST MONTH</div><div class="metric-value" style="font-size:20px">&#8373;${parseFloat(bestMonth.revenue||0).toFixed(2)}</div><div style="font-size:11px;color:var(--text-dim);margin-top:4px">${bestMonth.month||'—'}</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">REVENUE BY PERIOD <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(as of right now, each period counted from today backward)</span></div>
+        ${periodRows}
+      </div>
+      <div class="card">
+        <div class="card-title">LAST 14 DAYS</div>
+        <div class="chart-wrap"><div class="trend-bars">
+          ${recent.length ? recent.map(d => `
+            <div class="trend-col">
+              <div class="tcol-value">${parseFloat(d.revenue)>0 ? '\u20b5'+parseFloat(d.revenue).toFixed(0) : ''}</div>
+              <div class="tcol-bar" style="height:${Math.max(2, parseFloat(d.revenue)/maxRev*130)}px"></div>
+              <div class="tcol-label">${d.date.slice(5)}</div>
+            </div>`).join('') : '<div class="empty">No recent activity.</div>'}
+        </div></div>
+      </div>`;
+  }catch(e){
+    el.innerHTML = `<div class="empty">Could not load: ${e.message}</div>`;
   }
 }
 </script>
