@@ -127,6 +127,8 @@ td{padding:7px 10px;border-bottom:1px solid #1a1a1a;}
         <div class="chart-wrap"><div class="trend-bars" id="trendChart"><div class="loading">Loading...</div></div></div>
       </div>
 
+      <div id="dayDetailArea" style="display:none"></div>
+
       <div class="two-col">
         <div class="card">
           <div class="card-title">STAFF PERFORMANCE <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(this period, by revenue — click a name for full history)</span></div>
@@ -329,15 +331,44 @@ async function loadTrend(){
     const { data, error } = await supabaseClient.rpc('get_revenue_trend', { p_password: revenuePassword, p_bucket: activeTrendBucket, p_periods: bucketDef.periods });
     if(error) throw new Error(error.message);
     const maxRev = Math.max(1, ...data.map(d=>parseFloat(d.revenue)));
+    const clickable = activeTrendBucket === 'day';
     document.getElementById('trendChart').innerHTML = data.map(d => `
-      <div class="trend-col">
+      <div class="trend-col"${clickable ? ` onclick="openDayDetail('${d.bucket_start.slice(0,10)}')" style="cursor:pointer"` : ''}>
         <div class="tcol-value">${parseFloat(d.revenue)>0 ? '\u20b5'+parseFloat(d.revenue).toFixed(0) : ''}</div>
         <div class="tcol-bar" style="height:${Math.max(2, parseFloat(d.revenue)/maxRev*130)}px"></div>
         <div class="tcol-label">${d.bucket_label}</div>
       </div>`).join('');
+    if(clickable) document.getElementById('trendChart').insertAdjacentHTML('afterend', '<div style="font-size:11px;color:var(--muted);margin-top:8px">Tap any day above to see the full transaction breakdown.</div>');
   }catch(e){
     document.getElementById('trendChart').innerHTML = `<div class="empty">Could not load: ${e.message}</div>`;
   }
+}
+
+async function openDayDetail(dateStr){
+  const el = document.getElementById('dayDetailArea');
+  el.style.display = 'block';
+  el.innerHTML = '<div class="loading">Loading...</div>';
+  el.scrollIntoView({behavior:'smooth', block:'start'});
+  try{
+    const { data, error } = await supabaseClient.rpc('get_day_transactions', { p_password: revenuePassword, p_date: dateStr });
+    if(error) throw new Error(error.message);
+    const total = data.reduce((s,r)=>s+(parseFloat(r.lineTotal)||0),0);
+    el.innerHTML = `
+      <div class="card">
+        <div class="card-title">TRANSACTIONS — ${dateStr} <span class="back-link" style="margin:0" onclick="closeDayDetail()">&times; close</span></div>
+        <div style="font-size:13px;color:var(--text-dim);margin-bottom:10px">${data.length} line items &middot; &#8373;${total.toFixed(2)} total</div>
+        <div class="scroll-table"><table><thead><tr><th>TIME</th><th>ITEM</th><th>QTY</th><th>TOTAL</th><th>STAFF</th><th>PAYMENT</th><th>CUSTOMER</th></tr></thead><tbody>
+          ${data.length ? data.map(r => `<tr><td style="font-family:'Space Mono',monospace">${r.time}</td><td>${r.item}</td><td>${r.qty}</td><td style="color:var(--gold);font-weight:700">&#8373;${parseFloat(r.lineTotal).toFixed(2)}</td><td>${r.staff}</td><td>${r.payment}</td><td style="font-family:'Space Mono',monospace;font-size:11px">${r.customer}</td></tr>`).join('') : '<tr><td colspan="7" class="empty">No transactions this day</td></tr>'}
+        </tbody></table></div>
+      </div>`;
+  }catch(e){
+    el.innerHTML = `<div class="empty">Could not load: ${e.message}</div>`;
+  }
+}
+
+function closeDayDetail(){
+  document.getElementById('dayDetailArea').style.display = 'none';
+  document.getElementById('dayDetailArea').innerHTML = '';
 }
 
 async function loadStaff(){
