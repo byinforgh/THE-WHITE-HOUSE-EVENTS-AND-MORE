@@ -602,6 +602,22 @@ async function submitOrder(){
     document.getElementById('submitError').textContent = 'Please add the room number above the menu.';
     closeCartModal(); window.scrollTo({top:0, behavior:'smooth'}); return;
   }
+  // Guard against firing the exact same order twice in quick succession —
+  // a double-tap, or a stray resubmit from the browser restoring a
+  // cached page state. Same location + same cart + same payment method
+  // within the last 90 seconds is blocked outright instead of sent
+  // again. Diagnosed 24 July: identical test orders were reaching
+  // Supabase minutes apart with fresh IDs each time, which a
+  // client_request_id uniqueness check alone can't catch since it was
+  // never a replay of the same submission.
+  const orderFingerprint = JSON.stringify({ locationType, locationDetail, cart, payment: selectedPayment });
+  const lastFingerprint = sessionStorage.getItem('whgh_last_order_fingerprint');
+  const lastFingerprintTime = parseInt(sessionStorage.getItem('whgh_last_order_time') || '0', 10);
+  if(lastFingerprint === orderFingerprint && (Date.now() - lastFingerprintTime) < 90000){
+    document.getElementById('submitError').textContent = 'This exact order was just sent — check your confirmation, or change your cart before sending again.';
+    return;
+  }
+
   const custName = document.getElementById('custName').value.trim();
   const phone = document.getElementById('custPhone').value.trim();
   if(!phone){ document.getElementById('submitError').textContent = 'Please enter your phone number or membership number.'; return; }
@@ -639,6 +655,9 @@ async function submitOrder(){
   const isCombo = subOrders.length > 1;
   const comboTs = Date.now();
   const orderIdFor = (action) => (action === 'placeCanteenOrder' ? 'CAN' : 'TBL') + comboTs;
+
+  sessionStorage.setItem('whgh_last_order_fingerprint', orderFingerprint);
+  sessionStorage.setItem('whgh_last_order_time', String(Date.now()));
 
   const btn = document.getElementById('submitBtn');
   btn.disabled = true;
@@ -683,7 +702,7 @@ async function submitOrder(){
 
   closeCartModal();
   if(succeeded.length > 0){
-    showConfirmation(succeeded.map(o => ({ data: o.result.data, label: o.payload.label })), selectedPayment);
+    showConfirmation(succeeded.map(o => ({ data: o.result.data, label: o.payload.label })), selectedPayment, locationType, locationDetail);
   }else if(queued.length > 0){
     showQueuedScreen();
   }
@@ -754,8 +773,11 @@ async function trySendOrder(payload){
 
 function savePendingOrder(payload){
   const queue = getPendingQueue();
-  queue.push(payload);
+  queue.push(Object.assign({}, payload, { queuedAt: payload.queuedAt || Date.now() }));
   localStorage.setItem(PENDING_KEY, JSON.stringify(queue));
+}
+function savePendingQueueRaw(queue){
+  try{ localStorage.setItem(PENDING_KEY, JSON.stringify(queue)); }catch(e){ /* storage unavailable */ }
 }
 function getPendingQueue(){
   try{ return JSON.parse(localStorage.getItem(PENDING_KEY) || '[]'); }catch(e){ return []; }
@@ -765,15 +787,31 @@ function clearPendingOrder(clientId){
   localStorage.setItem(PENDING_KEY, JSON.stringify(queue));
 }
 
+// Diagnosed 24 July: a queued order with no expiry could in principle
+// keep trying to send forever on every page load. 2 hours is long
+// enough to cover a real dropped-connection order, short enough that
+// a customer is never surprised by an old order firing days later.
+const PENDING_MAX_AGE_MS = 2 * 60 * 60 * 1000;
+
 async function resumePendingOrder(){
-  const queue = getPendingQueue();
+  let queue = getPendingQueue();
   if(queue.length === 0) return;
+
+  const now = Date.now();
+  const fresh = queue.filter(p => now - (p.queuedAt || 0) < PENDING_MAX_AGE_MS);
+  if(fresh.length !== queue.length){
+    console.warn('Dropped ' + (queue.length - fresh.length) + ' queued order(s) older than 2 hours without sending them.');
+    savePendingQueueRaw(fresh);
+    queue = fresh;
+  }
+  if(queue.length === 0) return;
+
   for(const payload of queue){
     const result = await trySendOrder(payload);
     if(result.ok){
       clearPendingOrder(payload.clientId);
       resumeAttempts = 0;
-      showConfirmation([{ data: result.data, label: payload.label || 'Order' }], payload.payment);
+      showConfirmation([{ data: result.data, label: payload.label || 'Order' }], payload.payment, payload.locationType, payload.locationDetail);
       return;
     }
   }
@@ -860,7 +898,15 @@ function showQueuedScreen(){
   document.getElementById('confirmModal').classList.add('show');
 }
 
-function showConfirmation(orders, payment){
+function showConfirmation(orders, payment, locType, locDetail){
+  // Diagnosed 24 July: this used to always read the live locationType/
+  // locationDetail globals, which reset to nothing on every fresh page
+  // load. That made a resumed queued order show "null" as its location
+  // even though the order itself had the correct location saved all
+  // along. Now it uses whichever location was actually passed in for
+  // THIS order.
+  const displayLocType = locType !== undefined && locType !== null ? locType : locationType;
+  const displayLocDetail = locDetail !== undefined ? locDetail : locationDetail;
   const el = document.getElementById('confirmContent');
   const total = orders.reduce((s,o) => s + (o.data.total||0), 0);
   let payHtml = '';
@@ -877,7 +923,7 @@ function showConfirmation(orders, payment){
   el.innerHTML = `
     <div class="ok-badge">&#9989;</div>
     <h2>Order sent!</h2>
-    <div class="order-id" style="margin-bottom:6px">${locationType}${locationDetail ? ' — ' + locationDetail : ''}</div>
+    <div class="order-id" style="margin-bottom:6px">${displayLocType || 'Your order'}${displayLocDetail ? ' — ' + displayLocDetail : ''}</div>
     ${orderLines}
     ${payHtml}
     <button class="btn" onclick="document.getElementById('confirmModal').classList.remove('show')">ORDER SOMETHING ELSE</button>`;
