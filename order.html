@@ -1,7 +1,22 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE EVENTS & MORE — TABLE ORDER PAGE (v4.0, Supabase-only)
+  THE WHITE HOUSE EVENTS & MORE — TABLE ORDER PAGE (v4.1, Supabase-only)
+
+  v4.1 CHANGES (this session):
+  - The returning-member profile bar at the top of this page now also
+    shows REWARDS (with an "eligible now" marker based on current
+    points), FOLLOW US links, and CONTACT US details — this was the
+    piece missing from v4.0's member bar per the standing top-priority
+    item. Nothing about the ordering flow itself changed.
+  - Rewards are pulled live from Supabase's `rewards` table (same one
+    members-dashboard.html reads), so editing rewards there is enough
+    to update what shows here too.
+  - Reminder: this bar only appears if this browser previously
+    completed an order on this device (it's stored in localStorage).
+    It will not appear on a different device/browser, or inside an
+    in-app browser (WhatsApp, Instagram, etc.) that clears storage
+    between visits — that is expected, not a bug in this file.
 
   v4.0 CHANGES:
   - REMOVED Apps Script entirely. Location types and MoMo number/name
@@ -124,6 +139,17 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 .member-welcome-box .mw-favorites-label{font-size:14px;color:var(--text-dim);margin-top:14px;}
 .member-welcome-box .mw-recent-label{font-size:14px;color:var(--text-dim);margin-top:14px;}
 .member-welcome-box .mw-recent-line{font-size:13px;color:var(--text-dim);margin-top:6px;}
+.member-welcome-box .mw-section-label{font-size:14px;color:var(--text-dim);margin-top:16px;padding-top:14px;border-top:1px solid var(--border);}
+.mw-reward-row{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13px;padding:7px 0;border-bottom:1px solid #1a1a1a;}
+.mw-reward-row:last-child{border-bottom:none;}
+.mw-reward-row .mw-reward-name{color:var(--text-dim);}
+.mw-reward-row.eligible .mw-reward-name{color:var(--teal);font-weight:700;}
+.mw-reward-row .mw-reward-pts{font-family:'Space Mono',monospace;color:var(--gold);white-space:nowrap;}
+.mw-reward-eligible-tag{font-size:9px;font-weight:800;letter-spacing:0.5px;color:var(--teal);border:1px solid var(--teal);border-radius:10px;padding:2px 7px;margin-left:6px;}
+.mw-social-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
+.mw-social-link{font-size:12px;color:var(--teal);text-decoration:none;padding:6px 12px;border:1px solid var(--teal);border-radius:20px;}
+.mw-contact-line{font-size:13px;color:var(--text-dim);margin-top:6px;}
+.mw-contact-line a{color:var(--teal);text-decoration:none;}
 </style>
 </head>
 <body>
@@ -215,12 +241,23 @@ const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNydnV6a3lmcnFiZm1hbWVneGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MzI5NjQsImV4cCI6MjEwMDAwODk2NH0.gMsv3yvw6plDCherA2YdU4UgWRMXUc9H1Hr_IdR9GxA';
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// v4.1: follow-us links, matches members-dashboard.html's footer set.
+// Edit here directly if a handle/URL changes — no Supabase table for
+// this yet.
+const SOCIAL_LINKS = [
+  { name:'TikTok',    url:'https://www.tiktok.com/@thewhitehousegh' },
+  { name:'Instagram', url:'https://www.instagram.com/thewhitehousegh' },
+  { name:'Facebook',  url:'https://www.facebook.com/thewhitehousegh' },
+  { name:'YouTube',   url:'https://www.youtube.com/@thewhitehousegh' }
+];
+
 let locationType = null;
 let locationDetail = '';
 let menu = [];
 let locationTypes = [];
 let momoNumber = '';
 let momoName = '';
+let venueContactPhone = '';
 let cart = {};
 let activeCategory = 'All';
 let selectedPayment = null;
@@ -293,6 +330,11 @@ async function loadVenueData(afterLoad){
     (settingsRes.data||[]).forEach(row => { settings[row.key] = row.value; });
     momoNumber = settings.momo_number || '';
     momoName = settings.momo_name || '';
+    // v4.1: contact us number for the member bar. Add a
+    // "contact_phone" row to venue_settings to set/change this; falls
+    // back to the MoMo number's owner if not set, since that's already
+    // a real staff contact.
+    venueContactPhone = settings.contact_phone || momoNumber || '';
     try{
       locationTypes = settings.location_types ? JSON.parse(settings.location_types) : [];
     }catch(e){ locationTypes = []; }
@@ -606,10 +648,7 @@ async function submitOrder(){
   // a double-tap, or a stray resubmit from the browser restoring a
   // cached page state. Same location + same cart + same payment method
   // within the last 90 seconds is blocked outright instead of sent
-  // again. Diagnosed 24 July: identical test orders were reaching
-  // Supabase minutes apart with fresh IDs each time, which a
-  // client_request_id uniqueness check alone can't catch since it was
-  // never a replay of the same submission.
+  // again.
   const orderFingerprint = JSON.stringify({ locationType, locationDetail, cart, payment: selectedPayment });
   const lastFingerprint = sessionStorage.getItem('whgh_last_order_fingerprint');
   const lastFingerprintTime = parseInt(sessionStorage.getItem('whgh_last_order_time') || '0', 10);
@@ -686,7 +725,7 @@ async function submitOrder(){
   updateCartBar();
   renderMenu();
   queued.forEach(o => savePendingOrder(o.payload));
-  
+
   btn.disabled = false;
   btn.textContent = 'SUBMIT ORDER';
 
@@ -703,6 +742,9 @@ async function submitOrder(){
   closeCartModal();
   if(succeeded.length > 0){
     showConfirmation(succeeded.map(o => ({ data: o.result.data, label: o.payload.label })), selectedPayment, locationType, locationDetail);
+    // v4.1: refresh the member bar right after a successful order so
+    // updated points/visits/rewards show without needing a reload.
+    loadMemberAccount();
   }else if(queued.length > 0){
     showQueuedScreen();
   }
@@ -826,10 +868,13 @@ window.addEventListener('online', function(){ resumeAttempts = 0; resumePendingO
 // Membership persistence — once a customer gives name+phone, keep
 // their ID on this device so returning (even re-scanning the same QR)
 // shows their points/history immediately instead of starting over.
-// NOTE (diagnosed this session): some in-app browsers (WhatsApp,
-// Instagram, etc.) don't reliably persist localStorage between visits
-// — if a pilot member says "it keeps forgetting me", ask which app
-// they opened the link from before assuming this code is at fault.
+// NOTE: some in-app browsers (WhatsApp, Instagram, etc.) don't
+// reliably persist localStorage between visits — if a pilot member
+// says "it keeps forgetting me", ask which app they opened the link
+// from before assuming this code is at fault. Also: this bar will
+// never appear unless localStorage successfully saved on a PREVIOUS
+// completed order on this same browser — a fresh browser or a
+// cleared cache will not show it either, which is expected, not a bug.
 const MEMBER_KEY = 'whgh_member_v2';
 function getSavedMember(){ try{ return JSON.parse(localStorage.getItem(MEMBER_KEY)||'null'); }catch(e){ return null; } }
 function saveMember(custId, name, phone){
@@ -846,7 +891,10 @@ async function loadMemberAccount(){
   lookedUpCustomer = { custId: member.custId, name: member.name, phone: member.phone };
 
   try{
-    const { data: cust } = await supabaseClient.from('bar_customers').select('*').eq('customer_id', member.custId).maybeSingle();
+    const [{ data: cust }, { data: rewardsData }] = await Promise.all([
+      supabaseClient.from('bar_customers').select('*').eq('customer_id', member.custId).maybeSingle(),
+      supabaseClient.from('rewards').select('*').eq('active', true).order('points_required', { ascending: true })
+    ]);
     const [{ data: tableOrders }, { data: canteenOrders }] = await Promise.all([
       supabaseClient.from('table_orders').select('items_json, created_at, total_ghs').eq('customer_phone', member.phone).order('created_at', { ascending:false }).limit(20),
       supabaseClient.from('canteen_orders').select('items_json, created_at, total_ghs').eq('customer_phone', member.phone).order('created_at', { ascending:false }).limit(20)
@@ -857,16 +905,20 @@ async function loadMemberAccount(){
     allOrders.forEach(o => (o.items_json||[]).forEach(i => { freq[i.item] = (freq[i.item]||0) + (i.qty||1); }));
     const favorites = Object.keys(freq).sort((a,b)=>freq[b]-freq[a]).slice(0,3);
 
+    const currentPoints = cust ? (cust.loyalty_points||0) : 0;
+
     const wrap = document.getElementById('memberBarWrap');
     const content = document.getElementById('memberBarContent');
     let html = `<div class="mw-title">Welcome back to The White House Events & More, ${member.name}!</div><div>${member.custId}</div>`;
-    if(cust) html += `<div class="mw-points">${cust.loyalty_points||0} points &middot; ${cust.total_visits||0} visits</div>`;
+    if(cust) html += `<div class="mw-points">${currentPoints} points &middot; ${cust.total_visits||0} visits</div>`;
     html += `<div class="mw-phone">Phone on file: ${member.phone} &middot; <span style="color:var(--teal)">&#128274; kept private, never sold or shared</span></div>`;
+
     if(favorites.length){
       html += `<div class="mw-favorites-label">Your usual — tap to add:</div>`;
       html += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">` +
         favorites.map(f => `<button type="button" class="btn" style="width:auto;padding:10px 16px;margin:0;font-size:14px" onclick="reorderFavorite('${f.replace(/'/g,"\\'")}')">+ ${f}</button>`).join('') + `</div>`;
     }
+
     if(allOrders.length){
       html += `<div class="mw-recent-label">Recent orders:</div>` +
         allOrders.slice(0,5).map(o => {
@@ -875,6 +927,40 @@ async function loadMemberAccount(){
           return `<div class="mw-recent-line">${d.toLocaleDateString('en-GB')} — ${itemsStr} — GHS ${(o.total_ghs||0).toFixed(2)}</div>`;
         }).join('');
     }
+
+    // v4.1: REWARDS — the piece the top-priority note flagged as
+    // missing. Shows every active reward and marks which ones this
+    // member can redeem right now with their current point balance.
+    // Actual redemption still happens on the Members dashboard (or
+    // ask staff at the bar) — this is a preview, not a redeem button,
+    // since redemption needs staff confirmation of who's collecting.
+    const rewards = rewardsData || [];
+    html += `<div class="mw-section-label">&#127942; Rewards</div>`;
+    if(rewards.length){
+      html += rewards.map(r => {
+        const eligible = currentPoints >= (r.points_required||0);
+        return `<div class="mw-reward-row${eligible?' eligible':''}">
+          <span class="mw-reward-name">${r.reward_name}${eligible?'<span class="mw-reward-eligible-tag">YOU CAN REDEEM THIS</span>':''}</span>
+          <span class="mw-reward-pts">${r.points_required} pts</span>
+        </div>`;
+      }).join('');
+      html += `<div style="font-size:11px;color:var(--text-dim);margin-top:8px">Ask a staff member to redeem a reward for you.</div>`;
+    }else{
+      html += `<div style="font-size:12px;color:var(--text-dim)">No rewards set up yet — check back soon.</div>`;
+    }
+
+    // v4.1: FOLLOW US
+    html += `<div class="mw-section-label">Follow us</div>`;
+    html += `<div class="mw-social-row">` + SOCIAL_LINKS.map(l => `<a class="mw-social-link" href="${l.url}" target="_blank" rel="noopener">${l.name}</a>`).join('') + `</div>`;
+
+    // v4.1: CONTACT US
+    html += `<div class="mw-section-label">Contact us</div>`;
+    if(venueContactPhone){
+      html += `<div class="mw-contact-line">Call or WhatsApp: <a href="tel:${venueContactPhone}">${venueContactPhone}</a></div>`;
+    }else{
+      html += `<div class="mw-contact-line">Ask any staff member on-site for help.</div>`;
+    }
+
     content.innerHTML = html;
     wrap.style.display = 'block';
   }catch(e){ console.log('loadMemberAccount error:', e); }
