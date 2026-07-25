@@ -1,1893 +1,698 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE EVENTS & MORE — BAR DASHBOARD (v6.1)
+  THE WHITE HOUSE EVENTS & MORE — MANAGER COMMAND CENTRE (v1.2)
+  Paired with ManagerCommandCentre_Code.gs bound to the Manager
+  Command Centre spreadsheet. Fill in API_URL below once deployed.
 
-  v6.1 CHANGES (this session):
-  - STAFF ON DUTY now only lists staff who are actually checked in to
-    THIS station (the bar). Previously it showed every active staff
-    profile with a check-in button sitting on each card, which made it
-    look like the whole team was "on the system" even when nobody had
-    clocked in. Checking in is now a separate control above the grid:
-    pick your name from a dropdown of staff not yet on duty here, tap
-    CHECK IN, then your card appears in the grid below with a check-out
-    button. If nobody is checked in, the grid is empty — the dropdown
-    is still there to check in.
+  v1.2: rebrand + input font-size raised to 16px (iOS pinch-zoom fix,
+  same cause/fix as every other dashboard in this system).
 
-  v6.0 CHANGES (full Supabase migration + staff unification + full-width layout):
-  - REMOVED all Apps Script (Google Sheets / Code.gs) dependency. Staff,
-    stock, orders, menu, restocks, and customer lookup now come from
-    Supabase only. The version-banner/EXPECTED_BACKEND_VERSION system
-    tracked Code.gs deployment drift — with Code.gs gone from this page's
-    data path entirely, that system is gone too.
-  - Staff list now reads from Supabase's `staff` table (already existed,
-    22 rows, was just never wired up here) instead of the old
-    🧑‍💼 Staff Google Sheet tab via Apps Script. Fixes "S22 added, didn't
-    show up" — that was always a two-separate-stores problem, same
-    pattern already fixed once for customers.
-  - Fixed a real duplicate-stock bug found this session: "Soda" and
-    "Soda/Sprite" were two separate bar_stock rows for the same physical
-    product, with different cocktail recipes silently decrementing
-    different ones. Merged into "Soda" (191oz combined) and repointed
-    Mojito Classic / Virgin Mojito to it. This — not a naming miss — is
-    almost certainly why stock looked like it was "dropping on its own".
-  - Full audit of every recipe ingredient against bar_stock item names:
-    no other mismatches found.
-  - Layout: .main max-width raised and made responsive (breakpoints at
-    900/1400/1800px) so wide phones/tablets/desktops use the freed-up
-    space instead of leaving it blank either side. Metrics, quick-sell,
-    and stock grids now flow into more columns on wider viewports.
+  v1.1: added a dedicated COCKTAILS tab. Cocktail-family sales (from
+  the Bar system's 🍹 Cocktail Sales sheet) now have their own
+  read-only summary here, separate from the general Bar/Canteen
+  "Running Costing" tab.
+
+  This dashboard pulls Bar/Canteen, Facilities, and Members data
+  READ-ONLY from your existing systems — edits to those still happen
+  on their own dashboards. Expenses, Payroll, Staff, Budgets, and
+  Settings are all owned and edited right here.
 -->
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>The White House Events & More — Bar Dashboard</title>
+<title>The White House Events & More — Manager Command Centre</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
-:root{--black:#0a0a0a;--surface:#111111;--card:#181818;--border:#2a2a2a;--gold:#f5a623;--gold-dim:#c9861a;--teal:#3fb6a8;--red:#ef4444;--green:#22c55e;--purple:#8b5cf6;--text:#f2f2f2;--text-dim:#b5b5b5;--muted:#888;}
+:root{--black:#0a0a0a;--surface:#111111;--card:#181818;--border:#2a2a2a;--gold:#f5a623;--gold-dim:#c9861a;--teal:#3fb6a8;--red:#ef4444;--green:#22c55e;--purple:#8b5cf6;--pink:#ec4899;--text:#f2f2f2;--text-dim:#b5b5b5;--muted:#888;}
 *{margin:0;padding:0;box-sizing:border-box;}
 body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min-height:100vh;}
-.header{background:var(--surface);border-bottom:1px solid var(--border);padding:16px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;flex-wrap:wrap;gap:10px;}
-.brand{display:flex;align-items:center;gap:12px;}
-.brand-logo{height:38px;width:auto;border-radius:6px;display:block;}
+.header{background:var(--surface);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;flex-wrap:wrap;gap:10px;}
 .logo{font-size:18px;font-weight:800;letter-spacing:1px;color:var(--gold);}
 .logo span{color:var(--text-dim);font-weight:400;font-size:11px;display:block;letter-spacing:2px;margin-top:2px;}
 .header-right{display:flex;align-items:center;gap:14px;}
 .last-refresh{font-size:11px;color:var(--muted);font-family:'Space Mono',monospace;}
-.conn-status{font-size:11px;font-family:'Space Mono',monospace;padding:4px 10px;border-radius:20px;background:var(--surface);border:1px solid var(--border);}
-.conn-status.online{color:var(--green);border-color:var(--green);}
-.conn-status.offline{color:var(--red);border-color:var(--red);}
-.pending-banner{display:none;background:#0f1a2a;border:1px solid var(--teal);border-radius:8px;padding:14px 18px;margin-bottom:20px;font-size:12px;line-height:1.6;}
-.pending-banner.active{display:block;}
-.pending-banner b{color:var(--teal);}
-.pending-item{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #16202e;}
-.pending-item:last-of-type{border-bottom:none;}
-.pending-actions{display:flex;gap:8px;margin-top:10px;}
-.pending-actions .btn{width:auto;padding:8px 16px;font-size:11px;}
 .refresh-btn{background:var(--border);border:none;color:var(--text);padding:8px 16px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:700;letter-spacing:1px;font-family:'Syne',sans-serif;}
 .refresh-btn:hover{background:var(--gold);color:var(--black);}
-.main{padding:20px 24px;max-width:1300px;margin:0 auto;}
-@media(min-width:1400px){.main{max-width:1680px;padding:24px 40px;}}
-@media(min-width:1800px){.main{max-width:2000px;padding:28px 56px;}}
-.low-stock-banner{display:none;background:#2a0a0a;border:1px solid var(--red);border-radius:8px;padding:16px 20px;margin-bottom:20px;}
-.low-stock-banner.active{display:block;}
-.low-stock-banner-title{color:var(--red);font-weight:800;font-size:13px;letter-spacing:1px;margin-bottom:8px;}
-.low-stock-pill{display:inline-block;background:#3a1010;border:1px solid var(--red);color:#ffb3b3;padding:5px 12px;border-radius:20px;font-size:12px;margin:3px 4px 0 0;font-family:'Space Mono',monospace;}
-.metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:8px;}
-@media(min-width:1400px){.metrics-grid{grid-template-columns:repeat(4,1fr);}}
-.metric-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:18px;position:relative;overflow:hidden;cursor:pointer;transition:border-color .15s,transform .1s;}
-.metric-card:hover{border-color:var(--muted);}
-.metric-card.expanded{border-color:var(--gold);}
-.metric-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;}
-.metric-card.gold::before{background:var(--gold);}.metric-card.teal::before{background:var(--teal);}.metric-card.red::before{background:var(--red);}.metric-card.green::before{background:var(--green);}
-.metric-label{font-size:10px;font-weight:700;letter-spacing:2px;color:var(--muted);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;}
-.metric-caret{font-size:9px;transition:transform .15s;}
-.metric-card.expanded .metric-caret{transform:rotate(180deg);}
-.metric-value{font-size:30px;font-weight:800;font-family:'Space Mono',monospace;line-height:1;}
-.metric-card.gold .metric-value{color:var(--gold);}.metric-card.teal .metric-value{color:var(--teal);}.metric-card.red .metric-value{color:var(--red);}.metric-card.green .metric-value{color:var(--green);}
-.metric-sub{font-size:11px;color:var(--text-dim);margin-top:6px;}
-.metric-detail{background:var(--card);border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px;margin-top:-14px;margin-bottom:20px;padding:14px 18px;display:none;font-size:12px;}
-.metric-detail.show{display:block;}
-.metric-detail-row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #1a1a1a;}
-.metric-detail-row:last-child{border-bottom:none;}
-.metric-detail-empty{color:var(--muted);padding:6px 0;}
-.two-col{display:grid;grid-template-columns:1.3fr 1fr;gap:16px;margin-bottom:20px;}
-@media(max-width:900px){.two-col{grid-template-columns:1fr;}}
-@media(min-width:1600px){.two-col{grid-template-columns:1.6fr 1fr;}}
-.card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:18px;margin-bottom:16px;}
-.card-title{font-size:11px;font-weight:700;letter-spacing:2px;color:var(--muted);margin-bottom:14px;text-transform:uppercase;}
-table{width:100%;border-collapse:collapse;font-size:12px;}
-th{text-align:left;padding:8px 10px;color:var(--muted);font-weight:700;letter-spacing:1px;border-bottom:1px solid var(--border);font-size:10px;}
-td{padding:7px 10px;border-bottom:1px solid #1a1a1a;}
-tr.low-row td{color:var(--red);}
-tr.low-row{background:#1a0a0a;}
-.search-input,.select-input{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 14px;color:var(--text);font-size:16px;font-family:'Syne',sans-serif;width:100%;margin-bottom:10px;outline:none;}
-.search-input:focus,.select-input:focus{border-color:var(--gold);}
-.select-input{appearance:auto;}
-.btn{background:var(--gold);color:var(--black);border:none;padding:10px 18px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:800;letter-spacing:1px;font-family:'Syne',sans-serif;width:100%;}
-.btn:hover{background:var(--gold-dim);}
-.btn:disabled{opacity:0.5;cursor:not-allowed;}
-.empty{text-align:center;padding:24px;color:var(--muted);font-size:12px;}
-.loading{text-align:center;padding:24px;color:var(--muted);font-size:12px;font-family:'Space Mono',monospace;}
-.customer-result{background:var(--surface);border:1px solid var(--teal);border-radius:6px;padding:12px 14px;margin-top:10px;font-size:12px;line-height:1.7;display:none;}
-.customer-result.show{display:block;}
-.customer-result b{color:var(--teal);}
-.restock-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;}
-.combo-wrap{position:relative;margin-bottom:10px;}
-.combo-list{display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--gold);border-top:none;border-radius:0 0 8px 8px;max-height:220px;overflow-y:auto;z-index:50;}
-.combo-list.show{display:block;}
-.combo-item{padding:9px 14px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--border);}
-.combo-item:last-child{border-bottom:none;}
-.combo-item:hover,.combo-item.active{background:#221f16;color:var(--gold);}
-.combo-empty{padding:9px 14px;font-size:12px;color:var(--muted);}
-.scroll-table{max-height:420px;overflow-y:auto;}
-.scroll-table thead th{position:sticky;top:0;background:var(--card);z-index:2;}
-.badge-unit{font-size:9px;color:var(--muted);font-family:'Space Mono',monospace;}
-.staff-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;}
-.staff-card{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--purple);border-radius:6px;padding:12px 14px;}
-.staff-card .staff-initials{color:var(--purple);font-weight:800;font-family:'Space Mono',monospace;font-size:13px;}
-.staff-card .staff-name{font-size:13px;font-weight:700;margin-top:2px;}
-.staff-card .staff-meta{font-size:11px;color:var(--text-dim);margin-top:6px;line-height:1.5;}
-.checkin-row{display:flex;gap:8px;margin-bottom:14px;align-items:flex-start;}
-.checkin-row .select-input{margin-bottom:0;}
-.checkin-row .btn{width:auto;padding:10px 18px;white-space:nowrap;background:var(--teal);color:#0a0a0a;}
-.checkin-row .btn:hover{background:#33978c;}
-.tab-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;}
-.tab-pill{background:var(--surface);border:1px solid var(--border);color:var(--text-dim);padding:7px 14px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:0.5px;cursor:pointer;font-family:'Syne',sans-serif;transition:all .15s;}
-.tab-pill:hover{border-color:var(--gold);color:var(--text);}
-.tab-pill.active{background:var(--gold);color:var(--black);border-color:var(--gold);}
-.tab-pill .tab-count{opacity:0.7;margin-left:4px;}
-.rank-row{display:flex;align-items:center;gap:12px;padding:9px 4px;border-bottom:1px solid #1a1a1a;}
-.rank-row:last-child{border-bottom:none;}
-.rank-num{font-family:'Space Mono',monospace;font-weight:800;font-size:13px;color:var(--muted);width:20px;flex-shrink:0;}
-.rank-row:nth-child(1) .rank-num{color:var(--gold);}
-.rank-row:nth-child(2) .rank-num{color:#c9c9c9;}
-.rank-row:nth-child(3) .rank-num{color:#c9861a;}
-.rank-info{flex:1;min-width:0;}
-.rank-name{font-size:12px;font-weight:700;}
-.rank-sub{font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;margin-top:2px;}
-.rank-value{font-family:'Space Mono',monospace;font-weight:700;font-size:12px;color:var(--teal);flex-shrink:0;}
-.rank-value.stale{color:var(--red);}
-.error-banner{display:none;background:#2a1a0a;border:1px solid var(--gold-dim);border-radius:8px;padding:14px 18px;margin-bottom:20px;font-size:12px;line-height:1.6;color:#ffdca8;}
+.main{padding:16px 20px 60px;max-width:1300px;margin:0 auto;}
+.error-banner{display:none;background:#2a1a0a;border:1px solid var(--gold-dim);border-radius:8px;padding:14px 18px;margin-bottom:16px;font-size:12px;line-height:1.6;color:#ffdca8;}
 .error-banner.active{display:block;}
-.error-banner b{color:var(--gold);}
-.flash{color:var(--green);}
-.quick-sell-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;max-height:280px;overflow-y:auto;margin-top:4px;}
-@media(min-width:1400px){.quick-sell-grid{max-height:360px;}}
-.quick-sell-item{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 12px;cursor:pointer;transition:border-color .15s;text-align:left;display:flex;flex-direction:column;gap:2px;}
-.quick-sell-item:hover{border-color:var(--gold);}
-.quick-sell-item.in-cart{border-color:var(--gold);background:#1e1706;}
-.quick-sell-item .qs-name{font-size:15px;font-weight:800;line-height:1.25;color:var(--text);}
-.quick-sell-item .qs-price{font-size:11px;color:var(--gold-dim);font-family:'Space Mono',monospace;margin-top:3px;}
-.quick-sell-item .qs-cat{font-size:9px;color:var(--muted);margin-top:1px;}
-.quick-sell-item .qs-cart-qty{position:absolute;top:6px;right:8px;background:var(--gold);color:var(--black);font-family:'Space Mono',monospace;font-weight:800;font-size:11px;border-radius:10px;padding:1px 7px;}
-.quick-sell-item{position:relative;}
-.quick-sell-panel{display:none;background:var(--surface);border:1px solid var(--gold);border-radius:8px;padding:16px;margin-top:14px;}
-.quick-sell-panel.show{display:block;}
-.quick-sell-panel .qs-title{font-size:13px;font-weight:800;color:var(--gold);margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;}
-.qs-field-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
-.qs-label{font-size:10px;font-weight:700;color:var(--text-dim);letter-spacing:0.5px;margin-bottom:4px;text-transform:uppercase;}
-.qs-warning{font-size:11px;color:var(--red);background:#2a0a0a;border:1px solid var(--red);border-radius:6px;padding:8px 10px;margin-bottom:10px;line-height:1.5;}
-.cart-list{margin-top:4px;}
-.cart-row{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:6px;}
-.cart-row .cart-name{flex:1;font-size:13px;font-weight:700;min-width:0;}
-.cart-row .cart-name .cart-unit-price{display:block;font-size:10px;color:var(--muted);font-weight:400;font-family:'Space Mono',monospace;margin-top:2px;}
-.cart-qty-stepper{display:flex;align-items:center;gap:6px;}
-.cart-qty-stepper button{background:var(--border);border:none;color:var(--text);width:24px;height:24px;border-radius:5px;cursor:pointer;font-weight:800;font-size:13px;font-family:'Syne',sans-serif;line-height:1;}
-.cart-qty-stepper button:hover{background:var(--gold);color:var(--black);}
-.cart-qty-stepper span{font-family:'Space Mono',monospace;font-size:13px;width:20px;text-align:center;}
-.cart-line-total{font-family:'Space Mono',monospace;font-size:13px;color:var(--gold);width:70px;text-align:right;flex-shrink:0;}
-.cart-remove{background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;line-height:1;padding:2px 4px;flex-shrink:0;}
-.cart-subtotal-row{display:flex;justify-content:space-between;align-items:center;padding:12px 4px;border-top:1px solid var(--border);margin-top:6px;font-size:14px;font-weight:800;}
-.cart-subtotal-row .cart-subtotal-value{color:var(--gold);font-family:'Space Mono',monospace;font-size:18px;}
-.cart-empty-hint{color:var(--muted);font-size:12px;padding:10px 4px;}
-.scanner-modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.9);z-index:1000;align-items:center;justify-content:center;flex-direction:column;padding:20px;}
-.scanner-modal.show{display:flex;}
-.scanner-modal video{width:100%;max-width:420px;border-radius:8px;border:2px solid var(--teal);}
-.scanner-modal .scanner-hint{color:var(--text-dim);font-size:12px;margin-top:14px;text-align:center;max-width:400px;}
-.scanner-modal .scanner-close{margin-top:16px;background:var(--red);color:#fff;border:none;padding:10px 24px;border-radius:5px;cursor:pointer;font-weight:700;font-family:'Syne',sans-serif;}
-.shift-summary-box{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:14px 16px;font-size:12px;line-height:1.7;}
-.shift-summary-box h4{color:var(--gold);font-size:11px;letter-spacing:1px;margin:12px 0 6px;text-transform:uppercase;}
-.shift-summary-box h4:first-child{margin-top:0;}
-.shift-summary-row{display:flex;justify-content:space-between;padding:3px 0;}
-.qr-card-box{margin-top:12px;text-align:center;background:#fff;border-radius:8px;padding:16px;display:none;}
-.qr-card-box.show{display:block;}
-.qr-card-box #qrCanvasHolder{display:flex;justify-content:center;}
-.qr-card-box .qr-cust-id{color:#0a0a0a;font-weight:800;font-family:'Space Mono',monospace;margin-top:8px;font-size:13px;}
-
-.order-card{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--gold);border-radius:8px;padding:14px 16px;margin-bottom:10px;transition:opacity .15s;}
-.order-card.status-placed{border-left-color:var(--gold);}
-.order-card.status-placed.is-new{animation:orderFlash 1.4s ease-in-out 3;}
-.order-card.status-preparing{border-left-color:var(--teal);}
-.order-card.status-delivered{border-left-color:#c9861a;}
-.order-card.is-processing{opacity:0.5;}
-@keyframes orderFlash{0%,100%{background:var(--surface);}50%{background:#3a2a06;}}
-.order-card-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;}
-.order-card-table{font-weight:800;font-size:20px;}
-.order-card-age{font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;}
-.order-status-pill{font-size:9px;font-weight:800;letter-spacing:0.5px;padding:3px 9px;border-radius:12px;text-transform:uppercase;}
-.order-status-pill.placed{background:#2a2006;color:var(--gold);}
-.order-status-pill.preparing{background:#0f2a27;color:var(--teal);}
-.order-status-pill.delivered{background:#2a1f06;color:#e0aa50;}
-.order-items-list{font-size:16px;color:var(--text-dim);margin:6px 0 10px;line-height:1.6;}
-.order-card-footer{display:flex;justify-content:space-between;align-items:center;gap:10px;}
-.order-total{font-family:'Space Mono',monospace;font-weight:800;color:var(--gold);font-size:22px;}
-.order-pay-badge{font-size:13px;color:var(--muted);font-family:'Space Mono',monospace;}
-.order-staff-select{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:16px;font-family:'Syne',sans-serif;width:100%;margin-top:8px;margin-bottom:2px;}
-.order-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;}
-.order-actions button{flex:1;min-width:110px;padding:8px 10px;font-size:11px;border-radius:6px;border:none;font-weight:800;cursor:pointer;font-family:'Syne',sans-serif;}
-.oa-primary{background:var(--gold);color:var(--black);}
-.oa-cancel{background:transparent;border:1px solid var(--red)!important;color:var(--red);}
-.order-momo-input{background:var(--card);border:1px solid var(--teal);border-radius:6px;padding:8px 10px;font-size:16px;color:var(--text);width:100%;margin-bottom:6px;font-family:'Syne',sans-serif;}
-@media(min-width:1400px){.order-cards-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start;}}
-@media(min-width:1900px){.order-cards-grid{grid-template-columns:1fr 1fr 1fr;}}
+.tabs{display:flex;gap:4px;margin-bottom:18px;background:var(--surface);padding:6px;border-radius:8px;border:1px solid var(--border);overflow-x:auto;}
+.tab{padding:9px 16px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:700;letter-spacing:0.5px;white-space:nowrap;color:var(--text-dim);border:none;background:none;font-family:'Syne',sans-serif;}
+.tab.active{background:var(--gold);color:var(--black);}
+.tab:hover:not(.active){color:var(--text);background:var(--border);}
+.section{display:none;}
+.section.active{display:block;}
+.metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:16px;}
+.metric-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px;position:relative;overflow:hidden;}
+.metric-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;}
+.metric-card.gold::before{background:var(--gold);}.metric-card.teal::before{background:var(--teal);}.metric-card.red::before{background:var(--red);}.metric-card.green::before{background:var(--green);}.metric-card.purple::before{background:var(--purple);}.metric-card.pink::before{background:var(--pink);}
+.metric-label{font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--muted);margin-bottom:8px;}
+.metric-value{font-size:26px;font-weight:800;font-family:'Space Mono',monospace;line-height:1;}
+.metric-card.gold .metric-value{color:var(--gold);}.metric-card.teal .metric-value{color:var(--teal);}.metric-card.red .metric-value{color:var(--red);}.metric-card.green .metric-value{color:var(--green);}.metric-card.purple .metric-value{color:var(--purple);}.metric-card.pink .metric-value{color:var(--pink);}
+.metric-sub{font-size:11px;color:var(--text-dim);margin-top:6px;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px;}
+.card-title{font-size:11px;font-weight:700;letter-spacing:2px;color:var(--muted);margin-bottom:12px;text-transform:uppercase;}
+table{width:100%;border-collapse:collapse;font-size:12px;}
+th{text-align:left;padding:7px 8px;color:var(--muted);font-weight:700;letter-spacing:0.5px;border-bottom:1px solid var(--border);font-size:10px;}
+td{padding:6px 8px;border-bottom:1px solid #1a1a1a;}
+.scroll-table{max-height:420px;overflow-y:auto;}
+/* v1.2: font-size raised from 13px to 16px — iOS Safari auto-zooms
+   the page when focusing any input under 16px. */
+input,select,textarea{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:9px 12px;color:var(--text);font-size:16px;font-family:'Syne',sans-serif;width:100%;margin-bottom:9px;outline:none;}
+input:focus,select:focus,textarea:focus{border-color:var(--gold);}
+textarea{min-height:60px;resize:vertical;}
+.btn{background:var(--gold);color:var(--black);border:none;padding:10px 16px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:800;letter-spacing:0.5px;font-family:'Syne',sans-serif;width:100%;}
+.btn:hover{background:var(--gold-dim);}
+.btn.teal{background:var(--teal);color:#0a0a0a;}
+.btn.purple{background:var(--purple);color:#fff;}
+.btn.ghost{background:var(--border);color:var(--text);}
+.two-col{display:grid;grid-template-columns:1.2fr 1fr;gap:16px;}
+@media(max-width:900px){.two-col{grid-template-columns:1fr;}}
+.field-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.empty{text-align:center;padding:20px;color:var(--muted);font-size:12px;}
+.loading{text-align:center;padding:30px;color:var(--muted);font-size:12px;font-family:'Space Mono',monospace;}
+.result-msg{font-size:12px;margin-top:6px;}
+.pill{display:inline-block;font-size:9px;font-weight:800;letter-spacing:0.5px;padding:3px 9px;border-radius:12px;font-family:'Space Mono',monospace;}
+.pill.pos{background:#0e1a0e;color:var(--green);border:1px solid var(--green);}
+.pill.neg{background:#2a0a0a;color:var(--red);border:1px solid var(--red);}
+.pill.warn{background:#2a2006;color:var(--gold);border:1px solid var(--gold-dim);}
+.pill.cocktail{background:#2a0e22;color:var(--pink);border:1px solid var(--pink);}
+.bar-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+.bar-row .b-label{width:170px;font-size:11px;flex-shrink:0;}
+.bar-track{flex:1;height:16px;background:var(--surface);border-radius:4px;overflow:hidden;border:1px solid var(--border);}
+.bar-fill{height:100%;background:var(--teal);}
+.bar-fill.over{background:var(--red);}
+.bar-row .b-value{width:130px;text-align:right;font-family:'Space Mono',monospace;font-size:11px;flex-shrink:0;}
+.receipt-thumb{color:var(--teal);font-size:11px;text-decoration:none;}
+.staff-card{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--purple);border-radius:6px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:10px;}
+.staff-card .s-name{font-weight:700;font-size:12px;}
+.staff-card .s-meta{font-size:10px;color:var(--text-dim);margin-top:3px;font-family:'Space Mono',monospace;}
+.onshift-pill{display:inline-flex;align-items:center;gap:6px;background:#0e1a0e;border:1px solid var(--green);color:var(--green);padding:6px 12px;border-radius:20px;font-size:11px;margin:3px 6px 3px 0;font-family:'Space Mono',monospace;}
+.file-input-label{display:block;background:var(--surface);border:1px dashed var(--border);border-radius:6px;padding:12px;text-align:center;font-size:12px;color:var(--text-dim);cursor:pointer;margin-bottom:9px;}
 </style>
 </head>
 <body>
 <div class="header">
-  <div class="brand">
-    <img src="logo.jpg" alt="The White House Events & More" class="brand-logo" onerror="this.style.display='none'">
-    <div class="logo">THE WHITE HOUSE EVENTS & MORE <span>BAR DASHBOARD</span></div>
-  </div>
-  <div class="header-right"><span class="conn-status" id="connStatus">&#9679; checking...</span><span class="last-refresh" id="lastRefresh">Loading...</span><button class="refresh-btn" onclick="loadData()">&#8635; REFRESH</button></div>
+  <div class="logo">THE WHITE HOUSE EVENTS & MORE <span>MANAGER COMMAND CENTRE</span></div>
+  <div class="header-right"><span class="last-refresh" id="lastRefresh">Loading...</span><button class="refresh-btn" onclick="loadData()">&#8635; REFRESH</button></div>
 </div>
 
 <div class="main">
   <div class="error-banner" id="errorBanner"></div>
-  <div class="pending-banner" id="pendingBanner"></div>
 
-  <div class="card" id="tableOrdersCard">
-    <div class="card-title">&#128203; INCOMING TABLE ORDERS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(from QR ordering, or from staff phones — pick staff on each order card below)</span></div>
-    <div class="order-cards-grid" id="tableOrdersBody"><div class="empty">Loading table orders...</div></div>
+  <div class="tabs">
+    <button class="tab active" data-sec="overview" onclick="switchSection('overview',this)">OVERVIEW</button>
+    <button class="tab" data-sec="expenses" onclick="switchSection('expenses',this)">EXPENSES</button>
+    <button class="tab" data-sec="payroll" onclick="switchSection('payroll',this)">PAYROLL &amp; STAFF</button>
+    <button class="tab" data-sec="budgets" onclick="switchSection('budgets',this)">BUDGETS &amp; ACTUAL</button>
+    <button class="tab" data-sec="costing" onclick="switchSection('costing',this)">RUNNING COSTING</button>
+    <button class="tab" data-sec="cocktails" onclick="switchSection('cocktails',this)">COCKTAILS</button>
+    <button class="tab" data-sec="barcanteen" onclick="switchSection('barcanteen',this)">BAR &amp; CANTEEN</button>
+    <button class="tab" data-sec="facilities" onclick="switchSection('facilities',this)">FACILITIES</button>
+    <button class="tab" data-sec="members" onclick="switchSection('members',this)">MEMBERS</button>
+    <button class="tab" data-sec="shifts" onclick="switchSection('shifts',this)">SHIFTS</button>
+    <button class="tab" data-sec="settings" onclick="switchSection('settings',this)">SETTINGS</button>
   </div>
 
-  <div class="card" id="foodOrdersCard">
-    <div class="card-title">&#127859; INCOMING FOOD ORDERS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(same orders the kitchen sees — shown here too so the bar has visibility. Actions here update the kitchen's queue directly, it's the same order)</span></div>
-    <div class="order-cards-grid" id="foodOrdersBody"><div class="empty">Loading food orders...</div></div>
-  </div>
-
-  <div class="low-stock-banner" id="lowStockBanner">
-    <div class="low-stock-banner-title">&#9888; LOW STOCK — RESTOCK NEEDED</div>
-    <div id="lowStockPills"></div>
-  </div>
-
-  <div class="metrics-grid" id="topMetrics"><div class="loading">Loading bar data</div></div>
-  <div id="metricDetails"></div>
-
-  <div class="card" id="quickSellCard">
-    <div class="card-title">&#9889; QUICK SELL <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(ring up a sale without opening the sheet — tap items to add to cart)</span></div>
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
-      <input class="search-input" id="quickSellSearch" placeholder="Search menu items..." oninput="renderQuickSellMenu()" style="margin-bottom:0;flex:1">
-      <button type="button" class="btn" style="width:auto;padding:10px 16px;margin:0" onclick="document.getElementById('quickSellSearch').value='';renderQuickSellMenu();">&#10005; CLEAR</button>
-    </div>
-    <div class="tab-row" id="quickSellTabs"></div>
-    <div class="quick-sell-grid" id="quickSellGrid"><div class="empty">Loading menu...</div></div>
-    <div class="quick-sell-panel" id="quickSellPanel"></div>
-  </div>
-
-  <div class="two-col">
-    <div>
+  <!-- OVERVIEW -->
+  <div class="section active" id="sec-overview">
+    <div class="metrics-grid" id="overviewMetrics"><div class="loading">Loading...</div></div>
+    <div class="two-col">
       <div class="card">
-        <div class="card-title">&#128203; TODAY'S ORDERS</div>
-        <div class="scroll-table"><table><thead><tr><th>TIME</th><th>ITEM</th><th>QTY</th><th>TOTAL</th><th>STAFF</th><th>CUSTOMER</th></tr></thead><tbody id="ordersBody"></tbody></table></div>
-      </div>
-    </div>
-    <div>
-      <div class="card">
-        <div class="card-title">&#128100; CUSTOMER LOOKUP <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(one shared customer base — bar, bookings, and landing-page sign-ups all live here)</span></div>
-        <input class="search-input" id="custPhoneInput" placeholder="Phone number, or ID like THWGH1 / GH1 / 1" onkeydown="if(event.key==='Enter')lookupCustomer()">
-        <div class="restock-grid">
-          <button class="btn" onclick="lookupCustomer()" style="margin:0">LOOK UP</button>
-          <button class="btn" id="scanBtn" onclick="openScanner()" style="margin:0;background:var(--teal);color:#0a0a0a">&#128247; SCAN QR/ID CARD</button>
-        </div>
-        <div class="customer-result" id="customerResult"></div>
-        <div class="qr-card-box" id="qrCardBox">
-          <div id="qrCanvasHolder"></div>
-          <div class="qr-cust-id" id="qrCardLabel"></div>
-        </div>
+        <div class="card-title">&#128203; RECENT EXPENSES</div>
+        <div id="overviewExpenses"><div class="empty">Loading...</div></div>
       </div>
       <div class="card">
-        <div class="card-title">&#128230; RESTOCK AN ITEM <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(covers everything, including cocktail pour ingredients — Rum, Lime, Soda, etc. — each item's unit is fixed here so oz/unit can't get mixed up)</span></div>
-        <div class="combo-wrap" id="restockItemComboWrap">
-          <input class="search-input" id="restockItem" placeholder="Item name (must match Bar Stock exactly)" autocomplete="off" style="margin-bottom:0">
-          <div class="combo-list" id="restockItemComboList"></div>
+        <div class="card-title">&#128100; WHO'S ON SHIFT NOW</div>
+        <div id="overviewShift"><div class="empty">Loading...</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- EXPENSES -->
+  <div class="section" id="sec-expenses">
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title">&#128181; LOG A PURCHASE / EXPENSE</div>
+        <input id="expItem" placeholder="What did you buy? (e.g. 20 crates Coke)">
+        <div class="field-grid">
+          <input id="expAmount" type="number" placeholder="Amount GHS">
+          <select id="expCategory"><option value="">Auto-detect category</option></select>
         </div>
-        <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px;margin:10px 0 6px">
-          <input type="checkbox" id="restockMultiToggle" onchange="toggleRestockMulti()"> Restock several items at once, all at the same quantity
-        </label>
-        <div id="restockMultiBox" style="display:none;margin-bottom:6px">
-          <input class="search-input" id="restockMultiSearch" placeholder="Search to filter the list below..." oninput="renderRestockMultiList()" style="margin-bottom:8px">
-          <div id="restockMultiList" style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;background:var(--surface)"></div>
-          <div style="font-size:11px;color:var(--muted);margin-top:4px">Tap an item to select it, tap again to unselect — no Ctrl/Cmd needed. <span id="restockMultiCount">0 selected</span>. The item field above is ignored while this is on.</div>
+        <div class="field-grid">
+          <input id="expSupplier" placeholder="Supplier name (optional)">
+          <input id="expSupplierContact" placeholder="Supplier phone (optional)">
         </div>
-        <div class="restock-grid">
-          <input class="search-input" id="restockQty" type="number" placeholder="Qty to add (singles)" style="margin:0">
-          <input class="search-input" id="restockPar" type="number" placeholder="Par level (optional)" style="margin:0">
-        </div>
-        <div class="restock-grid">
-          <input class="search-input" id="restockPacks" type="number" placeholder="OR: packs/crates to add" style="margin:0">
-          <input class="search-input" id="restockUnitsPerPack" type="number" placeholder="Units per pack (set once)" style="margin:0">
-        </div>
-        <input class="search-input" id="restockPackLabel" placeholder="Pack label, e.g. Case of 24 (optional)">
-        <input class="search-input" id="restockCost" type="number" placeholder="Cost per unit (optional)">
-        <select class="select-input" id="restockBy">
-          <option value="">Restocked by... (required)</option>
+        <select id="expPayment">
+          <option value="">Payment method...</option>
+          <option>Cash</option><option>Mobile Money</option><option>Bank Transfer</option><option>Card</option>
         </select>
-        <button class="btn" onclick="submitRestock()">+ ADD STOCK</button>
-        <div id="restockResult" style="margin-top:8px;font-size:12px"></div>
+        <input id="expLoggedBy" placeholder="Your name">
+        <textarea id="expNotes" placeholder="Notes (optional)"></textarea>
+        <label class="file-input-label" id="receiptLabel">&#128248; Tap to attach a receipt photo (optional)</label>
+        <input type="file" id="expReceipt" accept="image/*" capture="environment" style="display:none">
+        <button class="btn" onclick="submitExpense()">+ LOG EXPENSE</button>
+        <div id="expResult" class="result-msg"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">&#128202; SPEND THIS MONTH BY CATEGORY</div>
+        <div id="expenseCategoryBreakdown"><div class="empty">Loading...</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">&#128203; ALL EXPENSES (most recent first)</div>
+      <input id="expenseSearch" placeholder="Search expenses..." oninput="renderExpensesTable()">
+      <div class="scroll-table"><table><thead><tr><th>DATE</th><th>ITEM</th><th>CATEGORY</th><th>AMOUNT</th><th>SUPPLIER</th><th>PAYMENT</th><th>BY</th><th>RECEIPT</th></tr></thead><tbody id="expensesBody"></tbody></table></div>
+    </div>
+  </div>
+
+  <!-- PAYROLL & STAFF -->
+  <div class="section" id="sec-payroll">
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title">&#127942; STAFF MASTER</div>
+        <div id="staffList" style="max-height:340px;overflow-y:auto"><div class="empty">Loading...</div></div>
+        <div class="card-title" style="margin-top:16px">+ ADD STAFF</div>
+        <input id="stfName" placeholder="Full name">
+        <div class="field-grid">
+          <select id="stfDept"><option>Bar</option><option>Canteen</option><option>Facilities</option><option>Front of House</option><option>Management</option><option>Security</option><option>Other</option></select>
+          <input id="stfRole" placeholder="Role">
+        </div>
+        <div class="field-grid">
+          <select id="stfPayType"><option>Monthly</option><option>Daily</option><option>Weekly</option></select>
+          <input id="stfPayRate" type="number" placeholder="Pay rate GHS">
+        </div>
+        <input id="stfPhone" placeholder="Phone (optional)">
+        <button class="btn purple" onclick="submitAddStaff()">+ ADD STAFF MEMBER</button>
+        <div id="stfResult" class="result-msg"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">&#128181; RUN PAYROLL</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:10px">Estimates SSNIT (5.5%/13%) + PAYE per the current Settings tax bands — verify with your accountant before real filing.</div>
+        <select id="prStaff"><option value="">All active staff (one full period)</option></select>
+        <div class="field-grid">
+          <input id="prPeriodLabel" placeholder="Period label (e.g. July 2026)">
+          <input id="prUnits" type="number" placeholder="Units worked (days/weeks, default 1)">
+        </div>
+        <select id="prPayment"><option value="">Payment method (optional)</option><option>Mobile Money</option><option>Cash</option><option>Bank Transfer</option></select>
+        <button class="btn teal" onclick="submitRunPayroll()">&#9881; RUN PAYROLL</button>
+        <div id="prResult" class="result-msg"></div>
+        <div class="card-title" style="margin-top:16px">RECENT PAYROLL RUNS</div>
+        <div class="scroll-table" style="max-height:260px"><table><thead><tr><th>PERIOD</th><th>NAME</th><th>GROSS</th><th>SSNIT</th><th>PAYE</th><th>NET</th><th>STATUS</th></tr></thead><tbody id="payrollBody"></tbody></table></div>
       </div>
     </div>
   </div>
 
-  <div class="two-col">
+  <!-- BUDGETS -->
+  <div class="section" id="sec-budgets">
     <div class="card">
-      <div class="card-title">&#128293; TOP SELLERS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(all-time, by quantity sold)</span></div>
-      <div id="topSellersBody"><div class="empty">Loading...</div></div>
+      <div class="card-title">&#128200; ACTUAL VS PREDICTED — THIS MONTH <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(edit targets any time in the Budgets sheet)</span></div>
+      <div id="budgetsList"><div class="empty">Loading...</div></div>
+    </div>
+  </div>
+
+  <!-- RUNNING COSTING (general — cocktail-family items now excluded, see COCKTAILS tab) -->
+  <div class="section" id="sec-costing">
+    <div class="metrics-grid" id="costingMetrics"></div>
+    <div class="card">
+      <div class="card-title">&#129380; TOP SELLERS — REVENUE VS TRUE COST OF GOODS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(cost pulled live from Bar Stock cost-per-unit &times; recipe quantities — cocktail-family items excluded, see the COCKTAILS tab)</span></div>
+      <div class="scroll-table"><table><thead><tr><th>ITEM</th><th>QTY SOLD</th><th>REVENUE</th><th>COGS USED</th><th>MARGIN</th></tr></thead><tbody id="costingBody"></tbody></table></div>
+    </div>
+    <div class="card" style="border-color:var(--gold-dim)">
+      <div class="card-title" style="color:var(--gold)">&#9888; PURCHASES LOGGED VS COGS ACTUALLY USED</div>
+      <div style="font-size:12px;color:var(--text-dim);line-height:1.6">If "Purchases Logged" (money spent buying stock, from Expenses) is running well above "COGS Used in Sales" (calculated from what was actually sold), that's a signal worth investigating — waste, over-ordering, or shrinkage.</div>
+      <div id="cogsCompare" style="margin-top:12px"></div>
+    </div>
+  </div>
+
+  <!-- COCKTAILS -->
+  <div class="section" id="sec-cocktails">
+    <div class="metrics-grid" id="cocktailMetrics"><div class="loading">Loading...</div></div>
+    <div class="card">
+      <div class="card-title">&#127864; TOP COCKTAILS — REVENUE, INGREDIENT COST &amp; MARGIN <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(Cocktail, Mocktail, Milkshake, Smoothie, Juice, VIP Special — cost recorded at the moment of sale on the Bar system)</span></div>
+      <div class="scroll-table"><table><thead><tr><th>ITEM</th><th>CATEGORY</th><th>QTY SOLD</th><th>REVENUE</th><th>INGREDIENT COST</th><th>MARGIN</th></tr></thead><tbody id="cocktailTopBody"></tbody></table></div>
     </div>
     <div class="card">
-      <div class="card-title">&#8987; LONGEST ON THE SHELF <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(never restocked, or not restocked in 60+ days — scroll inside this box)</span></div>
-      <div class="scroll-table" id="staleStockBody"><div class="empty">Loading...</div></div>
+      <div class="card-title">&#128203; RECENT COCKTAIL SALES</div>
+      <div class="scroll-table"><table><thead><tr><th>WHEN</th><th>ITEM</th><th>QTY</th><th>REVENUE</th><th>COST</th><th>MARGIN</th><th>STAFF</th></tr></thead><tbody id="cocktailRecentBody"></tbody></table></div>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:-8px;margin-bottom:16px">Read-only — cocktail sales are recorded automatically on the Bar system whenever a cocktail-family item is sold; nothing is edited here.</div>
+  </div>
+
+  <!-- BAR & CANTEEN (read-only) -->
+  <div class="section" id="sec-barcanteen">
+    <div class="metrics-grid" id="barMetrics"><div class="loading">Loading...</div></div>
+    <div class="card">
+      <div class="card-title">&#9888; LOW STOCK ITEMS</div>
+      <div id="barLowStock"><div class="empty">Loading...</div></div>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:-8px;margin-bottom:16px">Read-only — edit stock, recipes, and orders on the Bar/Canteen dashboards directly.</div>
+  </div>
+
+  <!-- FACILITIES (read-only) -->
+  <div class="section" id="sec-facilities">
+    <div class="metrics-grid" id="facMetrics"><div class="loading">Loading...</div></div>
+    <div class="card">
+      <div class="card-title">&#127959; PROJECTS</div>
+      <div id="facProjects"><div class="empty">Loading...</div></div>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:-8px;margin-bottom:16px">Read-only — edit tickets and projects on the Facilities dashboard directly.</div>
+  </div>
+
+  <!-- MEMBERS (read-only) -->
+  <div class="section" id="sec-members">
+    <div class="metrics-grid" id="memberMetrics"><div class="loading">Loading...</div></div>
+    <div class="card">
+      <div class="card-title">&#127942; TOP MEMBERS BY POINTS</div>
+      <div id="memberTop"><div class="empty">Loading...</div></div>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:-8px;margin-bottom:16px">Read-only — manage members, rewards, and Regular/VIP status on the Members dashboard directly.</div>
+  </div>
+
+  <!-- SHIFTS -->
+  <div class="section" id="sec-shifts">
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title">&#9989; MANUAL CHECK IN / OUT</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:10px">Once check-in widgets are added to the Bar/Canteen/Facilities dashboards, they'll write here automatically too — this is the same shared log.</div>
+        <select id="shStaff"><option value="">Select staff...</option></select>
+        <div class="field-grid">
+          <button class="btn teal" onclick="submitShift('checkIn')">CHECK IN</button>
+          <button class="btn ghost" onclick="submitShift('checkOut')">CHECK OUT</button>
+        </div>
+        <div id="shResult" class="result-msg"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">&#128100; ON SHIFT NOW</div>
+        <div id="shiftOnNow"><div class="empty">Loading...</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">&#128203; SHIFT LOG</div>
+      <div class="scroll-table"><table><thead><tr><th>WHEN</th><th>NAME</th><th>DEPT</th><th>ACTION</th><th>SOURCE</th></tr></thead><tbody id="shiftLogBody"></tbody></table></div>
     </div>
   </div>
 
-  <div class="card">
-    <div class="card-title">&#128230; RECENT RESTOCKS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(date, time, item, qty and who restocked it)</span></div>
-    <div class="scroll-table"><table><thead><tr><th>WHEN</th><th>ITEM</th><th>QTY ADDED</th><th>NEW QTY</th><th>RESTOCKED BY</th></tr></thead><tbody id="restockLogBody"></tbody></table></div>
-  </div>
-
-  <div class="card">
-    <div class="card-title">&#128274; SHIFT SUMMARY <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(today's totals — copy to share on WhatsApp/SMS manually)</span></div>
-    <button class="btn" onclick="generateShiftSummary()">GENERATE SHIFT SUMMARY</button>
-    <div id="shiftSummaryBody" style="margin-top:12px"></div>
-  </div>
-
-  <div class="card">
-    <div class="card-title">&#129489;&#8205;&#128188; STAFF ON DUTY <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(only staff checked in to THIS station show below — interim manual check-in until the staff phone ordering tool is built)</span></div>
-    <div class="checkin-row">
-      <select class="select-input" id="checkInSelect"><option value="">Select your name to check in...</option></select>
-      <button type="button" class="btn" onclick="submitCheckIn()">CHECK IN</button>
+  <!-- SETTINGS -->
+  <div class="section" id="sec-settings">
+    <div class="card" style="border-color:var(--gold-dim)">
+      <div class="card-title" style="color:var(--gold)">&#9888; GHANA TAX &amp; WAGE FIGURES ARE ESTIMATES</div>
+      <div style="font-size:12px;color:var(--text-dim);line-height:1.6">These were seeded from public GRA/SSNIT/PURC sources and are for planning only. Verify current rates with your accountant or the GRA/SSNIT portals before relying on this for real payroll filings.</div>
     </div>
-    <div id="checkInResult" style="margin-bottom:10px;font-size:12px"></div>
-    <div class="staff-grid" id="staffGrid"><div class="empty">Loading staff...</div></div>
-  </div>
-
-  <div class="card" id="stockCard">
-    <div class="card-title">&#128230; BAR STOCK — ALL ITEMS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(red rows = at or below par level — click a tab to filter by category)</span></div>
-    <div class="tab-row" id="stockTabs"></div>
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
-      <input class="search-input" id="stockSearch" placeholder="Search stock..." oninput="renderStock()" style="margin-bottom:0;flex:1">
-      <button type="button" class="btn" style="width:auto;padding:10px 16px;margin:0" onclick="document.getElementById('stockSearch').value='';renderStock();">&#10005; CLEAR</button>
+    <div class="card">
+      <div class="card-title">SETTINGS</div>
+      <div id="settingsList"><div class="empty">Loading...</div></div>
+      <button class="btn" style="margin-top:10px" onclick="saveAllSettings()">&#10003; SAVE SETTINGS</button>
+      <div id="settingsResult" class="result-msg"></div>
     </div>
-    <div class="scroll-table"><table><thead><tr><th>ITEM</th><th>CATEGORY</th><th>UNIT</th><th>CURRENT QTY</th><th>PACK SIZE</th><th>PAR LEVEL</th><th>COST/UNIT</th><th>LAST RESTOCKED</th><th>BY</th></tr></thead><tbody id="stockBody"></tbody></table></div>
   </div>
 </div>
 
-<div class="scanner-modal" id="scannerModal">
-  <video id="scannerVideo" playsinline muted></video>
-  <div class="scanner-hint" id="scannerHint">Point the camera at a customer's QR ID card. Works for QR codes generated by this dashboard (see Customer Lookup after finding someone).</div>
-  <button class="scanner-close" onclick="closeScanner()">CLOSE</button>
-</div>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNydnV6a3lmcnFiZm1hbWVneGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MzI5NjQsImV4cCI6MjEwMDAwODk2NH0.gMsv3yvw6plDCherA2YdU4UgWRMXUc9H1Hr_IdR9GxA';
-const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Fill in once the Manager Command Centre Apps Script is deployed.
+const API_URL = 'https://script.google.com/macros/s/AKfycbzskNlxhxB66IkishOfQ1fbdAL_odHolhHcs8aejhD7Sg15usFkQzoCWWsRqP1mrKbP/exec';
 
-if('scrollRestoration' in history){ history.scrollRestoration = 'manual'; }
-window.scrollTo(0,0);
+let data = {};
+let receiptFile = null;
 
-let barData = {stock: [], todayOrders: [], staff: [], topSellers: [], staleStock: [], restockLog: [], revenueByPayment: []};
-let activeStockCategory = 'All';
-let expandedMetric = null;
-
-const PENDING_KEY = 'whgh_pending_actions_v1';
-
-function genClientId(){
-  if(window.crypto && crypto.randomUUID) return crypto.randomUUID();
-  return 'cid-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+function switchSection(sec, btn){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('sec-'+sec).classList.add('active');
 }
-
-function backoffDelayMs(attempts){
-  const base = 4000, cap = 60000;
-  const raw = Math.min(cap, base * Math.pow(2, attempts));
-  return raw * (0.5 + Math.random() * 0.5);
-}
-
-function getPendingQueue(){
-  try{ return JSON.parse(localStorage.getItem(PENDING_KEY) || '[]'); }
-  catch(e){ return []; }
-}
-function savePendingQueue(queue){
-  try{ localStorage.setItem(PENDING_KEY, JSON.stringify(queue)); }catch(e){ }
-}
-
-async function flushPendingQueue(silent){
-  let queue = getPendingQueue();
-  if(queue.length === 0) return;
-  const now = Date.now();
-  const stillPending = [];
-  let succeeded = 0;
-  for(const action of queue){
-    if(action.nextRetryAt && action.nextRetryAt > now){ stillPending.push(action); continue; }
-    try{
-      const res = await fetch(action.url + '&clientId=' + encodeURIComponent(action.id));
-      if(!res.ok) throw new Error('status ' + res.status);
-      const data = await res.json();
-      if(data.success) { succeeded++; continue; }
-      action.error = data.error || 'Failed';
-      action.attempts = (action.attempts || 0) + 1;
-      action.nextRetryAt = Date.now() + backoffDelayMs(action.attempts);
-      stillPending.push(action);
-    }catch(e){
-      action.attempts = (action.attempts || 0) + 1;
-      action.nextRetryAt = Date.now() + backoffDelayMs(action.attempts);
-      stillPending.push(action);
-    }
-  }
-  savePendingQueue(stillPending);
-  renderPendingBanner();
-  if(succeeded > 0 && !silent) loadData();
-}
-
-function renderPendingBanner(){
-  const queue = getPendingQueue();
-  const el = document.getElementById('pendingBanner');
-  if(queue.length === 0){ el.classList.remove('active'); el.innerHTML = ''; return; }
-  el.classList.add('active');
-  el.innerHTML = `<b>&#9203; ${queue.length} action${queue.length>1?'s':''} waiting to sync</b> — saved on this device, will send automatically once you're back online.` +
-    queue.map(a => `<div class="pending-item"><span>${a.label}</span><span style="color:var(--muted);font-family:'Space Mono',monospace">${new Date(a.queuedAt).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}${a.error?' — '+a.error:''}</span></div>`).join('') +
-    `<div class="pending-actions"><button class="btn" style="background:var(--teal);color:#0a0a0a" onclick="flushPendingQueue(false)">RETRY NOW</button></div>`;
-}
-
-function updateConnStatus(){
-  const el = document.getElementById('connStatus');
-  if(navigator.onLine){
-    el.textContent = '● online';
-    el.className = 'conn-status online';
-  }else{
-    el.textContent = '● offline';
-    el.className = 'conn-status offline';
-  }
-}
-window.addEventListener('online', () => { updateConnStatus(); flushPendingQueue(false); });
-window.addEventListener('offline', updateConnStatus);
 
 function showApiError(msg){
   const el = document.getElementById('errorBanner');
-  el.innerHTML = "<b>&#9888; Dashboard can't reach Supabase:</b> " + msg + ' <br><br>Check your internet connection and hit Refresh. If this keeps happening, the Supabase project may be paused or the anon key may have changed.';
+  el.innerHTML = "<b>&#9888; Can't reach the sheet:</b> " + msg + " — check API_URL at the top of the script, and that the Apps Script deployment is live (Deploy &gt; Manage deployments).";
   el.classList.add('active');
 }
-function clearApiError(){
-  document.getElementById('errorBanner').classList.remove('active');
-}
-
-async function loadSupabaseBarData(){
-  const [stockRes, ordersRes, recipesRes, foodRes, restockRes, staffRes, settingsRes] = await Promise.all([
-    supabaseClient.from('bar_stock').select('*').order('item'),
-    supabaseClient.from('bar_orders').select('*').order('created_at', { ascending: false }).limit(500),
-    supabaseClient.from('bar_recipes').select('item_name, category, price_ghs'),
-    supabaseClient.from('food_menu').select('item_name, category, price_ghs'),
-    supabaseClient.from('restock_log').select('*').order('created_at', { ascending: false }).limit(15),
-    supabaseClient.from('staff').select('*').order('slot'),
-    supabaseClient.from('venue_settings').select('key, value')
-  ]);
-  [stockRes, ordersRes, recipesRes, foodRes, restockRes, staffRes, settingsRes].forEach(r => { if(r.error) throw new Error(r.error.message); });
-
-  const venueSettings = {};
-  (settingsRes.data||[]).forEach(row => { venueSettings[row.key] = row.value; });
-
-  const categoryMap = {};
-  recipesRes.data.forEach(r => { if(r.item_name && r.category) categoryMap[r.item_name.trim().toLowerCase()] = r.category; });
-
-  const stock = stockRes.data.map(s => ({
-    item: s.item, unit: s.unit || 'unit', currentQty: parseFloat(s.current_qty)||0, parLevel: parseFloat(s.par_level)||0,
-    costPerUnit: parseFloat(s.cost_per_unit)||0, lastRestocked: s.last_restocked ? new Date(s.last_restocked).toLocaleString('en-GB') : '',
-    lastRestockedRaw: s.last_restocked || null,
-    lastRestockedBy: s.last_restocked_by || '', unitsPerPack: parseFloat(s.units_per_pack)||0, packLabel: s.pack_label || '',
-    lowStock: (parseFloat(s.current_qty)||0) <= (parseFloat(s.par_level)||0),
-    category: categoryMap[(s.item||'').trim().toLowerCase()] || 'Bar Ingredient'
-  }));
-
-  const COCKTAIL_CATS = ['Cocktail','Mocktail','Milkshake','Smoothie','Juice','VIP Special'];
-  const BAR_FIRST = ['Water','Soft Drink','Just Sip','Beer','Energy','Alcoholic Single','Shot','Pizza','Rice Dishes','Fries','Swallow & Stew','Light Bites'];
-  const catRank = c => { const i = BAR_FIRST.indexOf(c); if(i!==-1) return i; const j = COCKTAIL_CATS.indexOf(c); return j!==-1 ? BAR_FIRST.length+j : BAR_FIRST.length+COCKTAIL_CATS.length; };
-  const menu = recipesRes.data.map(r => ({ item: r.item_name, category: r.category||'', price: parseFloat(r.price_ghs)||0, source: 'bar' }))
-    .concat(foodRes.data.map(r => ({ item: r.item_name, category: r.category||'', price: parseFloat(r.price_ghs)||0, source: 'food' })))
-    .sort((a,b) => catRank(a.category) - catRank(b.category));
-
-  const staff = staffRes.data.map(s => ({
-    initials: s.initials || s.staff_code || '', name: s.full_name || '',
-    workingDays: s.working_days || '', workingHours: s.working_hours || (s.shift_start && s.shift_end ? (s.shift_start + ' – ' + s.shift_end) : ''),
-    active: s.active !== false, onDuty: !!s.on_duty
-  }));
-
-  const GHANA_TZ_TODAY = new Date().toLocaleDateString('en-CA', {timeZone:'Africa/Accra'});
-  const todayOrders = [];
-  let todayRevenue = 0, todayItemCount = 0;
-  const salesByItem = {}, revenueByPayment = {};
-  ordersRes.data.forEach(o => {
-    const d = new Date(o.created_at);
-    const dayStr = d.toLocaleDateString('en-CA', {timeZone:'Africa/Accra'});
-    const qty = parseFloat(o.qty)||0, lineTotal = parseFloat(o.line_total_ghs)||0;
-    if(!salesByItem[o.item_name]) salesByItem[o.item_name] = {item:o.item_name, qty:0, revenue:0};
-    salesByItem[o.item_name].qty += qty; salesByItem[o.item_name].revenue += lineTotal;
-    if(dayStr === GHANA_TZ_TODAY){
-      todayOrders.push({ timestamp: o.created_at, orderId: o.order_id, item: o.item_name, qty, unitPrice: parseFloat(o.unit_price_ghs)||0,
-        lineTotal, staffInitials: o.staff_initials||'', custId: o.customer_id||'—', payment: o.payment_method||'Unspecified' });
-      todayRevenue += lineTotal; todayItemCount += qty;
-      const pk = o.payment_method || 'Unspecified';
-      revenueByPayment[pk] = (revenueByPayment[pk]||0) + lineTotal;
-    }
-  });
-  const topSellers = Object.values(salesByItem).sort((a,b)=>b.qty-a.qty).slice(0,8);
-  const revenueByPaymentList = Object.keys(revenueByPayment).map(k=>({method:k, revenue:revenueByPayment[k]})).sort((a,b)=>b.revenue-a.revenue);
-
-  const STALE_THRESHOLD_MS = 60 * 24 * 3600 * 1000;
-  const now = Date.now();
-  const staleStock = stock.filter(s => {
-    if(s.currentQty <= 0) return false; // sold off, thrown away, discarded, or expired — nothing sitting on a shelf to flag
-    if(!s.lastRestockedRaw) return true;
-    const t = new Date(s.lastRestockedRaw).getTime();
-    return isNaN(t) || (now - t) >= STALE_THRESHOLD_MS;
-  }).sort((a,b) => {
-    const da = a.lastRestockedRaw ? new Date(a.lastRestockedRaw).getTime() : null;
-    const db = b.lastRestockedRaw ? new Date(b.lastRestockedRaw).getTime() : null;
-    if(da===null && db===null) return 0; if(da===null) return -1; if(db===null) return 1;
-    return da - db;
-  });
-
-  const restockLog = restockRes.data.map(r => ({
-    timestamp: new Date(r.created_at).toLocaleString('en-GB'), item: r.item, qtyAdded: parseFloat(r.qty_added)||0,
-    newQty: parseFloat(r.new_qty)||0, restockedBy: r.restocked_by||''
-  }));
-
-  return { stock, menu, todayOrders: todayOrders.reverse(), todayRevenue, todayItemCount, revenueByPayment: revenueByPaymentList,
-    topSellers, staleStock, restockLog, staff, lowStockCount: stock.filter(s=>s.lowStock).length,
-    momoNumber: venueSettings.momo_number || '', momoName: venueSettings.momo_name || '' };
-}
+function clearApiError(){ document.getElementById('errorBanner').classList.remove('active'); }
 
 async function loadData(){
-  updateConnStatus();
-  renderPendingBanner();
-  if(navigator.onLine) flushPendingQueue(true);
-  document.getElementById('lastRefresh').innerHTML = 'Refreshing...';
+  document.getElementById('lastRefresh').textContent = 'Refreshing...';
+  if(API_URL.indexOf('PASTE_YOUR') === 0){ showApiError('API_URL has not been set yet in this file.'); document.getElementById('lastRefresh').textContent='Not configured'; return; }
   try{
-    const supaData = await loadSupabaseBarData();
-    barData = supaData;
+    const res = await fetch(API_URL + '?action=getManagerData&t=' + Date.now());
+    if(!res.ok) throw new Error('Server responded with status ' + res.status);
+    const d = await res.json();
+    if(!d.success) throw new Error(d.error || 'Unknown error');
+    data = d;
     clearApiError();
     document.getElementById('lastRefresh').textContent = 'Updated: ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
-    renderMetrics();
-    renderLowStockBanner();
-    renderOrders();
-    renderStockTabs();
-    renderStock();
-    renderStaff();
-    renderTopSellers();
-    renderStaleStock();
-    renderRestockLog();
-    populateStaffDropdowns();
-    populateStockDatalist();
-    renderQuickSellTabs();
-    renderQuickSellMenu();
-    renderQuickSellPanel();
+    renderAll();
   }catch(e){
     document.getElementById('lastRefresh').textContent = 'Offline — see message above';
-    showApiError(e.message || 'Could not load data (unknown error).');
-    console.log('Load error:', e);
+    showApiError(e.message || 'Could not load data.');
   }
 }
 
-function renderMetrics(){
-  document.getElementById('topMetrics').innerHTML = `
-    <div class="metric-card gold" onclick="window.open('revenue.html','_blank')" style="cursor:pointer">
-      <div class="metric-label">REVENUE &amp; REPORTS <span class="metric-caret">&#128274;</span></div>
-      <div class="metric-value" style="font-size:15px;line-height:1.3">Password protected</div>
-      <div class="metric-sub">Tap to open in a new tab</div>
-    </div>
-    <div class="metric-card teal" onclick="toggleMetric('orders')">
-      <div class="metric-label">ORDERS TODAY <span class="metric-caret">&#9660;</span></div>
-      <div class="metric-value">${(barData.todayOrders||[]).length}</div>
-      <div class="metric-sub">logged sales</div>
-    </div>
-    <div class="metric-card red" onclick="toggleMetric('lowstock')">
-      <div class="metric-label">LOW STOCK ITEMS <span class="metric-caret">&#9660;</span></div>
-      <div class="metric-value">${barData.lowStockCount||0}</div>
-      <div class="metric-sub">at or below par</div>
-    </div>
-    <div class="metric-card green" onclick="toggleMetric('menu')">
-      <div class="metric-label">MENU ITEMS <span class="metric-caret">&#9660;</span></div>
-      <div class="metric-value">${(barData.menu||[]).length}</div>
-      <div class="metric-sub">cocktails + straight-sell</div>
-    </div>`;
-  if(expandedMetric){ renderMetricDetail(expandedMetric); }
+function renderAll(){
+  renderOverview();
+  populateExpenseCategories();
+  renderExpensesTable();
+  renderExpenseCategoryBreakdown();
+  renderStaffList();
+  populateStaffSelects();
+  renderPayrollTable();
+  renderBudgets();
+  renderCosting();
+  renderCocktails();
+  renderBarCanteen();
+  renderFacilities();
+  renderMembers();
+  renderShifts();
+  renderSettings();
 }
 
-function toggleMetric(key){
-  expandedMetric = (expandedMetric === key) ? null : key;
-  renderMetrics();
-  renderMetricDetail(expandedMetric);
+function fmt(n){ return 'GHS ' + (parseFloat(n)||0).toFixed(2); }
+
+// ---------- OVERVIEW ----------
+function renderOverview(){
+  const bar = data.bar || {}; const fac = data.facilities || {}; const mem = data.members || {};
+  const totalExpensesThisMonth = Object.values(data.spendByCategoryThisMonth||{}).reduce((a,b)=>a+b,0);
+  document.getElementById('overviewMetrics').innerHTML = `
+    <div class="metric-card gold"><div class="metric-label">BAR/CANTEEN REVENUE TODAY</div><div class="metric-value">${fmt(bar.todayRevenue)}</div><div class="metric-sub">${bar.todayItemCount||0} items sold</div></div>
+    <div class="metric-card red"><div class="metric-label">SPEND THIS MONTH</div><div class="metric-value">${fmt(totalExpensesThisMonth)}</div><div class="metric-sub">across all categories</div></div>
+    <div class="metric-card purple"><div class="metric-label">MONTHLY PAYROLL (EST)</div><div class="metric-value" style="font-size:20px">${fmt(data.totalMonthlyPayrollGrossEstimate)}</div><div class="metric-sub">active monthly-paid staff</div></div>
+    <div class="metric-card teal"><div class="metric-label">MEMBERS</div><div class="metric-value">${mem.totalCustomers||0}</div><div class="metric-sub">${mem.newToday||0} new today</div></div>
+    <div class="metric-card red"><div class="metric-label">OPEN FACILITIES TICKETS</div><div class="metric-value">${fac.openTickets||0}</div><div class="metric-sub">${fac.urgentOpen||0} urgent</div></div>
+    <div class="metric-card green"><div class="metric-label">ON SHIFT NOW</div><div class="metric-value">${(data.onShift||[]).length}</div><div class="metric-sub">staff checked in</div></div>`;
+
+  const exp = (data.expenses||[]).slice(0,6);
+  document.getElementById('overviewExpenses').innerHTML = exp.length ? exp.map(e=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1a1a1a;font-size:12px"><span>${e.item} <span style="color:var(--muted);font-size:10px">(${e.category})</span></span><span style="color:var(--gold);font-family:'Space Mono',monospace">${fmt(e.amount)}</span></div>`).join('') : '<div class="empty">No expenses logged yet.</div>';
+
+  const onShift = data.onShift || [];
+  document.getElementById('overviewShift').innerHTML = onShift.length ? onShift.map(s=>`<span class="onshift-pill">&#9679; ${s.name} — ${s.department}</span>`).join('') : '<div class="empty">Nobody checked in right now.</div>';
 }
 
-function renderMetricDetail(key){
-  const cards = document.querySelectorAll('#topMetrics .metric-card');
-  cards.forEach(c => c.classList.remove('expanded'));
-  const el = document.getElementById('metricDetails');
-  if(!key){ el.innerHTML = ''; return; }
-
-  let html = '';
-  if(key === 'revenue'){
-    cards[0] && cards[0].classList.add('expanded');
-    const byPay = barData.revenueByPayment || [];
-    html = byPay.length ? byPay.map(p => `<div class="metric-detail-row"><span>${p.method}</span><span style="color:var(--gold);font-family:'Space Mono',monospace">&#8373;${p.revenue.toFixed(2)}</span></div>`).join('')
-      : '<div class="metric-detail-empty">No sales logged yet today.</div>';
-  } else if(key === 'orders'){
-    cards[1] && cards[1].classList.add('expanded');
-    const orders = barData.todayOrders || [];
-    html = orders.length ? orders.slice(0,8).map(o => `<div class="metric-detail-row"><span>${o.item} &times;${o.qty}</span><span style="color:var(--teal);font-family:'Space Mono',monospace">${o.staffInitials||'—'}</span></div>`).join('') + (orders.length>8 ? `<div class="metric-detail-empty">+ ${orders.length-8} more — see Today's Orders table.</div>` : '')
-      : '<div class="metric-detail-empty">No orders logged yet today.</div>';
-  } else if(key === 'lowstock'){
-    cards[2] && cards[2].classList.add('expanded');
-    const low = (barData.stock||[]).filter(s=>s.lowStock);
-    html = low.length ? low.slice(0,10).map(s => `<div class="metric-detail-row"><span>${s.item}</span><span style="color:var(--red);font-family:'Space Mono',monospace">${s.currentQty} / par ${s.parLevel}</span></div>`).join('') + (low.length>10 ? `<div class="metric-detail-empty">+ ${low.length-10} more — filtering stock table below.</div>` : '')
-      : '<div class="metric-detail-empty">Nothing is low right now.</div>';
-    setStockCategory('Low Stock');
-    document.getElementById('stockCard').scrollIntoView({behavior:'smooth', block:'start'});
-  } else if(key === 'menu'){
-    cards[3] && cards[3].classList.add('expanded');
-    const menu = barData.menu || [];
-    const byCat = {};
-    menu.forEach(m => { (byCat[m.category||'Other'] = byCat[m.category||'Other']||[]).push(m); });
-    html = Object.keys(byCat).sort().map(c => `<div class="metric-detail-row"><span>${c}</span><span style="color:var(--green);font-family:'Space Mono',monospace">${byCat[c].length} items</span></div>`).join('');
-  }
-  el.innerHTML = `<div class="metric-detail show">${html}</div>`;
+// ---------- EXPENSES ----------
+function populateExpenseCategories(){
+  const sel = document.getElementById('expCategory');
+  sel.innerHTML = '<option value="">Auto-detect category</option>' + (data.categories||[]).map(c=>`<option value="${c}">${c}</option>`).join('');
 }
 
-function renderLowStockBanner(){
-  const low = (barData.stock||[]).filter(s=>s.lowStock);
-  const banner = document.getElementById('lowStockBanner');
-  if(low.length===0){ banner.classList.remove('active'); return; }
-  banner.classList.add('active');
-  document.getElementById('lowStockPills').innerHTML = low.map(s=>`<span class="low-stock-pill">${s.item} — ${s.currentQty}${s.unit==='oz'?'oz':' left'}</span>`).join('');
-}
-
-function renderOrders(){
-  const orders = barData.todayOrders || [];
-  if(orders.length===0){ document.getElementById('ordersBody').innerHTML = '<tr><td colspan="6" class="empty">No orders logged yet today</td></tr>'; return; }
-  document.getElementById('ordersBody').innerHTML = orders.map(o=>{
-    const t = new Date(o.timestamp);
-    const timeStr = isNaN(t.getTime()) ? '—' : t.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
-    return `<tr><td style="font-family:'Space Mono',monospace;font-size:12px">${timeStr}</td><td style="font-size:15px;font-weight:600">${o.item}</td><td style="font-size:14px">${o.qty}</td><td style="color:var(--gold);font-weight:700;font-size:16px">&#8373;${o.lineTotal.toFixed(2)}</td><td style="font-size:13px">${o.staffInitials||'—'}</td><td style="font-family:'Space Mono',monospace;font-size:12px">${o.custId&&o.custId!=='—'?o.custId:'walk-in'}</td></tr>`;
-  }).join('');
-}
-
-function renderStockTabs(){
-  const stock = barData.stock || [];
-  const counts = {};
-  stock.forEach(s => {
-    const cat = (s.category && s.category !== 'undefined') ? s.category : 'Bar Ingredient';
-    counts[cat] = (counts[cat]||0) + 1;
-  });
-  const cats = Object.keys(counts).sort((a,b)=>counts[b]-counts[a]);
-  if(!cats.includes(activeStockCategory) && activeStockCategory !== 'All' && activeStockCategory !== 'Low Stock'){
-    activeStockCategory = 'All';
-  }
-  const lowCount = stock.filter(s=>s.lowStock).length;
-  const tabs = [
-    {key:'All', label:'All', count: stock.length},
-    {key:'Low Stock', label:'Low Stock', count: lowCount},
-    ...cats.map(c => ({key:c, label:c, count: counts[c]}))
-  ];
-  document.getElementById('stockTabs').innerHTML = '';
-  tabs.forEach(t => {
-    const btn = document.createElement('button');
-    btn.className = 'tab-pill' + (activeStockCategory===t.key?' active':'');
-    btn.innerHTML = `${t.label}<span class="tab-count">${t.count}</span>`;
-    btn.addEventListener('click', () => setStockCategory(t.key));
-    document.getElementById('stockTabs').appendChild(btn);
-  });
-}
-
-function setStockCategory(cat){
-  activeStockCategory = cat;
-  renderStockTabs();
-  renderStock();
-}
-
-function renderStock(){
-  const q = (document.getElementById('stockSearch').value||'').toLowerCase();
-  let stock = (barData.stock||[]).map(s => ({...s, category: (s.category && s.category !== 'undefined') ? s.category : 'Bar Ingredient'}));
-  if(activeStockCategory === 'Low Stock'){
-    stock = stock.filter(s=>s.lowStock);
-  } else if(activeStockCategory !== 'All' && !q){
-    stock = stock.filter(s=>s.category === activeStockCategory);
-  }
-  stock = stock.filter(s=>!q||s.item.toLowerCase().includes(q));
-  if(stock.length===0){ document.getElementById('stockBody').innerHTML = '<tr><td colspan="9" class="empty">No stock items match</td></tr>'; return; }
-  document.getElementById('stockBody').innerHTML = stock.map(s=>`
-    <tr class="${s.lowStock?'low-row':''}">
-      <td>${s.item}</td>
-      <td class="badge-unit">${s.category}</td>
-      <td class="badge-unit">${s.unit}</td>
-      <td style="font-family:'Space Mono',monospace">${s.currentQty}</td>
-      <td class="badge-unit">${s.unitsPerPack ? Math.floor(s.currentQty/s.unitsPerPack)+' '+(s.packLabel||'packs')+' + '+(s.currentQty%s.unitsPerPack) : '—'}</td>
-      <td style="font-family:'Space Mono',monospace">${s.parLevel}</td>
-      <td style="font-family:'Space Mono',monospace">&#8373;${s.costPerUnit.toFixed(2)}</td>
-      <td style="font-size:11px;color:var(--text-dim)">${s.lastRestocked||'—'}</td>
-      <td style="font-size:11px;color:var(--text-dim)">${s.lastRestockedBy||'—'}</td>
-    </tr>`).join('');
-}
-
-function renderTopSellers(){
-  const top = barData.topSellers || [];
-  const el = document.getElementById('topSellersBody');
-  if(top.length===0){ el.innerHTML = '<div class="empty">No sales logged yet.</div>'; return; }
-  el.innerHTML = top.map((s,i)=>`
-    <div class="rank-row">
-      <div class="rank-num">${i+1}</div>
-      <div class="rank-info"><div class="rank-name">${s.item}</div><div class="rank-sub">&#8373;${s.revenue.toFixed(2)} total revenue</div></div>
-      <div class="rank-value">${s.qty} sold</div>
-    </div>`).join('');
-}
-
-function renderStaleStock(){
-  const stale = barData.staleStock || [];
-  const el = document.getElementById('staleStockBody');
-  if(stale.length===0){ el.innerHTML = '<div class="empty">Nothing has gone 60+ days without a restock right now.</div>'; return; }
-  el.innerHTML = stale.map(s=>`
-    <div class="rank-row">
-      <div class="rank-info"><div class="rank-name">${s.item}</div><div class="rank-sub">${s.currentQty} ${s.unit} on hand · ${s.category}</div></div>
-      <div class="rank-value stale">${s.lastRestocked || 'never restocked'}</div>
-    </div>`).join('');
-}
-
-function renderRestockLog(){
-  const log = barData.restockLog || [];
-  const el = document.getElementById('restockLogBody');
-  if(log.length===0){ el.innerHTML = '<tr><td colspan="5" class="empty">No restocks logged yet.</td></tr>'; return; }
-  el.innerHTML = log.map(r => `
-    <tr>
-      <td style="font-family:'Space Mono',monospace;font-size:11px">${r.timestamp}</td>
-      <td>${r.item}</td>
-      <td style="color:var(--green);font-family:'Space Mono',monospace">+${r.qtyAdded}</td>
-      <td style="font-family:'Space Mono',monospace">${r.newQty}</td>
-      <td>${r.restockedBy||'—'}</td>
-    </tr>`).join('');
-}
-
-// v6.1: STAFF ON DUTY only lists staff who are checked in. This is a
-// plain manual check-in (no PIN) — an interim fallback for this
-// shared station screen until the staff phone ordering tool exists,
-// which is where personal PIN login will actually live, since one
-// login on a screen several people share doesn't mean much.
-function renderStaff(){
-  const onDutyStaff = (barData.staff||[]).filter(s=>s.active && s.onDuty && (s.name || (s.initials && s.initials.trim())));
-  const el = document.getElementById('staffGrid');
-  if(onDutyStaff.length===0){
-    el.innerHTML = '<div class="empty">Nobody is checked in to the bar right now — use the dropdown above to check in.</div>';
-  }else{
-    el.innerHTML = onDutyStaff.map(s=>`
-      <div class="staff-card">
-        <div class="staff-initials">${s.initials||'—'}</div>
-        <div class="staff-name">${s.name||'(name not set)'}</div>
-        <div class="staff-meta">${s.workingDays||'Days not set'}<br>${s.workingHours||'Hours not set'}</div>
-        <button class="btn" style="margin-top:10px;background:var(--green)" onclick="toggleOnDuty('${s.initials}', false)">&#9679; ON DUTY — TAP TO CHECK OUT</button>
-      </div>`).join('');
-  }
-  populateCheckInSelect();
-}
-
-function populateCheckInSelect(){
-  const sel = document.getElementById('checkInSelect');
-  if(!sel) return;
-  const notOnDuty = (barData.staff||[]).filter(s=>s.active && !s.onDuty && s.initials && s.initials.trim());
-  sel.innerHTML = '<option value="">Select your name to check in...</option>' +
-    notOnDuty.map(s => `<option value="${s.initials}">${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
-}
-
-async function submitCheckIn(){
-  const sel = document.getElementById('checkInSelect');
-  const initials = sel.value;
-  const resultEl = document.getElementById('checkInResult');
-  if(!initials){ resultEl.innerHTML = '<span style="color:var(--red)">Select your name first.</span>'; return; }
-  resultEl.innerHTML = 'Checking in...';
-  try{
-    const { error } = await supabaseClient.rpc('set_staff_on_duty', { p_initials: initials, p_on_duty: true });
-    if(error) throw new Error(error.message);
-    resultEl.innerHTML = '<span class="flash">&#10003; Checked in.</span>';
-    setTimeout(() => { resultEl.innerHTML = ''; }, 4000);
-    loadData();
-  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">Could not check in: ' + e.message + '</span>'; }
-}
-
-async function toggleOnDuty(initials, newState){
-  try{
-    const { error } = await supabaseClient.rpc('set_staff_on_duty', { p_initials: initials, p_on_duty: newState });
-    if(error) throw new Error(error.message);
-    loadData();
-  }catch(e){ alert('Could not update on-duty status: ' + e.message); }
-}
-
-function populateStaffDropdowns(){
-  const allActive = (barData.staff||[]).filter(s=>s.active && s.initials && s.initials.trim());
-  const onDuty = allActive.filter(s=>s.onDuty);
-  const staff = onDuty.length ? onDuty : allActive;
-  const sel = document.getElementById('restockBy');
-  const current = sel.value;
-  sel.innerHTML = '<option value="">Restocked by... (required)</option>' +
-    staff.map(s => `<option value="${s.initials}">${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
-  if(staff.some(s=>s.initials===current)) sel.value = current;
-}
-
-
-let restockStockItems = [];
-function populateStockDatalist(){
-  restockStockItems = (barData.stock||[]).map(s=>s.item);
-  renderRestockCombo(document.getElementById('restockItem').value || '');
-  renderRestockMultiList();
-}
-let restockMultiSelected = new Set();
-function renderRestockMultiList(){
-  const listEl = document.getElementById('restockMultiList');
-  if(!listEl) return;
-  const q = (document.getElementById('restockMultiSearch')?.value || '').toLowerCase();
-  const items = restockStockItems.filter(i => i.toLowerCase().includes(q));
-  if(items.length === 0){ listEl.innerHTML = '<div style="padding:10px;color:var(--muted);font-size:12px">No matching items</div>'; return; }
-  listEl.innerHTML = items.map(i => `<div class="combo-item restock-multi-row" data-val="${i.replace(/"/g,'&quot;')}" style="${restockMultiSelected.has(i)?'background:#221f16;color:var(--gold);font-weight:700':''}">${restockMultiSelected.has(i)?'&#10003; ':''}${i}</div>`).join('');
-  listEl.querySelectorAll('.restock-multi-row').forEach(el => {
-    el.addEventListener('click', () => {
-      const v = el.dataset.val;
-      if(restockMultiSelected.has(v)) restockMultiSelected.delete(v); else restockMultiSelected.add(v);
-      renderRestockMultiList();
-    });
-  });
-  const countEl = document.getElementById('restockMultiCount');
-  if(countEl) countEl.textContent = restockMultiSelected.size + ' selected';
-}
-function toggleRestockMulti(){
-  const on = document.getElementById('restockMultiToggle').checked;
-  document.getElementById('restockMultiBox').style.display = on ? '' : 'none';
-  document.getElementById('restockItem').disabled = on;
-  document.getElementById('restockItem').placeholder = on ? 'Using the multi-item list below instead' : 'Item name (must match Bar Stock exactly)';
-  if(on) closeRestockCombo();
-  else renderRestockMultiList();
-}
-function renderRestockCombo(query){
-  const listEl = document.getElementById('restockItemComboList');
-  const q = (query||'').toLowerCase();
-  const matches = restockStockItems.filter(i => i.toLowerCase().includes(q));
-  if(matches.length === 0){
-    listEl.innerHTML = '<div class="combo-empty">No matching stock items</div>';
-  }else{
-    listEl.innerHTML = matches.slice(0,60).map(i => `<div class="combo-item" data-val="${i.replace(/"/g,'&quot;')}">${i}</div>`).join('');
-    listEl.querySelectorAll('.combo-item').forEach(el => {
-      el.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        document.getElementById('restockItem').value = el.dataset.val;
-        closeRestockCombo();
-      });
-    });
-  }
-  listEl.classList.add('show');
-}
-function closeRestockCombo(){
-  document.getElementById('restockItemComboList').classList.remove('show');
-}
-document.addEventListener('DOMContentLoaded', () => {
-  const input = document.getElementById('restockItem');
-  if(!input) return;
-  input.addEventListener('focus', () => renderRestockCombo(input.value));
-  input.addEventListener('click', () => renderRestockCombo(input.value));
-  input.addEventListener('input', () => renderRestockCombo(input.value));
-  document.addEventListener('click', (e) => {
-    if(!document.getElementById('restockItemComboWrap').contains(e.target)) closeRestockCombo();
-  });
+document.getElementById('receiptLabel').addEventListener('click', ()=>document.getElementById('expReceipt').click());
+document.getElementById('expReceipt').addEventListener('change', (e)=>{
+  const f = e.target.files[0];
+  if(!f) return;
+  receiptFile = f;
+  document.getElementById('receiptLabel').textContent = '✓ ' + f.name;
 });
 
-let lastFoundCustomer = null;
-async function lookupCustomer(prefillQuery){
-  const input = document.getElementById('custPhoneInput');
-  if(prefillQuery !== undefined) input.value = prefillQuery;
-  const query = input.value.trim();
-  const resultEl = document.getElementById('customerResult');
-  document.getElementById('qrCardBox').classList.remove('show');
-  lastFoundCustomer = null;
-  if(!query){ resultEl.classList.remove('show'); return; }
-  resultEl.classList.add('show');
-  resultEl.innerHTML = 'Looking up...';
-
-  try{
-    const { data: supaId, error: supaErr } = await supabaseClient.rpc('find_customer_flexible', { p_query: query });
-    if(supaErr) throw new Error(supaErr.message);
-    if(supaId){
-      const { data: cust, error: custErr } = await supabaseClient.from('bar_customers').select('*').eq('customer_id', supaId).single();
-      if(custErr) throw new Error(custErr.message);
-      lastFoundCustomer = {
-        custId: cust.customer_id, name: cust.name, loyaltyPoints: cust.loyalty_points,
-        totalVisits: cust.total_visits, lastVisit: cust.last_visit ? new Date(cust.last_visit).toLocaleDateString('en-GB') : ''
-      };
-      const membershipLine = cust.membership_status === 'VIP' ? '<br>Membership: <b style="color:var(--gold)">VIP</b>' : '';
-      resultEl.innerHTML = `<b>${lastFoundCustomer.custId}</b> — ${lastFoundCustomer.name}${membershipLine}<br>Loyalty points: ${lastFoundCustomer.loyaltyPoints}<br>Total visits: ${lastFoundCustomer.totalVisits}<br>Last visit: ${lastFoundCustomer.lastVisit||'—'}<button class="btn" style="margin-top:10px" onclick="generateCustomerQR()">&#127915; GENERATE QR ID CARD</button>`;
-    }else{
-      resultEl.innerHTML = "No customer found matching that — they'll be registered next time they order.";
-    }
-  }catch(e){
-    resultEl.innerHTML = '<span style="color:var(--red)">Error: ' + (e.message||'connection failed') + '. Check your internet connection and try again.</span>';
-    showApiError(e.message || 'Customer lookup failed.');
-  }
+function fileToBase64(file){
+  return new Promise((resolve,reject)=>{
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
-function generateCustomerQR(){
-  if(!lastFoundCustomer) return;
-  const box = document.getElementById('qrCardBox');
-  const holder = document.getElementById('qrCanvasHolder');
-  holder.innerHTML = '';
-  if(typeof QRCode === 'undefined'){
-    holder.innerHTML = '<div style="color:#900;font-size:12px">QR library did not load — check your internet connection and reload.</div>';
-    box.classList.add('show');
-    return;
-  }
-  new QRCode(holder, { text: lastFoundCustomer.custId, width: 180, height: 180 });
-  document.getElementById('qrCardLabel').textContent = lastFoundCustomer.custId + ' — ' + lastFoundCustomer.name;
-  box.classList.add('show');
-}
-
-async function submitRestock(){
-  if(document.getElementById('restockMultiToggle').checked){ return submitRestockMulti(); }
-  const item = document.getElementById('restockItem').value.trim();
-  const qtyAdded = document.getElementById('restockQty').value;
-  const parLevel = document.getElementById('restockPar').value;
-  const costPerUnit = document.getElementById('restockCost').value;
-  const restockedBy = document.getElementById('restockBy').value;
-  const resultEl = document.getElementById('restockResult');
-  if(!item || (!qtyAdded && !document.getElementById('restockPacks').value)){ resultEl.innerHTML = '<span style="color:var(--red)">Item name and a quantity (singles or packs) are required.</span>'; return; }
-  if(!restockedBy){ resultEl.innerHTML = '<span style="color:var(--red)">Pick who is restocking from the dropdown.</span>'; return; }
+async function submitExpense(){
+  const item = document.getElementById('expItem').value.trim();
+  const amount = document.getElementById('expAmount').value;
+  const category = document.getElementById('expCategory').value;
+  const supplierName = document.getElementById('expSupplier').value.trim();
+  const supplierContact = document.getElementById('expSupplierContact').value.trim();
+  const paymentMethod = document.getElementById('expPayment').value;
+  const loggedBy = document.getElementById('expLoggedBy').value.trim();
+  const notes = document.getElementById('expNotes').value.trim();
+  const resultEl = document.getElementById('expResult');
+  if(!item || !amount){ resultEl.innerHTML = '<span style="color:var(--red)">Item and amount are required.</span>'; return; }
   resultEl.innerHTML = 'Saving...';
 
-  const clientId = genClientId();
-  let result;
+  let receiptBase64 = '', receiptMimeType = '';
+  if(receiptFile){
+    try{ receiptBase64 = await fileToBase64(receiptFile); receiptMimeType = receiptFile.type; }
+    catch(e){ /* continue without receipt if encoding fails */ }
+  }
+
+  const clientId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : ('cid-'+Date.now());
+  const payload = { action:'logExpense', item, amount, category, supplierName, supplierContact, paymentMethod, loggedBy, notes, clientId };
+  let qs = Object.entries(payload).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
+  if(receiptBase64) qs += '&receiptBase64=' + encodeURIComponent(receiptBase64) + '&receiptMimeType=' + encodeURIComponent(receiptMimeType);
+
   try{
-    const packs = document.getElementById('restockPacks').value;
-    const unitsPerPack = document.getElementById('restockUnitsPerPack').value;
-    const packLabel = document.getElementById('restockPackLabel').value.trim();
-    const { data, error } = await supabaseClient.rpc('restock_item', {
-      p_item: item, p_unit: null, p_qty_added: qtyAdded ? parseFloat(qtyAdded) : null,
-      p_par_level: parLevel ? parseFloat(parLevel) : null, p_cost_per_unit: costPerUnit ? parseFloat(costPerUnit) : null,
-      p_restocked_by: restockedBy, p_client_id: clientId,
-      p_packs: packs ? parseFloat(packs) : null,
-      p_units_per_pack: unitsPerPack ? parseFloat(unitsPerPack) : null,
-      p_pack_label: packLabel || null
-    });
-    if(error) throw new Error(error.message);
-    result = { ok: true, data: { newQty: data.new_qty, newItem: data.new_item, restockedBy: data.restocked_by, timestamp: new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) } };
-  }catch(e){
-    result = { ok: false, error: e.message };
-  }
-
-  if(result.ok){
-    const data = result.data;
-    resultEl.innerHTML = `<span class="flash">&#10003; ${item} — new qty: ${data.newQty}${data.newItem?' (new item created)':''} · logged under ${data.restockedBy} at ${data.timestamp}</span>`;
-    document.getElementById('restockItem').value = '';
-    document.getElementById('restockQty').value = '';
-    document.getElementById('restockPar').value = '';
-    document.getElementById('restockCost').value = '';
-    document.getElementById('restockPacks').value = '';
-    document.getElementById('restockUnitsPerPack').value = '';
-    document.getElementById('restockPackLabel').value = '';
-    document.getElementById('restockItem').focus();
-    setTimeout(() => { if(resultEl.innerHTML.indexOf(item) !== -1) resultEl.innerHTML = ''; }, 6000);
-    loadData();
-  }else{
-    resultEl.innerHTML = '<span style="color:var(--red)">' + result.error + '</span>';
-  }
+    const res = await fetch(API_URL + '?' + qs);
+    const d = await res.json();
+    if(d.success){
+      resultEl.innerHTML = '<span style="color:var(--green)">&#10003; Logged as ' + d.expenseId + ' — categorised as "' + d.category + '"' + (d.receiptUrl?' with receipt attached':'') + '</span>';
+      ['expItem','expAmount','expSupplier','expSupplierContact','expNotes'].forEach(id=>document.getElementById(id).value='');
+      document.getElementById('expCategory').value='';
+      document.getElementById('expPayment').value='';
+      receiptFile = null;
+      document.getElementById('receiptLabel').textContent = '📷 Tap to attach a receipt photo (optional)';
+      loadData();
+    } else { resultEl.innerHTML = '<span style="color:var(--red)">'+(d.error||'Failed')+'</span>'; }
+  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">Connection error — try again.</span>'; }
 }
 
-async function submitRestockMulti(){
-  const items = Array.from(restockMultiSelected);
-  const qtyAdded = document.getElementById('restockQty').value;
-  const parLevel = document.getElementById('restockPar').value;
-  const costPerUnit = document.getElementById('restockCost').value;
-  const restockedBy = document.getElementById('restockBy').value;
-  const resultEl = document.getElementById('restockResult');
-  if(items.length === 0){ resultEl.innerHTML = '<span style="color:var(--red)">Pick at least one item from the list.</span>'; return; }
-  if(!qtyAdded){ resultEl.innerHTML = '<span style="color:var(--red)">Quantity is required.</span>'; return; }
-  if(!restockedBy){ resultEl.innerHTML = '<span style="color:var(--red)">Pick who is restocking from the dropdown.</span>'; return; }
-
-  const outcomes = [];
-  for(const item of items){
-    resultEl.innerHTML = `Saving ${outcomes.length+1} of ${items.length}: ${item}...`;
-    try{
-      const { data, error } = await supabaseClient.rpc('restock_item', {
-        p_item: item, p_unit: null, p_qty_added: parseFloat(qtyAdded),
-        p_par_level: parLevel ? parseFloat(parLevel) : null, p_cost_per_unit: costPerUnit ? parseFloat(costPerUnit) : null,
-        p_restocked_by: restockedBy, p_client_id: genClientId()
-      });
-      if(error) throw new Error(error.message);
-      outcomes.push({ item, ok: true });
-    }catch(e){
-      outcomes.push({ item, ok: false, error: e.message });
-    }
-  }
-
-  const okList = outcomes.filter(o => o.ok).map(o => o.item);
-  const failedList = outcomes.filter(o => !o.ok);
-
-  let html = '';
-  if(okList.length) html += `<div class="flash">&#10003; Restocked +${qtyAdded} each: ${okList.join(', ')}</div>`;
-  if(failedList.length) html += `<div style="color:var(--red)">Failed: ${failedList.map(o=>o.item+' — '+o.error).join(', ')}</div>`;
-  resultEl.innerHTML = html;
-
-  document.getElementById('restockQty').value = '';
-  document.getElementById('restockPar').value = '';
-  document.getElementById('restockCost').value = '';
-  document.getElementById('restockBy').value = '';
-  restockMultiSelected.clear();
-  renderRestockMultiList();
-  if(okList.length > 0) setTimeout(() => { resultEl.innerHTML = ''; }, 8000);
-  loadData();
+function renderExpenseCategoryBreakdown(){
+  const spend = data.spendByCategoryThisMonth || {};
+  const cats = Object.keys(spend).sort((a,b)=>spend[b]-spend[a]);
+  const el = document.getElementById('expenseCategoryBreakdown');
+  el.innerHTML = cats.length ? cats.map(c=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1a1a1a;font-size:12px"><span>${c}</span><span style="color:var(--gold);font-family:'Space Mono',monospace">${fmt(spend[c])}</span></div>`).join('') : '<div class="empty">No spend logged this month yet.</div>';
 }
 
-let scannerStream = null;
-let scannerRAF = null;
+function renderExpensesTable(){
+  const q = (document.getElementById('expenseSearch').value||'').toLowerCase();
+  let rows = data.expenses || [];
+  if(q) rows = rows.filter(e => (e.item||'').toLowerCase().includes(q) || (e.category||'').toLowerCase().includes(q) || (e.supplierName||'').toLowerCase().includes(q));
+  const el = document.getElementById('expensesBody');
+  el.innerHTML = rows.length ? rows.map(e=>`
+    <tr>
+      <td style="font-size:11px;font-family:'Space Mono',monospace">${e.date}</td>
+      <td>${e.item}</td>
+      <td style="font-size:11px;color:var(--text-dim)">${e.category}</td>
+      <td style="color:var(--gold);font-weight:700">${fmt(e.amount)}</td>
+      <td style="font-size:11px">${e.supplierName||'—'}</td>
+      <td style="font-size:11px">${e.paymentMethod||'—'}</td>
+      <td style="font-size:11px">${e.loggedBy||'—'}</td>
+      <td>${e.receiptUrl ? '<a class="receipt-thumb" href="'+e.receiptUrl+'" target="_blank">View</a>' : '—'}</td>
+    </tr>`).join('') : '<tr><td colspan="8" class="empty">No expenses match</td></tr>';
+}
 
-async function openScanner(){
-  const modal = document.getElementById('scannerModal');
-  const video = document.getElementById('scannerVideo');
-  const hint = document.getElementById('scannerHint');
-  if(typeof jsQR === 'undefined'){
-    alert('QR scanner library did not load — check your internet connection and try again.');
-    return;
-  }
-  modal.classList.add('show');
+// ---------- STAFF / PAYROLL ----------
+function renderStaffList(){
+  const staff = data.staff || [];
+  const el = document.getElementById('staffList');
+  el.innerHTML = staff.length ? staff.map(s=>`
+    <div class="staff-card">
+      <div><div class="s-name">${s.fullName} ${s.status!=='Active'?'<span style="color:var(--red);font-size:10px">('+s.status+')</span>':''}</div><div class="s-meta">${s.staffId} · ${s.department} · ${s.role||'—'} · ${s.payType} ${fmt(s.payRate)}</div></div>
+    </div>`).join('') : '<div class="empty">No staff yet — add one below.</div>';
+}
+
+function populateStaffSelects(){
+  const staff = (data.staff||[]).filter(s=>s.status==='Active');
+  const prSel = document.getElementById('prStaff');
+  prSel.innerHTML = '<option value="">All active staff (one full period)</option>' + staff.map(s=>`<option value="${s.staffId}">${s.fullName} (${s.department})</option>`).join('');
+  const shSel = document.getElementById('shStaff');
+  shSel.innerHTML = '<option value="">Select staff...</option>' + staff.map(s=>`<option value="${s.staffId}" data-name="${s.fullName}" data-dept="${s.department}">${s.fullName} (${s.department})</option>`).join('');
+}
+
+async function submitAddStaff(){
+  const fullName = document.getElementById('stfName').value.trim();
+  const department = document.getElementById('stfDept').value;
+  const role = document.getElementById('stfRole').value.trim();
+  const payType = document.getElementById('stfPayType').value;
+  const payRate = document.getElementById('stfPayRate').value;
+  const phone = document.getElementById('stfPhone').value.trim();
+  const resultEl = document.getElementById('stfResult');
+  if(!fullName){ resultEl.innerHTML = '<span style="color:var(--red)">Full name is required.</span>'; return; }
+  resultEl.innerHTML = 'Saving...';
+  const payload = { action:'addStaff', fullName, department, role, payType, payRate, phone };
+  const qs = Object.entries(payload).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
   try{
-    scannerStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-    video.srcObject = scannerStream;
-    await video.play();
-    hint.textContent = "Point the camera at a customer's QR ID card. Works for QR codes generated by this dashboard.";
-    scanLoop();
-  }catch(e){
-    hint.textContent = 'Could not access the camera (' + (e.message||'permission denied') + '). Check your browser lets this page use the camera, or type the ID/phone in manually instead.';
-  }
+    const res = await fetch(API_URL+'?'+qs); const d = await res.json();
+    if(d.success){
+      resultEl.innerHTML = '<span style="color:var(--green)">&#10003; Added — '+d.staffId+'</span>';
+      ['stfName','stfRole','stfPayRate','stfPhone'].forEach(id=>document.getElementById(id).value='');
+      loadData();
+    } else { resultEl.innerHTML = '<span style="color:var(--red)">'+(d.error||'Failed')+'</span>'; }
+  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">Connection error.</span>'; }
 }
 
-function closeScanner(){
-  const modal = document.getElementById('scannerModal');
-  modal.classList.remove('show');
-  if(scannerRAF) cancelAnimationFrame(scannerRAF);
-  if(scannerStream){ scannerStream.getTracks().forEach(t=>t.stop()); scannerStream = null; }
+async function submitRunPayroll(){
+  const staffId = document.getElementById('prStaff').value;
+  const periodLabel = document.getElementById('prPeriodLabel').value.trim();
+  const unitsWorked = document.getElementById('prUnits').value;
+  const paymentMethod = document.getElementById('prPayment').value;
+  const resultEl = document.getElementById('prResult');
+  resultEl.innerHTML = 'Running payroll...';
+  const payload = { action:'runPayroll', staffId, periodLabel, unitsWorked, paymentMethod };
+  const qs = Object.entries(payload).map(([k,v])=>k+'='+encodeURIComponent(v||'')).join('&');
+  try{
+    const res = await fetch(API_URL+'?'+qs); const d = await res.json();
+    if(d.success){
+      resultEl.innerHTML = '<span style="color:var(--green)">&#10003; Ran payroll for '+d.count+' staff — total net '+fmt(d.totalNet)+'</span>';
+      loadData();
+    } else { resultEl.innerHTML = '<span style="color:var(--red)">'+(d.error||'Failed')+'</span>'; }
+  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">Connection error.</span>'; }
 }
 
-function scanLoop(){
-  const video = document.getElementById('scannerVideo');
-  if(!scannerStream){ return; }
-  if(video.readyState === video.HAVE_ENOUGH_DATA){
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const code = jsQR(imageData.data, imageData.width, imageData.height);
-    if(code && code.data){
-      closeScanner();
-      lookupCustomer(code.data);
-      return;
-    }
-  }
-  scannerRAF = requestAnimationFrame(scanLoop);
+async function markPaid(runId){
+  try{
+    const res = await fetch(API_URL + '?action=markPayrollPaid&runId=' + encodeURIComponent(runId) + '&t=' + Date.now());
+    const d = await res.json();
+    if(d.success) loadData(); else alert(d.error||'Failed');
+  }catch(e){ alert('Connection error.'); }
 }
 
-let quickSellCategory = 'All';
-let cart = {};
-
-function renderQuickSellTabs(){
-  const menu = barData.menu || [];
-  const counts = {};
-  menu.forEach(m => { const c = m.category || 'Other'; counts[c] = (counts[c]||0)+1; });
-  const cats = Object.keys(counts).sort((a,b)=>counts[b]-counts[a]);
-  if(!cats.includes(quickSellCategory) && quickSellCategory !== 'All') quickSellCategory = 'All';
-  const tabs = [{key:'All', label:'All', count: menu.length}, ...cats.map(c=>({key:c,label:c,count:counts[c]}))];
-  const tabRow = document.getElementById('quickSellTabs');
-  tabRow.innerHTML = '';
-  tabs.forEach(t => {
-    const btn = document.createElement('button');
-    btn.className = 'tab-pill' + (quickSellCategory===t.key?' active':'');
-    btn.innerHTML = `${t.label}<span class="tab-count">${t.count}</span>`;
-    btn.addEventListener('click', () => setQuickSellCategory(t.key));
-    tabRow.appendChild(btn);
-  });
+function renderPayrollTable(){
+  const runs = data.payrollRuns || [];
+  const el = document.getElementById('payrollBody');
+  el.innerHTML = runs.length ? runs.map(r=>`
+    <tr>
+      <td style="font-size:11px">${r.periodLabel}</td>
+      <td style="font-size:11px">${r.name}</td>
+      <td style="font-family:'Space Mono',monospace;font-size:11px">${fmt(r.grossPay)}</td>
+      <td style="font-family:'Space Mono',monospace;font-size:11px;color:var(--red)">${fmt(r.ssnitEmployee)}</td>
+      <td style="font-family:'Space Mono',monospace;font-size:11px;color:var(--red)">${fmt(r.payeTax)}</td>
+      <td style="font-family:'Space Mono',monospace;font-size:11px;color:var(--green);font-weight:700">${fmt(r.netPay)}</td>
+      <td>${r.status==='Paid' ? '<span class="pill pos">PAID</span>' : `<button class="btn ghost" style="width:auto;padding:5px 10px;font-size:10px" onclick="markPaid('${r.runId}')">MARK PAID</button>`}</td>
+    </tr>`).join('') : '<tr><td colspan="7" class="empty">No payroll runs yet.</td></tr>';
 }
 
-function setQuickSellCategory(cat){
-  quickSellCategory = cat;
-  renderQuickSellTabs();
-  renderQuickSellMenu();
-}
-
-function renderQuickSellMenu(){
-  const q = (document.getElementById('quickSellSearch').value||'').toLowerCase();
-  let menu = barData.menu || [];
-  if(q){
-    menu = menu.filter(m => m.item.toLowerCase().includes(q));
-  } else if(quickSellCategory !== 'All'){
-    menu = menu.filter(m => (m.category||'Other') === quickSellCategory);
-  }
-  const grid = document.getElementById('quickSellGrid');
-  grid.innerHTML = '';
-  if(menu.length===0){ grid.innerHTML = '<div class="empty">No menu items match</div>'; return; }
-  menu.forEach(m => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'quick-sell-item';
-    btn.dataset.item = m.item;
-    btn.innerHTML = `
-      <span class="qs-cart-qty" style="display:none"></span>
-      <span class="qs-name"></span>
-      <span class="qs-price">&#8373;${m.price.toFixed(2)}</span>
-      <span class="qs-cat"></span>`;
-    btn.querySelector('.qs-name').textContent = m.item;
-    btn.querySelector('.qs-cat').textContent = m.category || '';
-    btn.addEventListener('click', () => addToCart(m.item));
-    grid.appendChild(btn);
-    updateQuickSellCardQtyEl(btn, m.item);
-  });
-}
-
-function updateQuickSellCardQtyEl(btn, itemName){
-  const qty = cart[itemName] || 0;
-  btn.classList.toggle('in-cart', qty > 0);
-  const badge = btn.querySelector('.qs-cart-qty');
-  if(qty > 0){ badge.textContent = qty; badge.style.display = ''; }
-  else { badge.style.display = 'none'; }
-}
-function updateQuickSellCardQty(itemName){
-  const grid = document.getElementById('quickSellGrid');
-  const btn = grid.querySelector(`[data-item="${CSS.escape(itemName)}"]`);
-  if(btn) updateQuickSellCardQtyEl(btn, itemName);
-  else renderQuickSellMenu();
-}
-
-function addToCart(itemName){
-  cart[itemName] = (cart[itemName]||0) + 1;
-  updateQuickSellCardQty(itemName);
-  renderQuickSellPanel();
-}
-
-function setCartQty(itemName, qty){
-  qty = Math.max(0, Math.floor(qty) || 0);
-  if(qty <= 0){ delete cart[itemName]; }
-  else{ cart[itemName] = qty; }
-  updateQuickSellCardQty(itemName);
-  renderQuickSellPanel();
-}
-
-function cartSubtotal(){
-  const menu = barData.menu || [];
-  let total = 0;
-  Object.keys(cart).forEach(name => {
-    const m = menu.find(mm => mm.item === name);
-    if(m) total += m.price * cart[name];
-  });
-  return total;
-}
-
-function getServingStaff(){
-  const allActive = (barData.staff||[]).filter(s=>s.active && s.initials && s.initials.trim());
-  const onDuty = allActive.filter(s=>s.onDuty);
-  return onDuty.length ? onDuty : allActive;
-}
-
-function renderQuickSellPanel(){
-  const panel = document.getElementById('quickSellPanel');
-  const menu = barData.menu || [];
-  const itemNames = Object.keys(cart).filter(k => cart[k] > 0);
-
-  if(itemNames.length === 0){
-    panel.classList.remove('show');
-    panel.innerHTML = '';
-    return;
-  }
-
-  panel.classList.add('show');
-
-  const prevStaff = document.getElementById('qsStaff') ? document.getElementById('qsStaff').value : '';
-  const prevCustomer = document.getElementById('qsCustomer') ? document.getElementById('qsCustomer').value : '';
-  const prevNewName = document.getElementById('qsNewName') ? document.getElementById('qsNewName').value : '';
-  const prevPayment = document.getElementById('qsPayment') ? document.getElementById('qsPayment').value : '';
-
-  const staff = getServingStaff();
-  const subtotal = cartSubtotal();
-
-  const cartRowsHtml = itemNames.map(name => {
-    const m = menu.find(mm => mm.item === name);
-    const price = m ? m.price : 0;
-    const qty = cart[name];
-    return `
-    <div class="cart-row" data-cart-item="${encodeURIComponent(name)}">
-      <div class="cart-name"><span class="cart-item-name"></span><span class="cart-unit-price">&#8373;${price.toFixed(2)} each</span></div>
-      <div class="cart-qty-stepper">
-        <button type="button" class="cart-qty-dec">&minus;</button>
-        <span>${qty}</span>
-        <button type="button" class="cart-qty-inc">+</button>
-      </div>
-      <div class="cart-line-total">&#8373;${(price*qty).toFixed(2)}</div>
-      <button type="button" class="cart-remove" title="Remove">&times;</button>
+// ---------- BUDGETS ----------
+function renderBudgets(){
+  const budgets = data.budgets || [];
+  const el = document.getElementById('budgetsList');
+  el.innerHTML = budgets.length ? budgets.map(b=>{
+    const pct = b.target > 0 ? Math.min(100, (b.actual / b.target) * 100) : (b.actual>0?100:0);
+    const over = b.actual > b.target && b.target > 0;
+    return `<div class="bar-row">
+      <div class="b-label">${b.category}</div>
+      <div class="bar-track"><div class="bar-fill ${over?'over':''}" style="width:${pct}%"></div></div>
+      <div class="b-value">${fmt(b.actual)} / ${fmt(b.target)}</div>
     </div>`;
-  }).join('');
-
-  panel.innerHTML = `
-    <div class="qs-title"><span>&#128722; CART (${itemNames.length} item${itemNames.length>1?'s':''})</span><button type="button" class="cart-remove" id="qsClearCart" title="Clear cart" style="font-size:12px;color:var(--muted)">CLEAR</button></div>
-    <div class="cart-list" id="cartList"></div>
-    <div class="cart-subtotal-row"><span>Subtotal</span><span class="cart-subtotal-value">&#8373;${subtotal.toFixed(2)}</span></div>
-    ${staff.length===0 ? '<div class="qs-warning">&#9888; No active staff with initials found in Supabase — the "Served by" list below will be empty. Add staff rows in the Supabase Table Editor, then hit Refresh.</div>' : ''}
-    <div class="qs-field-grid" style="margin-top:10px">
-      <div>
-        <div class="qs-label">Served by (required)</div>
-        <select class="select-input" id="qsStaff" style="margin:0"></select>
-      </div>
-      <div>
-        <div class="qs-label">Payment method (required)</div>
-        <select class="select-input" id="qsPayment" style="margin:0">
-          <option value="">Select payment...</option>
-          <option>Cash</option><option>MoMo</option>
-        </select>
-      </div>
-    </div>
-    <div class="qs-label" style="margin-top:8px">Customer phone or ID (optional — leave blank for walk-in)</div>
-    <input class="search-input" id="qsCustomer" placeholder="e.g. 0241234567 or THWGH1" style="margin:0 0 10px">
-    <div class="qs-label">New customer name (only needed if the ID/phone above is new)</div>
-    <input class="search-input" id="qsNewName" placeholder="e.g. Ama Mensah" style="margin:0 0 10px">
-    <div class="restock-grid">
-      <button class="btn" id="qsConfirmBtn" style="margin:0">&#10003; CONFIRM SALE — &#8373;${subtotal.toFixed(2)}</button>
-      <button class="btn" id="qsCancelBtn" style="margin:0;background:var(--border);color:var(--text)">CANCEL</button>
-    </div>
-    <div id="qsResult" style="margin-top:8px;font-size:12px"></div>`;
-
-  document.getElementById('cartList').innerHTML = cartRowsHtml;
-  document.getElementById('cartList').querySelectorAll('.cart-row').forEach(row => {
-    const name = decodeURIComponent(row.dataset.cartItem);
-    row.querySelector('.cart-item-name').textContent = name;
-    row.querySelector('.cart-qty-inc').addEventListener('click', () => setCartQty(name, (cart[name]||0)+1));
-    row.querySelector('.cart-qty-dec').addEventListener('click', () => setCartQty(name, (cart[name]||0)-1));
-    row.querySelector('.cart-remove').addEventListener('click', () => setCartQty(name, 0));
-  });
-
-  const staffSel = document.getElementById('qsStaff');
-  staffSel.innerHTML = '<option value="">Select staff...</option>' +
-    staff.map(s => `<option value="${s.initials}">${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
-  if(staff.some(s=>s.initials===prevStaff)) staffSel.value = prevStaff;
-
-  document.getElementById('qsCustomer').value = prevCustomer;
-  document.getElementById('qsNewName').value = prevNewName;
-  const paySel = document.getElementById('qsPayment');
-  if(prevPayment) paySel.value = prevPayment;
-
-  document.getElementById('qsConfirmBtn').addEventListener('click', submitQuickSellCart);
-  document.getElementById('qsCancelBtn').addEventListener('click', cancelQuickSellCart);
-  document.getElementById('qsClearCart').addEventListener('click', clearCart);
+  }).join('') : '<div class="empty">No budget categories yet — run seedCategoriesAndBudgets from the Apps Script editor.</div>';
 }
 
-function clearCart(){
-  cart = {};
-  const searchEl = document.getElementById('quickSellSearch');
-  if(searchEl) searchEl.value = '';
-  renderQuickSellMenu();
-  renderQuickSellPanel();
+// ---------- RUNNING COSTING (general, cocktail-family items excluded) ----------
+function renderCosting(){
+  const bar = data.bar || {};
+  document.getElementById('costingMetrics').innerHTML = `
+    <div class="metric-card gold"><div class="metric-label">TOTAL REVENUE (ALL-TIME LOG)</div><div class="metric-value" style="font-size:20px">${fmt(bar.allTimeRevenue)}</div></div>
+    <div class="metric-card red"><div class="metric-label">TRUE COGS USED</div><div class="metric-value" style="font-size:20px">${fmt(bar.allTimeCOGSUsed)}</div></div>
+    <div class="metric-card green"><div class="metric-label">GROSS MARGIN</div><div class="metric-value" style="font-size:20px">${fmt(bar.allTimeMargin)}</div></div>`;
+  const top = bar.topSellers || [];
+  document.getElementById('costingBody').innerHTML = top.length ? top.map(t=>`
+    <tr><td>${t.item}</td><td style="font-family:'Space Mono',monospace">${t.qty}</td><td style="color:var(--gold);font-family:'Space Mono',monospace">${fmt(t.revenue)}</td><td style="color:var(--red);font-family:'Space Mono',monospace">${fmt(t.cogsUsed)}</td><td style="color:var(--green);font-family:'Space Mono',monospace;font-weight:700">${fmt(t.margin)}</td></tr>`).join('') : '<tr><td colspan="5" class="empty">No sales logged yet, or ingredient costs aren\'t set on Bar Stock yet.</td></tr>';
+
+  const spend = data.spendByCategoryThisMonth || {};
+  const foodPurchased = spend['Food & Beverage COGS'] || 0;
+  const barPurchased = spend['Bar Stock COGS'] || 0;
+  document.getElementById('cogsCompare').innerHTML = `
+    <div class="bar-row"><div class="b-label">Food/Bar purchases logged</div><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><div class="b-value">${fmt(foodPurchased+barPurchased)}</div></div>
+    <div class="bar-row"><div class="b-label">COGS actually used in sales</div><div class="bar-track"><div class="bar-fill" style="width:${bar.allTimeCOGSUsed && (foodPurchased+barPurchased) ? Math.min(100,(bar.allTimeCOGSUsed/(foodPurchased+barPurchased))*100) : 0}%"></div></div><div class="b-value">${fmt(bar.allTimeCOGSUsed)}</div></div>`;
 }
 
-function cancelQuickSellCart(){
-  clearCart();
+// ---------- COCKTAILS ----------
+function renderCocktails(){
+  const ck = data.cocktails || {};
+  if(ck.error) { document.getElementById('cocktailMetrics').innerHTML = `<div class="empty" style="grid-column:1/-1">${ck.error}</div>`; document.getElementById('cocktailTopBody').innerHTML=''; document.getElementById('cocktailRecentBody').innerHTML=''; return; }
+  document.getElementById('cocktailMetrics').innerHTML = `
+    <div class="metric-card pink"><div class="metric-label">COCKTAIL REVENUE TODAY</div><div class="metric-value" style="font-size:20px">${fmt(ck.todayRevenue)}</div><div class="metric-sub">${ck.todayCount||0} sold</div></div>
+    <div class="metric-card gold"><div class="metric-label">ALL-TIME REVENUE</div><div class="metric-value" style="font-size:20px">${fmt(ck.allTimeRevenue)}</div></div>
+    <div class="metric-card red"><div class="metric-label">ALL-TIME INGREDIENT COST</div><div class="metric-value" style="font-size:20px">${fmt(ck.allTimeCost)}</div></div>
+    <div class="metric-card green"><div class="metric-label">ALL-TIME MARGIN</div><div class="metric-value" style="font-size:20px">${fmt(ck.allTimeMargin)}</div></div>`;
+
+  const top = ck.topCocktails || [];
+  document.getElementById('cocktailTopBody').innerHTML = top.length ? top.map(t=>`
+    <tr><td>${t.item}</td><td><span class="pill cocktail">${t.category}</span></td><td style="font-family:'Space Mono',monospace">${t.qty}</td><td style="color:var(--gold);font-family:'Space Mono',monospace">${fmt(t.revenue)}</td><td style="color:var(--red);font-family:'Space Mono',monospace">${fmt(t.cost)}</td><td style="color:var(--green);font-family:'Space Mono',monospace;font-weight:700">${fmt(t.margin)}</td></tr>`).join('') : '<tr><td colspan="6" class="empty">No cocktail sales logged yet.</td></tr>';
+
+  const recent = ck.recent || [];
+  document.getElementById('cocktailRecentBody').innerHTML = recent.length ? recent.map(r=>`
+    <tr><td style="font-size:11px;font-family:'Space Mono',monospace">${new Date(r.timestamp).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</td><td>${r.item}</td><td style="font-family:'Space Mono',monospace">${r.qty}</td><td style="color:var(--gold);font-family:'Space Mono',monospace">${fmt(r.revenue)}</td><td style="color:var(--red);font-family:'Space Mono',monospace">${fmt(r.cost)}</td><td style="color:var(--green);font-family:'Space Mono',monospace">${fmt(r.margin)}</td><td style="font-size:11px">${r.staff||'—'}</td></tr>`).join('') : '<tr><td colspan="7" class="empty">No cocktail sales logged yet.</td></tr>';
 }
 
-async function submitQuickSellCart(){
-  const staffInitials = document.getElementById('qsStaff').value;
-  const custQuery = document.getElementById('qsCustomer').value.trim();
-  const newCustomerName = document.getElementById('qsNewName').value.trim();
-  const payment = document.getElementById('qsPayment').value;
-  const resultEl = document.getElementById('qsResult');
-  const confirmBtn = document.getElementById('qsConfirmBtn');
-
-  const staff = getServingStaff();
-  if(staff.length === 0){
-    resultEl.innerHTML = '<span style="color:var(--red)">No active staff are set up yet — add rows in the Supabase staff table, then Refresh before selling.</span>';
-    return;
-  }
-  if(!staffInitials){ resultEl.innerHTML = '<span style="color:var(--red)">Pick who is serving.</span>'; return; }
-  if(!payment){ resultEl.innerHTML = '<span style="color:var(--red)">Pick a payment method (Cash or MoMo).</span>'; return; }
-
-  const itemNames = Object.keys(cart).filter(k => cart[k] > 0);
-  if(itemNames.length === 0){ resultEl.innerHTML = '<span style="color:var(--red)">Cart is empty.</span>'; return; }
-
-  confirmBtn.disabled = true;
-  confirmBtn.textContent = 'Processing sale...';
-  resultEl.innerHTML = '';
-
-  const lineResults = [];
-  let firstError = null;
-
-  for(const itemName of itemNames){
-    const qty = cart[itemName];
-    const clientId = genClientId();
-    let result;
-    try{
-      const { data, error } = await supabaseClient.rpc('quick_sell_item', {
-        p_item: itemName, p_qty: qty, p_staff: staffInitials, p_payment: payment,
-        p_cust_query: custQuery || null, p_new_customer_name: newCustomerName || null, p_client_id: clientId
-      });
-      if(error) throw new Error(error.message);
-      result = { ok: true, data: { lineTotal: data.lineTotal, custId: data.custId, pointsNow: data.pointsNow, lowStockNames: data.lowStockNames || [] } };
-    }catch(e){
-      result = { ok: false, queued: false, error: e.message };
-    }
-    lineResults.push({ itemName, qty, result });
-    if(!result.ok && !result.queued && !firstError) firstError = result.error;
-  }
-
-  if(firstError && lineResults.every(r => !r.result.ok && !r.result.queued)){
-    resultEl.innerHTML = '<span style="color:var(--red)">' + firstError + '</span>';
-    confirmBtn.disabled = false;
-    confirmBtn.textContent = '\u2713 CONFIRM SALE — \u20b5' + cartSubtotal().toFixed(2);
-    return;
-  }
-
-  const succeeded = lineResults.filter(r => r.result.ok);
-  const queued = lineResults.filter(r => r.result.queued);
-  const failed = lineResults.filter(r => !r.result.ok && !r.result.queued);
-
-  let subtotalRung = succeeded.reduce((s,r)=>s + (r.result.data ? r.result.data.lineTotal : 0), 0);
-  let msg = '';
-  if(succeeded.length){
-    msg += `<span class="flash">&#10003; ${succeeded.length} item${succeeded.length>1?'s':''} rung up — &#8373;${subtotalRung.toFixed(2)} · served by ${staffInitials}</span><br>`;
-    const lastWithCust = succeeded.slice().reverse().find(r => r.result.data.custId && r.result.data.custId !== '—');
-    if(lastWithCust) msg += `${lastWithCust.result.data.custId}${lastWithCust.result.data.pointsNow!==null ? ' ('+lastWithCust.result.data.pointsNow+' pts)':''}<br>`;
-    const lowStockSet = new Set();
-    succeeded.forEach(r => (r.result.data.lowStockNames||[]).forEach(n=>lowStockSet.add(n)));
-    if(lowStockSet.size) msg += `<span style="color:var(--red)">&#9888; Low stock: ${Array.from(lowStockSet).join(', ')}</span><br>`;
-  }
-  if(queued.length){
-    msg += `<span style="color:var(--teal)">&#9203; ${queued.length} item${queued.length>1?'s':''} queued (no connection) — will send automatically once back online.</span><br>`;
-  }
-  if(failed.length){
-    msg += `<span style="color:var(--red)">${failed.length} item${failed.length>1?'s':''} failed: ${failed.map(f=>f.itemName+' ('+f.result.error+')').join('; ')}</span>`;
-  }
-  resultEl.innerHTML = msg;
-
-  if(failed.length === 0){
-    setTimeout(()=>{ clearCart(); loadData(); }, queued.length ? 3200 : 1800);
-  }else{
-    lineResults.forEach(r => { if(r.result.ok || r.result.queued) delete cart[r.itemName]; });
-    confirmBtn.disabled = false;
-    confirmBtn.textContent = '\u2713 CONFIRM SALE — \u20b5' + cartSubtotal().toFixed(2);
-    renderQuickSellMenu();
-    renderQuickSellPanel();
-  }
+// ---------- BAR & CANTEEN ----------
+function renderBarCanteen(){
+  const bar = data.bar || {};
+  document.getElementById('barMetrics').innerHTML = `
+    <div class="metric-card gold"><div class="metric-label">REVENUE TODAY</div><div class="metric-value" style="font-size:20px">${fmt(bar.todayRevenue)}</div><div class="metric-sub">${bar.todayItemCount||0} items</div></div>
+    <div class="metric-card red"><div class="metric-label">LOW STOCK ITEMS</div><div class="metric-value">${bar.lowStockCount||0}</div></div>
+    <div class="metric-card teal"><div class="metric-label">ACTIVE TABLE ORDERS</div><div class="metric-value">${bar.activeTableOrders||0}</div></div>
+    <div class="metric-card purple"><div class="metric-label">ACTIVE CANTEEN ORDERS</div><div class="metric-value">${bar.activeCanteenOrders||0}</div></div>`;
+  const low = bar.lowStockItems || [];
+  document.getElementById('barLowStock').innerHTML = low.length ? low.map(i=>`<span class="onshift-pill" style="border-color:var(--red);color:var(--red);background:#2a0a0a">${i}</span>`).join('') : '<div class="empty">Nothing low right now.</div>';
+  if(bar.crmError) showApiError('Bar/Canteen sheet: ' + bar.crmError);
 }
 
-async function generateShiftSummary(){
-  const orders = barData.todayOrders || [];
-  const el = document.getElementById('shiftSummaryBody');
-  if(orders.length === 0){
-    el.innerHTML = '<div class="shift-summary-box"><div class="empty">No sales logged yet today.</div></div>';
-    return;
-  }
-  const byStaff = {}, byPayment = {}, byItem = {};
-  let totalRevenue = 0, totalItems = 0;
-  orders.forEach(o => {
-    const staffKey = o.staffInitials || 'Unassigned';
-    const payKey = o.payment || 'Unspecified';
-    if(!byStaff[staffKey]) byStaff[staffKey] = {revenue:0, items:0, orders:0};
-    byStaff[staffKey].revenue += o.lineTotal; byStaff[staffKey].items += o.qty; byStaff[staffKey].orders += 1;
-    if(!byPayment[payKey]) byPayment[payKey] = 0;
-    byPayment[payKey] += o.lineTotal;
-    if(!byItem[o.item]) byItem[o.item] = {qty:0, revenue:0};
-    byItem[o.item].qty += o.qty; byItem[o.item].revenue += o.lineTotal;
-    totalRevenue += o.lineTotal; totalItems += o.qty;
-  });
-  const topItems = Object.keys(byItem).map(k=>({item:k, ...byItem[k]})).sort((a,b)=>b.qty-a.qty).slice(0,5);
-  const lowStock = (barData.stock||[]).filter(s=>s.lowStock);
-  const dateStr = new Date().toLocaleDateString('en-GB', {weekday:'long', day:'numeric', month:'long'});
+// ---------- FACILITIES ----------
+function renderFacilities(){
+  const fac = data.facilities || {};
+  document.getElementById('facMetrics').innerHTML = `
+    <div class="metric-card red"><div class="metric-label">OPEN TICKETS</div><div class="metric-value">${fac.openTickets||0}</div><div class="metric-sub">${fac.urgentOpen||0} urgent</div></div>
+    <div class="metric-card gold"><div class="metric-label">NEEDS VERIFICATION</div><div class="metric-value">${fac.unverified||0}</div><div class="metric-sub">guest-submitted</div></div>`;
+  const projects = fac.projects || [];
+  document.getElementById('facProjects').innerHTML = projects.length ? projects.map(p=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1a1a1a;font-size:12px"><span>${p.title}</span><span class="pill warn">${p.status}</span></div>`).join('') : '<div class="empty">No projects logged yet.</div>';
+}
 
-  window._shiftSummaryText =
-`THE WHITE HOUSE EVENTS & MORE — SHIFT SUMMARY (${dateStr})
-Total revenue: GHS ${totalRevenue.toFixed(2)} (${totalItems} items, ${orders.length} orders)
+// ---------- MEMBERS ----------
+function renderMembers(){
+  const mem = data.members || {};
+  document.getElementById('memberMetrics').innerHTML = `
+    <div class="metric-card teal"><div class="metric-label">TOTAL MEMBERS</div><div class="metric-value">${mem.totalCustomers||0}</div></div>
+    <div class="metric-card green"><div class="metric-label">NEW TODAY</div><div class="metric-value">${mem.newToday||0}</div></div>
+    <div class="metric-card gold"><div class="metric-label">TOTAL POINTS LIVE</div><div class="metric-value" style="font-size:20px">${(mem.totalPointsLive||0).toLocaleString()}</div></div>`;
+  const top = mem.topMembers || [];
+  document.getElementById('memberTop').innerHTML = top.length ? top.map((m,i)=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1a1a1a;font-size:12px"><span>${i+1}. ${m.name}</span><span style="color:var(--gold);font-family:'Space Mono',monospace">${m.points} pts</span></div>`).join('') : '<div class="empty">No members yet.</div>';
+}
 
-By staff:
-${Object.keys(byStaff).map(s=>`  ${s}: GHS ${byStaff[s].revenue.toFixed(2)} — ${byStaff[s].orders} orders, ${byStaff[s].items} items`).join('\n')}
-
-By payment method:
-${Object.keys(byPayment).map(p=>`  ${p}: GHS ${byPayment[p].toFixed(2)}`).join('\n')}
-
-Top items today:
-${topItems.map(i=>`  ${i.item}: ${i.qty} sold — GHS ${i.revenue.toFixed(2)}`).join('\n')}
-
-Low stock (${lowStock.length}):${lowStock.length ? '\n' + lowStock.map(s=>`  ${s.item}: ${s.currentQty}${s.unit} (par ${s.parLevel})`).join('\n') : ' none'}`;
-
+// ---------- SHIFTS ----------
+async function submitShift(action){
+  const sel = document.getElementById('shStaff');
+  const staffId = sel.value;
+  const resultEl = document.getElementById('shResult');
+  if(!staffId){ resultEl.innerHTML = '<span style="color:var(--red)">Select a staff member.</span>'; return; }
+  const opt = sel.options[sel.selectedIndex];
+  const name = opt.dataset.name, department = opt.dataset.dept;
   try{
-    await supabaseClient.rpc('save_shift_summary', {
-      p_business_date: new Date().toISOString().slice(0,10),
-      p_generated_by: 'Bar Dashboard',
-      p_summary_text: window._shiftSummaryText,
-      p_total_revenue: totalRevenue,
-      p_items_sold: totalItems,
-      p_orders_count: orders.length
-    });
-  }catch(e){ console.log('Could not save shift summary to archive:', e); }
-
-  el.innerHTML = `
-    <div class="shift-summary-box">
-      <h4>Revenue</h4>
-      <div class="shift-summary-row"><span>Total</span><span style="color:var(--gold);font-family:'Space Mono',monospace">&#8373;${totalRevenue.toFixed(2)}</span></div>
-      <div class="shift-summary-row"><span>Items sold</span><span style="font-family:'Space Mono',monospace">${totalItems}</span></div>
-      <div class="shift-summary-row"><span>Orders</span><span style="font-family:'Space Mono',monospace">${orders.length}</span></div>
-      <h4>By Staff</h4>
-      ${Object.keys(byStaff).map(s=>`<div class="shift-summary-row"><span>${s}</span><span style="font-family:'Space Mono',monospace">&#8373;${byStaff[s].revenue.toFixed(2)} · ${byStaff[s].items} items</span></div>`).join('')}
-      <h4>By Payment Method</h4>
-      ${Object.keys(byPayment).map(p=>`<div class="shift-summary-row"><span>${p}</span><span style="font-family:'Space Mono',monospace">&#8373;${byPayment[p].toFixed(2)}</span></div>`).join('')}
-      <h4>Top Items Today</h4>
-      ${topItems.map(i=>`<div class="shift-summary-row"><span>${i.item}</span><span style="font-family:'Space Mono',monospace">${i.qty} sold</span></div>`).join('')}
-      <h4>Low Stock (${lowStock.length})</h4>
-      ${lowStock.length ? lowStock.map(s=>`<div class="shift-summary-row" style="color:var(--red)"><span>${s.item}</span><span style="font-family:'Space Mono',monospace">${s.currentQty}${s.unit}</span></div>`).join('') : '<div class="metric-detail-empty">None</div>'}
-      <div class="restock-grid" style="margin-top:12px">
-        <button class="btn" style="background:var(--teal);color:#0a0a0a" onclick="sendShiftSummaryWhatsApp()">&#128241; SEND TO MANAGER — WHATSAPP</button>
-        <button class="btn" style="background:var(--border);color:var(--text)" onclick="sendShiftSummaryEmail()">&#128231; SEND TO MANAGER — EMAIL</button>
-      </div>
-      <button class="btn" style="margin-top:8px" onclick="copyShiftSummary()">&#128203; COPY AS TEXT</button>
-      <div id="shiftCopyResult" style="margin-top:6px;font-size:11px"></div>
-    </div>`;
+    const res = await fetch(API_URL + '?action=' + action + '&staffId=' + encodeURIComponent(staffId) + '&name=' + encodeURIComponent(name) + '&department=' + encodeURIComponent(department) + '&source=' + encodeURIComponent('Manager Dashboard') + '&t=' + Date.now());
+    const d = await res.json();
+    if(d.success){ resultEl.innerHTML = '<span style="color:var(--green)">&#10003; '+d.name+' — '+d.action+'</span>'; loadData(); }
+    else { resultEl.innerHTML = '<span style="color:var(--red)">'+(d.error||'Failed')+'</span>'; }
+  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">Connection error.</span>'; }
 }
 
-// v6.1: SEND TO MANAGER. WhatsApp opens wa.me with the summary already
-// typed in — one tap to send from there. Email opens a mailto: draft
-// the same way, since a static page can't send email on its own
-// without a mail-sending service wired up (that would be an Edge
-// Function + an email API key, not something to bolt on silently).
-const MANAGER_WHATSAPP_NUMBER = '233554399995'; // +233 55 439 9995, international format for wa.me
-const MANAGER_EMAIL = 'manager@thewhitehousegh.com';
-
-function sendShiftSummaryWhatsApp(){
-  if(!window._shiftSummaryText){ document.getElementById('shiftCopyResult').textContent = 'Generate the summary first.'; return; }
-  const url = 'https://wa.me/' + MANAGER_WHATSAPP_NUMBER + '?text=' + encodeURIComponent(window._shiftSummaryText);
-  window.open(url, '_blank');
+function renderShifts(){
+  const onShift = data.onShift || [];
+  document.getElementById('shiftOnNow').innerHTML = onShift.length ? onShift.map(s=>`<span class="onshift-pill">&#9679; ${s.name} — ${s.department}</span>`).join('') : '<div class="empty">Nobody checked in right now.</div>';
+  const log = data.shiftLog || [];
+  document.getElementById('shiftLogBody').innerHTML = log.length ? log.map(l=>`<tr><td style="font-size:11px;font-family:'Space Mono',monospace">${new Date(l.timestamp).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</td><td>${l.name||'—'}</td><td style="font-size:11px">${l.department||'—'}</td><td>${l.action==='Check In'?'<span class="pill pos">IN</span>':'<span class="pill neg">OUT</span>'}</td><td style="font-size:11px;color:var(--text-dim)">${l.source||'—'}</td></tr>`).join('') : '<tr><td colspan="5" class="empty">No shift activity logged yet.</td></tr>';
 }
 
-function sendShiftSummaryEmail(){
-  if(!window._shiftSummaryText){ document.getElementById('shiftCopyResult').textContent = 'Generate the summary first.'; return; }
-  const subject = 'Shift Summary — ' + new Date().toLocaleDateString('en-GB', {weekday:'long', day:'numeric', month:'long'});
-  const url = 'mailto:' + MANAGER_EMAIL + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(window._shiftSummaryText);
-  window.location.href = url;
+// ---------- SETTINGS ----------
+function renderSettings(){
+  const settings = data.settings || {};
+  const keys = Object.keys(settings);
+  const el = document.getElementById('settingsList');
+  el.innerHTML = keys.map(k=>`
+    <div style="margin-bottom:12px">
+      <label style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:0.5px;text-transform:uppercase">${k}</label>
+      <input class="setting-input" data-key="${k}" value="${(settings[k]||'').toString().replace(/"/g,'&quot;')}">
+    </div>`).join('');
 }
 
-function copyShiftSummary(){
-  const resultEl = document.getElementById('shiftCopyResult');
-  if(!window._shiftSummaryText){ resultEl.textContent = 'Generate the summary first.'; return; }
-  navigator.clipboard.writeText(window._shiftSummaryText).then(()=>{
-    resultEl.innerHTML = '<span class="flash">&#10003; Copied — paste it into WhatsApp, SMS, or email to send.</span>';
-  }).catch(()=>{
-    resultEl.innerHTML = '<span style="color:var(--red)">Could not copy automatically — select the text manually.</span>';
-  });
-}
-
-let tableOrdersData = { active: [], recentFinal: [] };
-let seenActiveOrderIds = new Set();
-let tableOrdersFirstLoad = true;
-let lastActiveSignature = null;
-
-let orderStaffSelections = {};
-let processingOrderIds = new Set();
-
-function playOrderBeep(){
+async function saveAllSettings(){
+  const inputs = document.querySelectorAll('.setting-input');
+  const payload = { action: 'saveSettings' };
+  inputs.forEach(i => { payload[i.dataset.key] = i.value; });
+  const qs = Object.entries(payload).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
+  const resultEl = document.getElementById('settingsResult');
+  resultEl.innerHTML = 'Saving...';
   try{
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain); gain.connect(ctx.destination);
-    osc.frequency.value = 880;
-    gain.gain.setValueAtTime(0.15, ctx.currentTime);
-    osc.start(); osc.stop(ctx.currentTime + 0.18);
-  }catch(e){ }
-}
-
-function shapeSupabaseOrderRow(r){
-  return {
-    orderId: r.order_id, locationType: r.location_type, locationDetail: r.location_detail || '',
-    items: r.items_json || [], total: parseFloat(r.total_ghs) || 0, payment: r.payment_method,
-    status: r.status, momoRef: r.momo_reference || '', customerName: r.customer_name,
-    phone: r.customer_phone, handledBy: r.handled_by || '', timestamp: r.created_at, notes: r.notes || ''
-  };
-}
-
-const COMBO_NOTE_RE = /Also ordered: (.+?) — (CAN\d+|TBL\d+)/;
-async function attachComboStatus(orders, counterpartTable){
-  const refs = [];
-  orders.forEach(o => {
-    const m = (o.notes||'').match(COMBO_NOTE_RE);
-    if(m) refs.push({ order: o, label: m[1], refId: m[2] });
-  });
-  if(refs.length === 0) return orders;
-  const ids = [...new Set(refs.map(r => r.refId))];
-  try{
-    const { data, error } = await supabaseClient.from(counterpartTable).select('order_id, status').in('order_id', ids);
-    if(error) throw error;
-    const statusMap = {};
-    (data||[]).forEach(row => { statusMap[row.order_id] = row.status; });
-    refs.forEach(r => { r.order.comboLabel = r.label; r.order.comboRefId = r.refId; r.order.comboStatus = statusMap[r.refId] || 'unknown'; });
-  }catch(e){ console.log('combo status lookup failed:', e); }
-  return orders;
-}
-
-async function loadTableOrders(){
-  try{
-    const { data, error } = await supabaseClient
-      .from('table_orders')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(200);
-    if(error) throw new Error(error.message);
-
-    const shaped = data.map(shapeSupabaseOrderRow);
-    const active = shaped.filter(o => o.status !== 'Paid' && o.status !== 'Cancelled');
-    const recentFinal = shaped.filter(o => o.status === 'Paid' || o.status === 'Cancelled').slice(0, 15);
-    await attachComboStatus(active, 'canteen_orders');
-    tableOrdersData = { success: true, active: active, recentFinal: recentFinal };
-
-    const currentIds = new Set(active.map(o=>o.orderId));
-    let hasNewPlaced = false;
-    if(!tableOrdersFirstLoad){
-      active.forEach(o => {
-        if(o.status === 'Placed' && !seenActiveOrderIds.has(o.orderId)) hasNewPlaced = true;
-      });
-    }
-    if(hasNewPlaced) playOrderBeep();
-    seenActiveOrderIds = currentIds;
-    tableOrdersFirstLoad = false;
-
-    Object.keys(orderStaffSelections).forEach(id => { if(!currentIds.has(id)) delete orderStaffSelections[id]; });
-    Array.from(processingOrderIds).forEach(id => { if(!currentIds.has(id)) processingOrderIds.delete(id); });
-
-    renderTableOrders();
-  }catch(e){
-    console.log('loadTableOrders error:', e);
-    const el = document.getElementById('tableOrdersBody');
-    if(el) el.innerHTML = '<div class="empty">Could not load table orders — will retry automatically.</div>';
-  }
-}
-
-function statusClass(status){
-  if(status === 'Placed') return 'status-placed';
-  if(status === 'Preparing') return 'status-preparing';
-  if(status === 'Delivered - Awaiting Payment') return 'status-delivered';
-  return '';
-}
-function statusPillClass(status){
-  if(status === 'Placed') return 'placed';
-  if(status === 'Preparing') return 'preparing';
-  if(status === 'Delivered - Awaiting Payment') return 'delivered';
-  return '';
-}
-function orderAge(timestamp){
-  const t = new Date(timestamp);
-  if(isNaN(t.getTime())) return '';
-  const mins = Math.floor((Date.now() - t.getTime()) / 60000);
-  if(mins < 1) return 'just now';
-  if(mins === 1) return '1 min ago';
-  return mins + ' min ago';
-}
-
-function locationLabel(o){
-  const loc = o.locationType === 'Table' ? ('Table ' + (o.locationDetail || '?')) : (o.locationType + (o.locationDetail ? ' — ' + o.locationDetail : ''));
-  return loc;
-}
-
-function activeOrdersSignature(active){
-  return JSON.stringify((active||[]).map(o => [o.orderId, o.status, o.total, o.payment, o.locationType, o.locationDetail, o.customerName, JSON.stringify(o.items), o.comboStatus||'']));
-}
-
-function renderTableOrders(){
-  const el = document.getElementById('tableOrdersBody');
-  const active = (tableOrdersData.active || []).slice().sort((a,b) => {
-    const order = {'Placed':0, 'Preparing':1, 'Delivered - Awaiting Payment':2};
-    return (order[a.status]??3) - (order[b.status]??3) || new Date(a.timestamp) - new Date(b.timestamp);
-  });
-
-  const signature = activeOrdersSignature(active) + '|proc:' + Array.from(processingOrderIds).sort().join(',');
-  if(signature === lastActiveSignature){
-    updateOrderAges();
-    return;
-  }
-  lastActiveSignature = signature;
-
-  if(active.length === 0){ el.innerHTML = '<div class="empty">No active table orders right now.</div>'; return; }
-
-  const staffList = getServingStaff();
-  const staffOptionsHtml = (selected) => '<option value="">Select staff...</option>' +
-    staffList.map(s => `<option value="${s.initials}" ${selected===s.initials?'selected':''}>${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
-
-  el.innerHTML = active.map(o => {
-    const itemsHtml = (o.items||[]).map(i => `${i.qty} &times; ${i.item}`).join(', ');
-    const isNew = o.status === 'Placed' && !tableOrdersFirstLoad;
-    const isProcessing = processingOrderIds.has(o.orderId);
-    const selectedStaff = orderStaffSelections[o.orderId] || '';
-
-    let actionsHtml = '';
-    if(isProcessing){
-      actionsHtml = `<button class="oa-primary" disabled>PROCESSING...</button>`;
-    }else{
-      if(o.status === 'Placed'){
-        actionsHtml = `<button class="oa-primary" onclick="tableOrderAction('${o.orderId}','Preparing')">START PREPARING</button>`;
-      }else if(o.status === 'Preparing'){
-        actionsHtml = `<button class="oa-primary" onclick="tableOrderAction('${o.orderId}','Delivered - Awaiting Payment')">MARK DELIVERED</button>`;
-      }else if(o.status === 'Delivered - Awaiting Payment'){
-        if(o.payment === 'MoMo'){
-          actionsHtml = `<input class="order-momo-input" id="momoRef_${o.orderId}" placeholder="MoMo reference / note (optional)">
-            <button class="oa-primary" onclick="tableOrderAction('${o.orderId}','Paid')">&#10003; CONFIRM MOMO RECEIVED</button>`;
-        }else{
-          actionsHtml = `<button class="oa-primary" onclick="tableOrderAction('${o.orderId}','Paid')">&#10003; CONFIRM CASH RECEIVED</button>`;
-        }
-      }
-      actionsHtml += `<button class="oa-cancel" onclick="tableOrderAction('${o.orderId}','Cancelled')">CANCEL</button>`;
-    }
-
-    const comboHtml = o.comboStatus ? `<div style="font-size:11px;color:var(--teal);background:#0f1a1a;border:1px solid var(--teal);border-radius:6px;padding:6px 10px;margin:6px 0">&#127859; ${o.comboLabel} also ordered — kitchen: <b>${o.comboStatus}</b> (${o.comboRefId})</div>` : '';
-    const momoHtml = o.payment === 'MoMo' ? `<div style="font-size:13px;font-weight:800;color:var(--gold);background:#2a2006;border:1px solid var(--gold-dim);border-radius:6px;padding:8px 10px;margin:6px 0">&#128241; PAY BY MOMO — check ${barData.momoNumber||'(number not set)'}${barData.momoName?' ('+barData.momoName+')':''} for GHS ${o.total.toFixed(2)}</div>` : '';
-    return `<div class="order-card ${statusClass(o.status)}${isNew && o.status==='Placed' ? ' is-new':''}${isProcessing?' is-processing':''}" data-timestamp="${o.timestamp}">
-      <div class="order-card-top">
-        <div><span class="order-card-table">${locationLabel(o)}</span> &nbsp; <span class="order-status-pill ${statusPillClass(o.status)}">${o.status}</span></div>
-        <div class="order-card-age">${orderAge(o.timestamp)}</div>
-      </div>
-      <div class="order-items-list">${itemsHtml}</div>
-      <div class="order-items-list" style="margin-top:-4px;color:var(--text-dim)">${o.customerName || 'no name given'}</div>
-      ${momoHtml}
-      ${comboHtml}
-      <div class="order-card-footer">
-        <span class="order-total">GHS ${o.total.toFixed(2)}</span>
-        <span class="order-pay-badge">${o.payment}</span>
-      </div>
-      <div class="qs-label" style="margin-top:10px">Staff handling this order (required)</div>
-      <select class="order-staff-select" id="staffSel_${o.orderId}" ${isProcessing?'disabled':''} onchange="orderStaffSelections['${o.orderId}']=this.value">
-        ${staffOptionsHtml(selectedStaff)}
-      </select>
-      <div class="order-actions">${actionsHtml}</div>
-    </div>`;
-  }).join('');
-}
-
-function updateOrderAges(){
-  document.querySelectorAll('#tableOrdersBody .order-card').forEach(card => {
-    const ts = card.dataset.timestamp;
-    const ageEl = card.querySelector('.order-card-age');
-    if(ts && ageEl) ageEl.textContent = orderAge(ts);
-  });
-}
-
-async function tableOrderAction(orderId, newStatus){
-  if(processingOrderIds.has(orderId)) return;
-
-  const staffInitials = orderStaffSelections[orderId] || '';
-  if(!staffInitials){ alert('Select which staff member is handling this order first (dropdown on the order card).'); return; }
-  if(newStatus === 'Cancelled' && !confirm('Cancel this order? This cannot be undone.')) return;
-
-  let momoReference = '';
-  const momoInput = document.getElementById('momoRef_' + orderId);
-  if(momoInput) momoReference = momoInput.value.trim();
-
-  processingOrderIds.add(orderId);
-  lastActiveSignature = null;
-  renderTableOrders();
-
-  let result;
-  try{
-    let rpcResult;
-    if(newStatus === 'Paid'){
-      rpcResult = await supabaseClient.rpc('mark_location_order_paid', {
-        p_table: 'table_orders', p_order_id: orderId, p_staff: staffInitials, p_momo: momoReference || null
-      });
-    }else{
-      rpcResult = await supabaseClient.rpc('set_location_order_status', {
-        p_table: 'table_orders', p_order_id: orderId, p_new_status: newStatus, p_staff: staffInitials,
-        p_reason: null
-      });
-    }
-    if(rpcResult.error) throw new Error(rpcResult.error.message);
-    result = { ok: true };
-  }catch(e){
-    result = { ok: false, error: e.message };
-  }
-
-  processingOrderIds.delete(orderId);
-
-  if(result.ok){
-    if(newStatus === 'Paid' || newStatus === 'Cancelled') delete orderStaffSelections[orderId];
-    lastActiveSignature = null;
-    loadTableOrders();
-    if(newStatus === 'Paid') loadData();
-  }else{
-    lastActiveSignature = null;
-    renderTableOrders();
-    alert('Could not update order: ' + result.error);
-  }
-}
-
-function scheduleNext(fn, baseMs, jitterMs){
-  const delay = baseMs + Math.random() * jitterMs;
-  setTimeout(function(){
-    Promise.resolve(fn()).catch(function(){}).finally(function(){ scheduleNext(fn, baseMs, jitterMs); });
-  }, delay);
-}
-
-// v6.1: INCOMING FOOD ORDERS. Food ordered through order.html was only
-// ever visible on canteen-dashboard.html (the kitchen's screen) —
-// even when there was no accompanying drinks order, so the bar never
-// saw it at all. This mirrors the exact same canteen_orders data and
-// the exact same status RPCs the kitchen dashboard uses, so there's
-// one order, one status, just visible in two places — not a separate
-// copy that could drift out of sync.
-let foodOrdersData = { active: [] };
-let seenFoodActiveOrderIds = new Set();
-let foodOrdersFirstLoad = true;
-let lastFoodActiveSignature = null;
-let foodOrderStaffSelections = {};
-let processingFoodOrderIds = new Set();
-
-async function loadFoodOrders(){
-  try{
-    const { data, error } = await supabaseClient
-      .from('canteen_orders')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(200);
-    if(error) throw new Error(error.message);
-
-    const shaped = data.map(shapeSupabaseOrderRow);
-    const active = shaped.filter(o => o.status !== 'Paid' && o.status !== 'Cancelled');
-    await attachComboStatus(active, 'table_orders');
-    foodOrdersData = { active };
-
-    const currentIds = new Set(active.map(o=>o.orderId));
-    let hasNewPlaced = false;
-    if(!foodOrdersFirstLoad){
-      active.forEach(o => { if(o.status === 'Placed' && !seenFoodActiveOrderIds.has(o.orderId)) hasNewPlaced = true; });
-    }
-    if(hasNewPlaced) playOrderBeep();
-    seenFoodActiveOrderIds = currentIds;
-    foodOrdersFirstLoad = false;
-
-    Object.keys(foodOrderStaffSelections).forEach(id => { if(!currentIds.has(id)) delete foodOrderStaffSelections[id]; });
-    Array.from(processingFoodOrderIds).forEach(id => { if(!currentIds.has(id)) processingFoodOrderIds.delete(id); });
-
-    renderFoodOrders();
-  }catch(e){
-    console.log('loadFoodOrders error:', e);
-    const el = document.getElementById('foodOrdersBody');
-    if(el) el.innerHTML = '<div class="empty">Could not load food orders — will retry automatically.</div>';
-  }
-}
-
-function renderFoodOrders(){
-  const el = document.getElementById('foodOrdersBody');
-  const active = (foodOrdersData.active || []).slice().sort((a,b) => {
-    const order = {'Placed':0, 'Preparing':1, 'Delivered - Awaiting Payment':2};
-    return (order[a.status]??3) - (order[b.status]??3) || new Date(a.timestamp) - new Date(b.timestamp);
-  });
-
-  const signature = activeOrdersSignature(active) + '|proc:' + Array.from(processingFoodOrderIds).sort().join(',');
-  if(signature === lastFoodActiveSignature){
-    document.querySelectorAll('#foodOrdersBody .order-card').forEach(card => {
-      const ts = card.dataset.timestamp;
-      const ageEl = card.querySelector('.order-card-age');
-      if(ts && ageEl) ageEl.textContent = orderAge(ts);
-    });
-    return;
-  }
-  lastFoodActiveSignature = signature;
-
-  if(active.length === 0){ el.innerHTML = '<div class="empty">No active food orders right now.</div>'; return; }
-
-  const staffList = getServingStaff();
-  const staffOptionsHtml = (selected) => '<option value="">Select staff...</option>' +
-    staffList.map(s => `<option value="${s.initials}" ${selected===s.initials?'selected':''}>${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
-
-  el.innerHTML = active.map(o => {
-    const itemsHtml = (o.items||[]).map(i => `${i.qty} &times; ${i.item}`).join(', ');
-    const isNew = o.status === 'Placed' && !foodOrdersFirstLoad;
-    const isProcessing = processingFoodOrderIds.has(o.orderId);
-    const selectedStaff = foodOrderStaffSelections[o.orderId] || '';
-
-    let actionsHtml = '';
-    if(isProcessing){
-      actionsHtml = `<button class="oa-primary" disabled>PROCESSING...</button>`;
-    }else{
-      if(o.status === 'Placed'){
-        actionsHtml = `<button class="oa-primary" onclick="foodOrderAction('${o.orderId}','Preparing')">START PREPARING</button>`;
-      }else if(o.status === 'Preparing'){
-        actionsHtml = `<button class="oa-primary" onclick="foodOrderAction('${o.orderId}','Delivered - Awaiting Payment')">MARK DELIVERED</button>`;
-      }else if(o.status === 'Delivered - Awaiting Payment'){
-        if(o.payment === 'MoMo'){
-          actionsHtml = `<input class="order-momo-input" id="foodMomoRef_${o.orderId}" placeholder="MoMo reference / note (optional)">
-            <button class="oa-primary" onclick="foodOrderAction('${o.orderId}','Paid')">&#10003; CONFIRM MOMO RECEIVED</button>`;
-        }else{
-          actionsHtml = `<button class="oa-primary" onclick="foodOrderAction('${o.orderId}','Paid')">&#10003; CONFIRM CASH RECEIVED</button>`;
-        }
-      }
-      actionsHtml += `<button class="oa-cancel" onclick="foodOrderAction('${o.orderId}','Cancelled')">CANCEL</button>`;
-    }
-
-    const comboHtml = o.comboStatus ? `<div style="font-size:11px;color:var(--gold);background:#1a1500;border:1px solid var(--gold-dim);border-radius:6px;padding:6px 10px;margin:6px 0">&#127864; ${o.comboLabel} also ordered — bar: <b>${o.comboStatus}</b> (${o.comboRefId})</div>` : '';
-    return `<div class="order-card ${statusClass(o.status)}${isNew && o.status==='Placed' ? ' is-new':''}${isProcessing?' is-processing':''}" data-timestamp="${o.timestamp}">
-      <div class="order-card-top">
-        <div><span class="order-card-table">${locationLabel(o)}</span> &nbsp; <span class="order-status-pill ${statusPillClass(o.status)}">${o.status}</span></div>
-        <div class="order-card-age">${orderAge(o.timestamp)}</div>
-      </div>
-      <div class="order-items-list">${itemsHtml}</div>
-      <div class="order-items-list" style="margin-top:-4px;color:var(--text-dim)">${o.customerName || 'no name given'}</div>
-      ${comboHtml}
-      <div class="order-card-footer">
-        <span class="order-total">GHS ${o.total.toFixed(2)}</span>
-        <span class="order-pay-badge">${o.payment}</span>
-      </div>
-      <div class="qs-label" style="margin-top:10px">Staff handling this order (required)</div>
-      <select class="order-staff-select" id="foodStaffSel_${o.orderId}" ${isProcessing?'disabled':''} onchange="foodOrderStaffSelections['${o.orderId}']=this.value">
-        ${staffOptionsHtml(selectedStaff)}
-      </select>
-      <div class="order-actions">${actionsHtml}</div>
-    </div>`;
-  }).join('');
-}
-
-async function foodOrderAction(orderId, newStatus){
-  if(processingFoodOrderIds.has(orderId)) return;
-
-  const staffInitials = foodOrderStaffSelections[orderId] || '';
-  if(!staffInitials){ alert('Select which staff member is handling this order first (dropdown on the order card).'); return; }
-  if(newStatus === 'Cancelled' && !confirm('Cancel this order? This cannot be undone.')) return;
-
-  let momoReference = '';
-  const momoInput = document.getElementById('foodMomoRef_' + orderId);
-  if(momoInput) momoReference = momoInput.value.trim();
-
-  processingFoodOrderIds.add(orderId);
-  lastFoodActiveSignature = null;
-  renderFoodOrders();
-
-  let result;
-  try{
-    let rpcResult;
-    if(newStatus === 'Paid'){
-      rpcResult = await supabaseClient.rpc('mark_location_order_paid', {
-        p_table: 'canteen_orders', p_order_id: orderId, p_staff: staffInitials, p_momo: momoReference || null
-      });
-    }else{
-      rpcResult = await supabaseClient.rpc('set_location_order_status', {
-        p_table: 'canteen_orders', p_order_id: orderId, p_new_status: newStatus, p_staff: staffInitials,
-        p_reason: null
-      });
-    }
-    if(rpcResult.error) throw new Error(rpcResult.error.message);
-    result = { ok: true };
-  }catch(e){
-    result = { ok: false, error: e.message };
-  }
-
-  processingFoodOrderIds.delete(orderId);
-
-  if(result.ok){
-    if(newStatus === 'Paid' || newStatus === 'Cancelled') delete foodOrderStaffSelections[orderId];
-    lastFoodActiveSignature = null;
-    loadFoodOrders();
-  }else{
-    lastFoodActiveSignature = null;
-    renderFoodOrders();
-    alert('Could not update order: ' + result.error);
-  }
+    const res = await fetch(API_URL+'?'+qs); const d = await res.json();
+    if(d.success){ resultEl.innerHTML = '<span style="color:var(--green)">&#10003; Settings saved.</span>'; loadData(); }
+    else { resultEl.innerHTML = '<span style="color:var(--red)">'+(d.error||'Failed')+'</span>'; }
+  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">Connection error.</span>'; }
 }
 
 loadData();
-scheduleNext(loadData, 25000, 10000);
-loadTableOrders();
-scheduleNext(loadTableOrders, 8000, 4000);
-loadFoodOrders();
-scheduleNext(loadFoodOrders, 8000, 4000);
+setInterval(loadData, 45000);
 </script>
 </body>
 </html>
