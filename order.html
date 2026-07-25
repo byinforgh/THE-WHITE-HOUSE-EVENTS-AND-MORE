@@ -1,9 +1,32 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE EVENTS & MORE — TABLE ORDER PAGE (v4.1, Supabase-only)
+  THE WHITE HOUSE EVENTS & MORE — TABLE ORDER PAGE (v4.2, Supabase-only)
 
-  v4.1 CHANGES (this session):
+  v4.2 CHANGES (this session — bug fix):
+  - FIXED "no welcome back" / "no customer profile" on return visits.
+    loadMemberAccount() ran FOUR Supabase queries (bar_customers,
+    rewards, table_orders, canteen_orders) inside two Promise.all()
+    calls. Promise.all() is all-or-nothing — if even ONE of those four
+    queries failed (e.g. the new `rewards` table added this session
+    doesn't exist yet, or anon isn't granted SELECT on it yet), the
+    whole function threw, landed in the catch block, and NOTHING was
+    shown: no name, no points, no "Welcome back", no member bar at all
+    — even though the member's own record and order history were
+    perfectly fine. Rewritten with Promise.allSettled() so each query
+    is independent: if `rewards` (or any one table) fails, the member
+    still sees their name, points, visit count, favorites and recent
+    orders — just with an empty/skipped Rewards section instead of the
+    entire bar disappearing.
+  - Also wrapped the HTML-building/render step in its own try/catch so
+    a bad row of data can't silently hide the whole bar either.
+  - Reminder: this bar only appears if this browser previously
+    completed an order on this device (it's stored in localStorage).
+    It will not appear on a different device/browser, or inside an
+    in-app browser (WhatsApp, Instagram, etc.) that clears storage
+    between visits — that is expected, not a bug in this file.
+
+  v4.1 CHANGES:
   - The returning-member profile bar at the top of this page now also
     shows REWARDS (with an "eligible now" marker based on current
     points), FOLLOW US links, and CONTACT US details — this was the
@@ -12,11 +35,6 @@
   - Rewards are pulled live from Supabase's `rewards` table (same one
     members-dashboard.html reads), so editing rewards there is enough
     to update what shows here too.
-  - Reminder: this bar only appears if this browser previously
-    completed an order on this device (it's stored in localStorage).
-    It will not appear on a different device/browser, or inside an
-    in-app browser (WhatsApp, Instagram, etc.) that clears storage
-    between visits — that is expected, not a bug in this file.
 
   v4.0 CHANGES:
   - REMOVED Apps Script entirely. Location types and MoMo number/name
@@ -900,6 +918,14 @@ function saveMember(custId, name, phone){
   try{ localStorage.setItem(MEMBER_KEY, JSON.stringify({custId, name, phone})); }catch(e){}
 }
 
+// v4.2 FIX: rewritten to use Promise.allSettled() instead of two
+// Promise.all() calls. Promise.all() rejects the INSTANT any one of
+// its promises rejects, which meant a single failing query — most
+// likely `rewards`, since that table/grant was only added this
+// session — took the whole function into its catch block and skipped
+// rendering the member bar entirely: no name, no points, no "Welcome
+// back", nothing. Now every query is independent, so one bad table
+// only costs its own section instead of the whole bar.
 async function loadMemberAccount(){
   const member = getSavedMember();
   if(!member) return;
@@ -909,15 +935,27 @@ async function loadMemberAccount(){
   if(nameInput && !nameInput.value){ nameInput.value = member.name; nameInput.disabled = true; }
   lookedUpCustomer = { custId: member.custId, name: member.name, phone: member.phone };
 
+  const [custRes, rewardsRes, tableOrdersRes, canteenOrdersRes] = await Promise.allSettled([
+    supabaseClient.from('bar_customers').select('*').eq('customer_id', member.custId).maybeSingle(),
+    supabaseClient.from('rewards').select('*').eq('active', true).order('points_required', { ascending: true }),
+    supabaseClient.from('table_orders').select('items_json, created_at, total_ghs').eq('customer_phone', member.phone).order('created_at', { ascending:false }).limit(20),
+    supabaseClient.from('canteen_orders').select('items_json, created_at, total_ghs').eq('customer_phone', member.phone).order('created_at', { ascending:false }).limit(20)
+  ]);
+
+  const okData = (settled) => (settled.status === 'fulfilled' && !settled.value.error) ? settled.value.data : null;
+  const failReason = (settled) => settled.status === 'fulfilled' ? settled.value.error : settled.reason;
+
+  const cust = okData(custRes);
+  const rewardsData = okData(rewardsRes) || [];
+  const tableOrders = okData(tableOrdersRes) || [];
+  const canteenOrders = okData(canteenOrdersRes) || [];
+
+  if(!cust && custRes.status !== 'fulfilled' || (custRes.status === 'fulfilled' && custRes.value.error)) console.log('bar_customers lookup issue:', failReason(custRes));
+  if(!okData(rewardsRes)) console.log('rewards lookup issue (non-fatal — Rewards section will just be empty):', failReason(rewardsRes));
+  if(!okData(tableOrdersRes)) console.log('table_orders lookup issue:', failReason(tableOrdersRes));
+  if(!okData(canteenOrdersRes)) console.log('canteen_orders lookup issue:', failReason(canteenOrdersRes));
+
   try{
-    const [{ data: cust }, { data: rewardsData }] = await Promise.all([
-      supabaseClient.from('bar_customers').select('*').eq('customer_id', member.custId).maybeSingle(),
-      supabaseClient.from('rewards').select('*').eq('active', true).order('points_required', { ascending: true })
-    ]);
-    const [{ data: tableOrders }, { data: canteenOrders }] = await Promise.all([
-      supabaseClient.from('table_orders').select('items_json, created_at, total_ghs').eq('customer_phone', member.phone).order('created_at', { ascending:false }).limit(20),
-      supabaseClient.from('canteen_orders').select('items_json, created_at, total_ghs').eq('customer_phone', member.phone).order('created_at', { ascending:false }).limit(20)
-    ]);
     const allOrders = [...(tableOrders||[]), ...(canteenOrders||[])].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
 
     const freq = {};
@@ -953,6 +991,10 @@ async function loadMemberAccount(){
     // Actual redemption still happens on the Members dashboard (or
     // ask staff at the bar) — this is a preview, not a redeem button,
     // since redemption needs staff confirmation of who's collecting.
+    // v4.2: if the rewards query failed (table missing / not granted
+    // to anon yet), rewardsData is just [] here — we say so plainly
+    // instead of silently showing "no rewards set up yet", which
+    // would look identical to an intentionally-empty rewards table.
     const rewards = rewardsData || [];
     html += `<div class="mw-section-label">&#127942; Rewards</div>`;
     if(rewards.length){
@@ -964,6 +1006,8 @@ async function loadMemberAccount(){
         </div>`;
       }).join('');
       html += `<div style="font-size:11px;color:var(--text-dim);margin-top:8px">Ask a staff member to redeem a reward for you.</div>`;
+    }else if(!okData(rewardsRes)){
+      html += `<div style="font-size:12px;color:var(--text-dim)">Rewards aren't available right now — check back soon.</div>`;
     }else{
       html += `<div style="font-size:12px;color:var(--text-dim)">No rewards set up yet — check back soon.</div>`;
     }
@@ -982,7 +1026,7 @@ async function loadMemberAccount(){
 
     content.innerHTML = html;
     wrap.style.display = 'block';
-  }catch(e){ console.log('loadMemberAccount error:', e); }
+  }catch(e){ console.log('loadMemberAccount render error:', e); }
 }
 
 function reorderFavorite(itemName){
