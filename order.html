@@ -668,9 +668,10 @@ async function submitOrder(){
   // find-or-create the customer record now, at submit time, so the
   // confirmation and any future visit already has their ID/points.
   // If onCustPhoneBlur already found them, this just re-confirms it.
+  let submittedCustId = null;
   try{
     const { data: memberData, error: memberErr } = await supabaseClient.rpc('find_or_create_bar_customer', { p_phone: phone, p_name: custName });
-    if(!memberErr && memberData) saveMember(memberData.custId, custName, phone);
+    if(!memberErr && memberData){ saveMember(memberData.custId, custName, phone); submittedCustId = memberData.custId; }
   }catch(e){ console.log('find_or_create_bar_customer failed (non-fatal):', e); }
 
   // This page shows drinks AND food together, but they have to land on
@@ -741,7 +742,7 @@ async function submitOrder(){
 
   closeCartModal();
   if(succeeded.length > 0){
-    showConfirmation(succeeded.map(o => ({ data: o.result.data, label: o.payload.label })), selectedPayment, locationType, locationDetail);
+    showConfirmation(succeeded.map(o => ({ data: o.result.data, label: o.payload.label })), selectedPayment, locationType, locationDetail, submittedCustId);
     // v4.1: refresh the member bar right after a successful order so
     // updated points/visits/rewards show without needing a reload.
     loadMemberAccount();
@@ -984,7 +985,7 @@ function showQueuedScreen(){
   document.getElementById('confirmModal').classList.add('show');
 }
 
-function showConfirmation(orders, payment, locType, locDetail){
+function showConfirmation(orders, payment, locType, locDetail, custId){
   // Diagnosed 24 July: this used to always read the live locationType/
   // locationDetail globals, which reset to nothing on every fresh page
   // load. That made a resumed queued order show "null" as its location
@@ -1006,12 +1007,29 @@ function showConfirmation(orders, payment, locType, locDetail){
     payHtml = `<div class="momo-box">Pay <b>GHS ${total.toFixed(2)}</b> in cash when your order is delivered / ready for pickup.</div>`;
   }
   const orderLines = orders.map(o => `<div class="order-id">${orders.length>1 ? o.label+': ' : ''}Order ${o.data.orderId} — GHS ${o.data.total.toFixed(2)}</div>`).join('');
+
+  // v4.2: every confirmation now shows the member ID, a welcome
+  // message, why we use it, and a follow-us prompt — this was the
+  // piece flagged as missing. custId comes from find_or_create_bar_customer
+  // in submitOrder, so it's set on every order, first-time or returning.
+  let memberBlockHtml = '';
+  if(custId){
+    memberBlockHtml = `
+      <div class="momo-box" style="border-color:var(--gold);margin-top:14px">
+        <b style="color:var(--gold)">Your Member ID: ${custId}</b>
+        <p style="margin-top:8px;color:var(--text-dim);font-size:12px;line-height:1.6">Save this number. Next time, enter it in the phone/membership field instead of typing your details again — it also tracks your points, rewards, and order history so you don't have to.</p>
+        <p style="margin-top:8px;font-size:12px;line-height:1.6">Follow us so you don't miss offers and events:</p>
+        <div class="mw-social-row" style="margin-top:6px">${SOCIAL_LINKS.map(l => `<a class="mw-social-link" href="${l.url}" target="_blank" rel="noopener">${l.name}</a>`).join('')}</div>
+      </div>`;
+  }
+
   el.innerHTML = `
     <div class="ok-badge">&#9989;</div>
     <h2>Order sent!</h2>
     <div class="order-id" style="margin-bottom:6px">${displayLocType || 'Your order'}${displayLocDetail ? ' — ' + displayLocDetail : ''}</div>
     ${orderLines}
     ${payHtml}
+    ${memberBlockHtml}
     <button class="btn" onclick="document.getElementById('confirmModal').classList.remove('show')">ORDER SOMETHING ELSE</button>`;
   document.getElementById('confirmModal').classList.add('show');
 }
