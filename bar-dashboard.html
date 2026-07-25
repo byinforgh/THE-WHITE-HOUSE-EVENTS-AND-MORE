@@ -236,9 +236,28 @@ tr.low-row{background:#1a0a0a;}
   <div class="error-banner" id="errorBanner"></div>
   <div class="pending-banner" id="pendingBanner"></div>
 
+  <div class="card" id="loginCard" style="border-color:var(--teal)">
+    <div class="card-title" style="color:var(--teal)">&#128274; STAFF LOGIN <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(this logs you in on THIS device and checks you in — everything you ring up while logged in is attributed to you on the Revenue dashboard)</span></div>
+    <div id="loginLoggedOutBox">
+      <div class="checkin-row">
+        <select class="select-input" id="checkInSelect"><option value="">Select your name...</option></select>
+        <input class="search-input" id="checkInPin" type="password" inputmode="numeric" maxlength="6" placeholder="PIN" style="max-width:110px;margin-bottom:0">
+        <button type="button" class="btn" onclick="submitCheckIn()">LOG IN &amp; CHECK IN</button>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:-8px">First time logging in? Enter any 4-6 digit PIN — it becomes your PIN from now on.</div>
+    </div>
+    <div id="loginLoggedInBox" style="display:none"></div>
+    <div id="checkInResult" style="margin-top:8px;font-size:12px"></div>
+  </div>
+
   <div class="card" id="tableOrdersCard">
-    <div class="card-title">&#128203; INCOMING TABLE ORDERS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(from QR ordering — pick staff on each order card below)</span></div>
+    <div class="card-title">&#128203; INCOMING TABLE ORDERS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(from QR ordering — defaults to whoever is logged in, switch on the card if someone else is handling it)</span></div>
     <div class="order-cards-grid" id="tableOrdersBody"><div class="empty">Loading table orders...</div></div>
+  </div>
+
+  <div class="card" id="foodOrdersCard">
+    <div class="card-title">&#127859; INCOMING FOOD ORDERS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(same orders the kitchen sees — shown here too so the bar has visibility. Actions here update the kitchen's queue directly, it's the same order)</span></div>
+    <div class="order-cards-grid" id="foodOrdersBody"><div class="empty">Loading food orders...</div></div>
   </div>
 
   <div class="low-stock-banner" id="lowStockBanner">
@@ -337,12 +356,7 @@ tr.low-row{background:#1a0a0a;}
   </div>
 
   <div class="card">
-    <div class="card-title">&#129489;&#8205;&#128188; STAFF ON DUTY <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(only staff checked in to THIS station show below — nobody appears until they check in)</span></div>
-    <div class="checkin-row">
-      <select class="select-input" id="checkInSelect"><option value="">Select your name to check in...</option></select>
-      <button type="button" class="btn" onclick="submitCheckIn()">CHECK IN</button>
-    </div>
-    <div id="checkInResult" style="margin-bottom:10px;font-size:12px"></div>
+    <div class="card-title">&#129489;&#8205;&#128188; STAFF ON DUTY <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(everyone currently logged in to this station — log in at the top of the page)</span></div>
     <div class="staff-grid" id="staffGrid"><div class="empty">Loading staff...</div></div>
   </div>
 
@@ -752,60 +766,119 @@ function renderRestockLog(){
     </tr>`).join('');
 }
 
-// v6.1: STAFF ON DUTY now only lists staff who are checked in. Staff
-// who are active but NOT checked in never appear here — they only
-// show up in the checkInSelect dropdown above the grid, and only
-// appear as a card once they check themselves in.
+// v6.2: PERSONAL LOGIN. Checking in used to be "pick any name off a
+// dropdown" — nothing stopped one staff member ringing up sales under
+// someone else's name. Now checking in requires that staff member's
+// own PIN (set the first time they ever log in, via staff_login()).
+// A successful login is remembered for this device only
+// (sessionStorage, cleared when the tab/browser closes) and becomes
+// the identity used automatically for Quick Sell and, by default, for
+// handling incoming orders — this is exactly what the Revenue
+// dashboard's per-staff breakdown reads from, so a real login here
+// means that breakdown is trustworthy.
+const STAFF_SESSION_KEY = 'whgh_staff_session_v1';
+let staffSession = null;
+
+function loadStaffSession(){
+  try{ staffSession = JSON.parse(sessionStorage.getItem(STAFF_SESSION_KEY) || 'null'); }
+  catch(e){ staffSession = null; }
+}
+function saveStaffSession(initials, name){
+  staffSession = { initials, name };
+  try{ sessionStorage.setItem(STAFF_SESSION_KEY, JSON.stringify(staffSession)); }catch(e){}
+}
+function clearStaffSession(){
+  staffSession = null;
+  try{ sessionStorage.removeItem(STAFF_SESSION_KEY); }catch(e){}
+}
+
 function renderStaff(){
   const onDutyStaff = (barData.staff||[]).filter(s=>s.active && s.onDuty && (s.name || (s.initials && s.initials.trim())));
   const el = document.getElementById('staffGrid');
   if(onDutyStaff.length===0){
-    el.innerHTML = '<div class="empty">Nobody is checked in to the bar right now — use the dropdown above to check in.</div>';
+    el.innerHTML = '<div class="empty">Nobody is logged in to the bar right now — use the login box above.</div>';
   }else{
     el.innerHTML = onDutyStaff.map(s=>`
       <div class="staff-card">
         <div class="staff-initials">${s.initials||'—'}</div>
-        <div class="staff-name">${s.name||'(name not set)'}</div>
+        <div class="staff-name">${s.name||'(name not set)'}${staffSession && staffSession.initials===s.initials ? ' <span style="color:var(--teal);font-size:10px">(this device)</span>' : ''}</div>
         <div class="staff-meta">${s.workingDays||'Days not set'}<br>${s.workingHours||'Hours not set'}</div>
         <button class="btn" style="margin-top:10px;background:var(--green)" onclick="toggleOnDuty('${s.initials}', false)">&#9679; ON DUTY — TAP TO CHECK OUT</button>
       </div>`).join('');
   }
 
-  // FIX: this used to sit after an early "return" above when nobody
-  // was on duty, so the check-in dropdown never got filled in on a
-  // fresh page load — it looked "stuck" with nothing selectable, even
-  // though staff still existed in Supabase. It now always runs,
-  // regardless of whether anyone is currently checked in.
+  // If someone checked THIS device's logged-in staff member out from
+  // a different screen, drop the local session on the next refresh
+  // instead of carrying on as if still logged in.
+  if(staffSession && !onDutyStaff.some(s => s.initials === staffSession.initials)){
+    clearStaffSession();
+  }
+
   populateCheckInSelect();
+  renderLoginBox();
+}
+
+function renderLoginBox(){
+  const outBox = document.getElementById('loginLoggedOutBox');
+  const inBox = document.getElementById('loginLoggedInBox');
+  if(!outBox || !inBox) return;
+  if(staffSession){
+    outBox.style.display = 'none';
+    inBox.style.display = 'block';
+    inBox.innerHTML = `<div style="font-size:14px">Logged in as <b style="color:var(--teal)">${staffSession.name || staffSession.initials}</b> (${staffSession.initials})</div>
+      <button type="button" class="btn" style="margin-top:10px;width:auto;padding:8px 16px;background:var(--border);color:var(--text)" onclick="logoutStaff()">LOG OUT / CHECK OUT</button>`;
+  }else{
+    outBox.style.display = 'block';
+    inBox.style.display = 'none';
+  }
 }
 
 function populateCheckInSelect(){
   const sel = document.getElementById('checkInSelect');
   if(!sel) return;
-  const notOnDuty = (barData.staff||[]).filter(s=>s.active && !s.onDuty && s.initials && s.initials.trim());
-  sel.innerHTML = '<option value="">Select your name to check in...</option>' +
-    notOnDuty.map(s => `<option value="${s.initials}">${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
+  const current = sel.value;
+  const active = (barData.staff||[]).filter(s=>s.active && s.initials && s.initials.trim());
+  sel.innerHTML = '<option value="">Select your name...</option>' +
+    active.map(s => `<option value="${s.initials}">${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
+  if(active.some(s=>s.initials===current)) sel.value = current;
 }
 
 async function submitCheckIn(){
   const sel = document.getElementById('checkInSelect');
+  const pinInput = document.getElementById('checkInPin');
   const initials = sel.value;
+  const pin = (pinInput.value||'').trim();
   const resultEl = document.getElementById('checkInResult');
   if(!initials){ resultEl.innerHTML = '<span style="color:var(--red)">Select your name first.</span>'; return; }
-  resultEl.innerHTML = 'Checking in...';
+  if(!pin || pin.length < 4){ resultEl.innerHTML = '<span style="color:var(--red)">Enter your 4-6 digit PIN.</span>'; return; }
+  resultEl.innerHTML = 'Logging in...';
   try{
-    const { error } = await supabaseClient.rpc('set_staff_on_duty', { p_initials: initials, p_on_duty: true });
-    if(error) throw new Error(error.message);
-    resultEl.innerHTML = '<span class="flash">&#10003; Checked in.</span>';
+    const { data, error } = await supabaseClient.rpc('staff_login', { p_initials: initials, p_pin: pin });
+    if(error) throw new Error(error.message.replace(/^.*: /,''));
+    saveStaffSession(data.initials, data.name);
+    pinInput.value = '';
+    resultEl.innerHTML = '<span class="flash">&#10003; Logged in and checked in.</span>';
     setTimeout(() => { resultEl.innerHTML = ''; }, 4000);
     loadData();
-  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">Could not check in: ' + e.message + '</span>'; }
+  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">' + (e.message || 'Could not log in') + '</span>'; }
+}
+
+async function logoutStaff(){
+  if(!staffSession) return;
+  const initials = staffSession.initials;
+  try{
+    const { error } = await supabaseClient.rpc('set_staff_on_duty', { p_initials: initials, p_on_duty: false });
+    if(error) throw new Error(error.message);
+  }catch(e){ /* still clear the local session even if the network call fails */ }
+  clearStaffSession();
+  loadData();
 }
 
 async function toggleOnDuty(initials, newState){
   try{
     const { error } = await supabaseClient.rpc('set_staff_on_duty', { p_initials: initials, p_on_duty: newState });
     if(error) throw new Error(error.message);
+    if(!newState && staffSession && staffSession.initials === initials) clearStaffSession();
     loadData();
   }catch(e){ alert('Could not update on-duty status: ' + e.message); }
 }
@@ -815,11 +888,12 @@ function populateStaffDropdowns(){
   const onDuty = allActive.filter(s=>s.onDuty);
   const staff = onDuty.length ? onDuty : allActive;
   const sel = document.getElementById('restockBy');
-  const current = sel.value;
+  const current = sel.value || (staffSession ? staffSession.initials : '');
   sel.innerHTML = '<option value="">Restocked by... (required)</option>' +
     staff.map(s => `<option value="${s.initials}">${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
   if(staff.some(s=>s.initials===current)) sel.value = current;
 }
+
 
 let restockStockItems = [];
 function populateStockDatalist(){
@@ -1690,10 +1764,13 @@ function scheduleNext(fn, baseMs, jitterMs){
   }, delay);
 }
 
+loadStaffSession();
 loadData();
 scheduleNext(loadData, 25000, 10000);
 loadTableOrders();
 scheduleNext(loadTableOrders, 8000, 4000);
+loadFoodOrders();
+scheduleNext(loadFoodOrders, 8000, 4000);
 </script>
 </body>
 </html>
