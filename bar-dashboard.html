@@ -1,7 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE EVENTS & MORE — BAR DASHBOARD (v6.0)
+  THE WHITE HOUSE EVENTS & MORE — BAR DASHBOARD (v6.1)
+
+  v6.1 CHANGES (this session):
+  - STAFF ON DUTY now only lists staff who are actually checked in to
+    THIS station (the bar). Previously it showed every active staff
+    profile with a check-in button sitting on each card, which made it
+    look like the whole team was "on the system" even when nobody had
+    clocked in. Checking in is now a separate control above the grid:
+    pick your name from a dropdown of staff not yet on duty here, tap
+    CHECK IN, then your card appears in the grid below with a check-out
+    button. If nobody is checked in, the grid is empty — the dropdown
+    is still there to check in.
 
   v6.0 CHANGES (full Supabase migration + staff unification + full-width layout):
   - REMOVED all Apps Script (Google Sheets / Code.gs) dependency. Staff,
@@ -117,6 +128,10 @@ tr.low-row{background:#1a0a0a;}
 .staff-card .staff-initials{color:var(--purple);font-weight:800;font-family:'Space Mono',monospace;font-size:13px;}
 .staff-card .staff-name{font-size:13px;font-weight:700;margin-top:2px;}
 .staff-card .staff-meta{font-size:11px;color:var(--text-dim);margin-top:6px;line-height:1.5;}
+.checkin-row{display:flex;gap:8px;margin-bottom:14px;align-items:flex-start;}
+.checkin-row .select-input{margin-bottom:0;}
+.checkin-row .btn{width:auto;padding:10px 18px;white-space:nowrap;background:var(--teal);color:#0a0a0a;}
+.checkin-row .btn:hover{background:#33978c;}
 .tab-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;}
 .tab-pill{background:var(--surface);border:1px solid var(--border);color:var(--text-dim);padding:7px 14px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:0.5px;cursor:pointer;font-family:'Syne',sans-serif;transition:all .15s;}
 .tab-pill:hover{border-color:var(--gold);color:var(--text);}
@@ -322,7 +337,12 @@ tr.low-row{background:#1a0a0a;}
   </div>
 
   <div class="card">
-    <div class="card-title">&#129489;&#8205;&#128188; STAFF ON DUTY <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(now read straight from Supabase — add/edit staff in the Supabase Table Editor)</span></div>
+    <div class="card-title">&#129489;&#8205;&#128188; STAFF ON DUTY <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(only staff checked in to THIS station show below — nobody appears until they check in)</span></div>
+    <div class="checkin-row">
+      <select class="select-input" id="checkInSelect"><option value="">Select your name to check in...</option></select>
+      <button type="button" class="btn" onclick="submitCheckIn()">CHECK IN</button>
+    </div>
+    <div id="checkInResult" style="margin-bottom:10px;font-size:12px"></div>
     <div class="staff-grid" id="staffGrid"><div class="empty">Loading staff...</div></div>
   </div>
 
@@ -351,18 +371,8 @@ const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNydnV6a3lmcnFiZm1hbWVneGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MzI5NjQsImV4cCI6MjEwMDAwODk2NH0.gMsv3yvw6plDCherA2YdU4UgWRMXUc9H1Hr_IdR9GxA';
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// FIX: page refresh was landing scrolled down near the Staff section.
-// That was Chrome's automatic scroll-restoration trying to put the
-// viewport back where it was before reload, fighting with content
-// that loads in asynchronously and changes height as it goes. Turning
-// restoration off and forcing the top on load makes every refresh
-// start from the same place.
 if('scrollRestoration' in history){ history.scrollRestoration = 'manual'; }
 window.scrollTo(0,0);
-
-// v6.0: Apps Script is no longer used anywhere on this page. Everything
-// (stock, orders, menu, restocks, staff, customer lookup) reads from
-// and writes to Supabase directly.
 
 let barData = {stock: [], todayOrders: [], staff: [], topSellers: [], staleStock: [], restockLog: [], revenueByPayment: []};
 let activeStockCategory = 'All';
@@ -746,17 +756,48 @@ function renderRestockLog(){
     </tr>`).join('');
 }
 
+// v6.1: STAFF ON DUTY now only lists staff who are checked in. Staff
+// who are active but NOT checked in never appear here — they only
+// show up in the checkInSelect dropdown above the grid, and only
+// appear as a card once they check themselves in.
 function renderStaff(){
-  const staff = (barData.staff||[]).filter(s=>s.active && (s.name || (s.initials && s.initials.trim())));
+  const onDutyStaff = (barData.staff||[]).filter(s=>s.active && s.onDuty && (s.name || (s.initials && s.initials.trim())));
   const el = document.getElementById('staffGrid');
-  if(staff.length===0){ el.innerHTML = '<div class="empty">No active staff profiles found in Supabase yet — add rows in the staff table.</div>'; return; }
-  el.innerHTML = staff.map(s=>`
+  if(onDutyStaff.length===0){ el.innerHTML = '<div class="empty">Nobody is checked in to the bar right now — use the dropdown above to check in.</div>'; return; }
+  el.innerHTML = onDutyStaff.map(s=>`
     <div class="staff-card">
       <div class="staff-initials">${s.initials||'—'}</div>
       <div class="staff-name">${s.name||'(name not set)'}</div>
       <div class="staff-meta">${s.workingDays||'Days not set'}<br>${s.workingHours||'Hours not set'}</div>
-      <button class="btn" style="margin-top:10px;${s.onDuty?'background:var(--green)':'background:var(--border);color:var(--text)'}" onclick="toggleOnDuty('${s.initials}', ${!s.onDuty})">${s.onDuty ? '&#9679; ON DUTY — TAP TO CHECK OUT' : 'CHECK IN'}</button>
+      <button class="btn" style="margin-top:10px;background:var(--green)" onclick="toggleOnDuty('${s.initials}', false)">&#9679; ON DUTY — TAP TO CHECK OUT</button>
     </div>`).join('');
+
+  // Refresh the check-in dropdown too, since who's still eligible to
+  // check in changes whenever someone checks in or out.
+  populateCheckInSelect();
+}
+
+function populateCheckInSelect(){
+  const sel = document.getElementById('checkInSelect');
+  if(!sel) return;
+  const notOnDuty = (barData.staff||[]).filter(s=>s.active && !s.onDuty && s.initials && s.initials.trim());
+  sel.innerHTML = '<option value="">Select your name to check in...</option>' +
+    notOnDuty.map(s => `<option value="${s.initials}">${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
+}
+
+async function submitCheckIn(){
+  const sel = document.getElementById('checkInSelect');
+  const initials = sel.value;
+  const resultEl = document.getElementById('checkInResult');
+  if(!initials){ resultEl.innerHTML = '<span style="color:var(--red)">Select your name first.</span>'; return; }
+  resultEl.innerHTML = 'Checking in...';
+  try{
+    const { error } = await supabaseClient.rpc('set_staff_on_duty', { p_initials: initials, p_on_duty: true });
+    if(error) throw new Error(error.message);
+    resultEl.innerHTML = '<span class="flash">&#10003; Checked in.</span>';
+    setTimeout(() => { resultEl.innerHTML = ''; }, 4000);
+    loadData();
+  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">Could not check in: ' + e.message + '</span>'; }
 }
 
 async function toggleOnDuty(initials, newState){
@@ -843,10 +884,6 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 let lastFoundCustomer = null;
-// v6.0: Supabase is the only customer lookup source now — the Apps
-// Script/Bar-Sheet fallback is gone. Anyone from before the migration
-// should already be in bar_customers; if find_customer_flexible truly
-// can't find someone, they get registered fresh next time they order.
 async function lookupCustomer(prefillQuery){
   const input = document.getElementById('custPhoneInput');
   if(prefillQuery !== undefined) input.value = prefillQuery;
@@ -1437,11 +1474,6 @@ function shapeSupabaseOrderRow(r){
   };
 }
 
-// COMBO ORDERS: order.html writes "Also ordered: Food — CAN123..." into
-// notes when a customer ordered both drinks and food in one go. This
-// pulls the referenced canteen order's live status so the bar card can
-// show "🍽 Food also ordered — Preparing" instead of the two queues
-// looking like two unrelated customers.
 const COMBO_NOTE_RE = /Also ordered: (.+?) — (CAN\d+|TBL\d+)/;
 async function attachComboStatus(orders, counterpartTable){
   const refs = [];
