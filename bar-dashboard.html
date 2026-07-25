@@ -236,22 +236,8 @@ tr.low-row{background:#1a0a0a;}
   <div class="error-banner" id="errorBanner"></div>
   <div class="pending-banner" id="pendingBanner"></div>
 
-  <div class="card" id="loginCard" style="border-color:var(--teal)">
-    <div class="card-title" style="color:var(--teal)">&#128274; STAFF LOGIN <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(this logs you in on THIS device and checks you in — everything you ring up while logged in is attributed to you on the Revenue dashboard)</span></div>
-    <div id="loginLoggedOutBox">
-      <div class="checkin-row">
-        <select class="select-input" id="checkInSelect"><option value="">Select your name...</option></select>
-        <input class="search-input" id="checkInPin" type="password" inputmode="numeric" maxlength="6" placeholder="PIN" style="max-width:110px;margin-bottom:0">
-        <button type="button" class="btn" onclick="submitCheckIn()">LOG IN &amp; CHECK IN</button>
-      </div>
-      <div style="font-size:11px;color:var(--muted);margin-top:-8px">First time logging in? Enter any 4-6 digit PIN — it becomes your PIN from now on.</div>
-    </div>
-    <div id="loginLoggedInBox" style="display:none"></div>
-    <div id="checkInResult" style="margin-top:8px;font-size:12px"></div>
-  </div>
-
   <div class="card" id="tableOrdersCard">
-    <div class="card-title">&#128203; INCOMING TABLE ORDERS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(from QR ordering — defaults to whoever is logged in, switch on the card if someone else is handling it)</span></div>
+    <div class="card-title">&#128203; INCOMING TABLE ORDERS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(from QR ordering, or from staff phones — pick staff on each order card below)</span></div>
     <div class="order-cards-grid" id="tableOrdersBody"><div class="empty">Loading table orders...</div></div>
   </div>
 
@@ -356,7 +342,12 @@ tr.low-row{background:#1a0a0a;}
   </div>
 
   <div class="card">
-    <div class="card-title">&#129489;&#8205;&#128188; STAFF ON DUTY <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(everyone currently logged in to this station — log in at the top of the page)</span></div>
+    <div class="card-title">&#129489;&#8205;&#128188; STAFF ON DUTY <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(only staff checked in to THIS station show below — interim manual check-in until the staff phone ordering tool is built)</span></div>
+    <div class="checkin-row">
+      <select class="select-input" id="checkInSelect"><option value="">Select your name to check in...</option></select>
+      <button type="button" class="btn" onclick="submitCheckIn()">CHECK IN</button>
+    </div>
+    <div id="checkInResult" style="margin-bottom:10px;font-size:12px"></div>
     <div class="staff-grid" id="staffGrid"><div class="empty">Loading staff...</div></div>
   </div>
 
@@ -766,119 +757,55 @@ function renderRestockLog(){
     </tr>`).join('');
 }
 
-// v6.2: PERSONAL LOGIN. Checking in used to be "pick any name off a
-// dropdown" — nothing stopped one staff member ringing up sales under
-// someone else's name. Now checking in requires that staff member's
-// own PIN (set the first time they ever log in, via staff_login()).
-// A successful login is remembered for this device only
-// (sessionStorage, cleared when the tab/browser closes) and becomes
-// the identity used automatically for Quick Sell and, by default, for
-// handling incoming orders — this is exactly what the Revenue
-// dashboard's per-staff breakdown reads from, so a real login here
-// means that breakdown is trustworthy.
-const STAFF_SESSION_KEY = 'whgh_staff_session_v1';
-let staffSession = null;
-
-function loadStaffSession(){
-  try{ staffSession = JSON.parse(sessionStorage.getItem(STAFF_SESSION_KEY) || 'null'); }
-  catch(e){ staffSession = null; }
-}
-function saveStaffSession(initials, name){
-  staffSession = { initials, name };
-  try{ sessionStorage.setItem(STAFF_SESSION_KEY, JSON.stringify(staffSession)); }catch(e){}
-}
-function clearStaffSession(){
-  staffSession = null;
-  try{ sessionStorage.removeItem(STAFF_SESSION_KEY); }catch(e){}
-}
-
+// v6.1: STAFF ON DUTY only lists staff who are checked in. This is a
+// plain manual check-in (no PIN) — an interim fallback for this
+// shared station screen until the staff phone ordering tool exists,
+// which is where personal PIN login will actually live, since one
+// login on a screen several people share doesn't mean much.
 function renderStaff(){
   const onDutyStaff = (barData.staff||[]).filter(s=>s.active && s.onDuty && (s.name || (s.initials && s.initials.trim())));
   const el = document.getElementById('staffGrid');
   if(onDutyStaff.length===0){
-    el.innerHTML = '<div class="empty">Nobody is logged in to the bar right now — use the login box above.</div>';
+    el.innerHTML = '<div class="empty">Nobody is checked in to the bar right now — use the dropdown above to check in.</div>';
   }else{
     el.innerHTML = onDutyStaff.map(s=>`
       <div class="staff-card">
         <div class="staff-initials">${s.initials||'—'}</div>
-        <div class="staff-name">${s.name||'(name not set)'}${staffSession && staffSession.initials===s.initials ? ' <span style="color:var(--teal);font-size:10px">(this device)</span>' : ''}</div>
+        <div class="staff-name">${s.name||'(name not set)'}</div>
         <div class="staff-meta">${s.workingDays||'Days not set'}<br>${s.workingHours||'Hours not set'}</div>
         <button class="btn" style="margin-top:10px;background:var(--green)" onclick="toggleOnDuty('${s.initials}', false)">&#9679; ON DUTY — TAP TO CHECK OUT</button>
       </div>`).join('');
   }
-
-  // If someone checked THIS device's logged-in staff member out from
-  // a different screen, drop the local session on the next refresh
-  // instead of carrying on as if still logged in.
-  if(staffSession && !onDutyStaff.some(s => s.initials === staffSession.initials)){
-    clearStaffSession();
-  }
-
   populateCheckInSelect();
-  renderLoginBox();
-}
-
-function renderLoginBox(){
-  const outBox = document.getElementById('loginLoggedOutBox');
-  const inBox = document.getElementById('loginLoggedInBox');
-  if(!outBox || !inBox) return;
-  if(staffSession){
-    outBox.style.display = 'none';
-    inBox.style.display = 'block';
-    inBox.innerHTML = `<div style="font-size:14px">Logged in as <b style="color:var(--teal)">${staffSession.name || staffSession.initials}</b> (${staffSession.initials})</div>
-      <button type="button" class="btn" style="margin-top:10px;width:auto;padding:8px 16px;background:var(--border);color:var(--text)" onclick="logoutStaff()">LOG OUT / CHECK OUT</button>`;
-  }else{
-    outBox.style.display = 'block';
-    inBox.style.display = 'none';
-  }
 }
 
 function populateCheckInSelect(){
   const sel = document.getElementById('checkInSelect');
   if(!sel) return;
-  const current = sel.value;
-  const active = (barData.staff||[]).filter(s=>s.active && s.initials && s.initials.trim());
-  sel.innerHTML = '<option value="">Select your name...</option>' +
-    active.map(s => `<option value="${s.initials}">${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
-  if(active.some(s=>s.initials===current)) sel.value = current;
+  const notOnDuty = (barData.staff||[]).filter(s=>s.active && !s.onDuty && s.initials && s.initials.trim());
+  sel.innerHTML = '<option value="">Select your name to check in...</option>' +
+    notOnDuty.map(s => `<option value="${s.initials}">${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
 }
 
 async function submitCheckIn(){
   const sel = document.getElementById('checkInSelect');
-  const pinInput = document.getElementById('checkInPin');
   const initials = sel.value;
-  const pin = (pinInput.value||'').trim();
   const resultEl = document.getElementById('checkInResult');
   if(!initials){ resultEl.innerHTML = '<span style="color:var(--red)">Select your name first.</span>'; return; }
-  if(!pin || pin.length < 4){ resultEl.innerHTML = '<span style="color:var(--red)">Enter your 4-6 digit PIN.</span>'; return; }
-  resultEl.innerHTML = 'Logging in...';
+  resultEl.innerHTML = 'Checking in...';
   try{
-    const { data, error } = await supabaseClient.rpc('staff_login', { p_initials: initials, p_pin: pin });
-    if(error) throw new Error(error.message.replace(/^.*: /,''));
-    saveStaffSession(data.initials, data.name);
-    pinInput.value = '';
-    resultEl.innerHTML = '<span class="flash">&#10003; Logged in and checked in.</span>';
+    const { error } = await supabaseClient.rpc('set_staff_on_duty', { p_initials: initials, p_on_duty: true });
+    if(error) throw new Error(error.message);
+    resultEl.innerHTML = '<span class="flash">&#10003; Checked in.</span>';
     setTimeout(() => { resultEl.innerHTML = ''; }, 4000);
     loadData();
-  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">' + (e.message || 'Could not log in') + '</span>'; }
-}
-
-async function logoutStaff(){
-  if(!staffSession) return;
-  const initials = staffSession.initials;
-  try{
-    const { error } = await supabaseClient.rpc('set_staff_on_duty', { p_initials: initials, p_on_duty: false });
-    if(error) throw new Error(error.message);
-  }catch(e){ /* still clear the local session even if the network call fails */ }
-  clearStaffSession();
-  loadData();
+  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">Could not check in: ' + e.message + '</span>'; }
 }
 
 async function toggleOnDuty(initials, newState){
   try{
     const { error } = await supabaseClient.rpc('set_staff_on_duty', { p_initials: initials, p_on_duty: newState });
     if(error) throw new Error(error.message);
-    if(!newState && staffSession && staffSession.initials === initials) clearStaffSession();
     loadData();
   }catch(e){ alert('Could not update on-duty status: ' + e.message); }
 }
@@ -888,7 +815,7 @@ function populateStaffDropdowns(){
   const onDuty = allActive.filter(s=>s.onDuty);
   const staff = onDuty.length ? onDuty : allActive;
   const sel = document.getElementById('restockBy');
-  const current = sel.value || (staffSession ? staffSession.initials : '');
+  const current = sel.value;
   sel.innerHTML = '<option value="">Restocked by... (required)</option>' +
     staff.map(s => `<option value="${s.initials}">${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
   if(staff.some(s=>s.initials===current)) sel.value = current;
@@ -1502,9 +1429,34 @@ Low stock (${lowStock.length}):${lowStock.length ? '\n' + lowStock.map(s=>`  ${s
       ${topItems.map(i=>`<div class="shift-summary-row"><span>${i.item}</span><span style="font-family:'Space Mono',monospace">${i.qty} sold</span></div>`).join('')}
       <h4>Low Stock (${lowStock.length})</h4>
       ${lowStock.length ? lowStock.map(s=>`<div class="shift-summary-row" style="color:var(--red)"><span>${s.item}</span><span style="font-family:'Space Mono',monospace">${s.currentQty}${s.unit}</span></div>`).join('') : '<div class="metric-detail-empty">None</div>'}
-      <button class="btn" style="margin-top:12px" onclick="copyShiftSummary()">&#128203; COPY AS TEXT (for WhatsApp/SMS)</button>
+      <div class="restock-grid" style="margin-top:12px">
+        <button class="btn" style="background:var(--teal);color:#0a0a0a" onclick="sendShiftSummaryWhatsApp()">&#128241; SEND TO MANAGER — WHATSAPP</button>
+        <button class="btn" style="background:var(--border);color:var(--text)" onclick="sendShiftSummaryEmail()">&#128231; SEND TO MANAGER — EMAIL</button>
+      </div>
+      <button class="btn" style="margin-top:8px" onclick="copyShiftSummary()">&#128203; COPY AS TEXT</button>
       <div id="shiftCopyResult" style="margin-top:6px;font-size:11px"></div>
     </div>`;
+}
+
+// v6.1: SEND TO MANAGER. WhatsApp opens wa.me with the summary already
+// typed in — one tap to send from there. Email opens a mailto: draft
+// the same way, since a static page can't send email on its own
+// without a mail-sending service wired up (that would be an Edge
+// Function + an email API key, not something to bolt on silently).
+const MANAGER_WHATSAPP_NUMBER = '233554399995'; // +233 55 439 9995, international format for wa.me
+const MANAGER_EMAIL = 'manager@thewhitehousegh.com';
+
+function sendShiftSummaryWhatsApp(){
+  if(!window._shiftSummaryText){ document.getElementById('shiftCopyResult').textContent = 'Generate the summary first.'; return; }
+  const url = 'https://wa.me/' + MANAGER_WHATSAPP_NUMBER + '?text=' + encodeURIComponent(window._shiftSummaryText);
+  window.open(url, '_blank');
+}
+
+function sendShiftSummaryEmail(){
+  if(!window._shiftSummaryText){ document.getElementById('shiftCopyResult').textContent = 'Generate the summary first.'; return; }
+  const subject = 'Shift Summary — ' + new Date().toLocaleDateString('en-GB', {weekday:'long', day:'numeric', month:'long'});
+  const url = 'mailto:' + MANAGER_EMAIL + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(window._shiftSummaryText);
+  window.location.href = url;
 }
 
 function copyShiftSummary(){
@@ -1764,7 +1716,172 @@ function scheduleNext(fn, baseMs, jitterMs){
   }, delay);
 }
 
-loadStaffSession();
+// v6.1: INCOMING FOOD ORDERS. Food ordered through order.html was only
+// ever visible on canteen-dashboard.html (the kitchen's screen) —
+// even when there was no accompanying drinks order, so the bar never
+// saw it at all. This mirrors the exact same canteen_orders data and
+// the exact same status RPCs the kitchen dashboard uses, so there's
+// one order, one status, just visible in two places — not a separate
+// copy that could drift out of sync.
+let foodOrdersData = { active: [] };
+let seenFoodActiveOrderIds = new Set();
+let foodOrdersFirstLoad = true;
+let lastFoodActiveSignature = null;
+let foodOrderStaffSelections = {};
+let processingFoodOrderIds = new Set();
+
+async function loadFoodOrders(){
+  try{
+    const { data, error } = await supabaseClient
+      .from('canteen_orders')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if(error) throw new Error(error.message);
+
+    const shaped = data.map(shapeSupabaseOrderRow);
+    const active = shaped.filter(o => o.status !== 'Paid' && o.status !== 'Cancelled');
+    await attachComboStatus(active, 'table_orders');
+    foodOrdersData = { active };
+
+    const currentIds = new Set(active.map(o=>o.orderId));
+    let hasNewPlaced = false;
+    if(!foodOrdersFirstLoad){
+      active.forEach(o => { if(o.status === 'Placed' && !seenFoodActiveOrderIds.has(o.orderId)) hasNewPlaced = true; });
+    }
+    if(hasNewPlaced) playOrderBeep();
+    seenFoodActiveOrderIds = currentIds;
+    foodOrdersFirstLoad = false;
+
+    Object.keys(foodOrderStaffSelections).forEach(id => { if(!currentIds.has(id)) delete foodOrderStaffSelections[id]; });
+    Array.from(processingFoodOrderIds).forEach(id => { if(!currentIds.has(id)) processingFoodOrderIds.delete(id); });
+
+    renderFoodOrders();
+  }catch(e){
+    console.log('loadFoodOrders error:', e);
+    const el = document.getElementById('foodOrdersBody');
+    if(el) el.innerHTML = '<div class="empty">Could not load food orders — will retry automatically.</div>';
+  }
+}
+
+function renderFoodOrders(){
+  const el = document.getElementById('foodOrdersBody');
+  const active = (foodOrdersData.active || []).slice().sort((a,b) => {
+    const order = {'Placed':0, 'Preparing':1, 'Delivered - Awaiting Payment':2};
+    return (order[a.status]??3) - (order[b.status]??3) || new Date(a.timestamp) - new Date(b.timestamp);
+  });
+
+  const signature = activeOrdersSignature(active) + '|proc:' + Array.from(processingFoodOrderIds).sort().join(',');
+  if(signature === lastFoodActiveSignature){
+    document.querySelectorAll('#foodOrdersBody .order-card').forEach(card => {
+      const ts = card.dataset.timestamp;
+      const ageEl = card.querySelector('.order-card-age');
+      if(ts && ageEl) ageEl.textContent = orderAge(ts);
+    });
+    return;
+  }
+  lastFoodActiveSignature = signature;
+
+  if(active.length === 0){ el.innerHTML = '<div class="empty">No active food orders right now.</div>'; return; }
+
+  const staffList = getServingStaff();
+  const staffOptionsHtml = (selected) => '<option value="">Select staff...</option>' +
+    staffList.map(s => `<option value="${s.initials}" ${selected===s.initials?'selected':''}>${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
+
+  el.innerHTML = active.map(o => {
+    const itemsHtml = (o.items||[]).map(i => `${i.qty} &times; ${i.item}`).join(', ');
+    const isNew = o.status === 'Placed' && !foodOrdersFirstLoad;
+    const isProcessing = processingFoodOrderIds.has(o.orderId);
+    const selectedStaff = foodOrderStaffSelections[o.orderId] || '';
+
+    let actionsHtml = '';
+    if(isProcessing){
+      actionsHtml = `<button class="oa-primary" disabled>PROCESSING...</button>`;
+    }else{
+      if(o.status === 'Placed'){
+        actionsHtml = `<button class="oa-primary" onclick="foodOrderAction('${o.orderId}','Preparing')">START PREPARING</button>`;
+      }else if(o.status === 'Preparing'){
+        actionsHtml = `<button class="oa-primary" onclick="foodOrderAction('${o.orderId}','Delivered - Awaiting Payment')">MARK DELIVERED</button>`;
+      }else if(o.status === 'Delivered - Awaiting Payment'){
+        if(o.payment === 'MoMo'){
+          actionsHtml = `<input class="order-momo-input" id="foodMomoRef_${o.orderId}" placeholder="MoMo reference / note (optional)">
+            <button class="oa-primary" onclick="foodOrderAction('${o.orderId}','Paid')">&#10003; CONFIRM MOMO RECEIVED</button>`;
+        }else{
+          actionsHtml = `<button class="oa-primary" onclick="foodOrderAction('${o.orderId}','Paid')">&#10003; CONFIRM CASH RECEIVED</button>`;
+        }
+      }
+      actionsHtml += `<button class="oa-cancel" onclick="foodOrderAction('${o.orderId}','Cancelled')">CANCEL</button>`;
+    }
+
+    const comboHtml = o.comboStatus ? `<div style="font-size:11px;color:var(--gold);background:#1a1500;border:1px solid var(--gold-dim);border-radius:6px;padding:6px 10px;margin:6px 0">&#127864; ${o.comboLabel} also ordered — bar: <b>${o.comboStatus}</b> (${o.comboRefId})</div>` : '';
+    return `<div class="order-card ${statusClass(o.status)}${isNew && o.status==='Placed' ? ' is-new':''}${isProcessing?' is-processing':''}" data-timestamp="${o.timestamp}">
+      <div class="order-card-top">
+        <div><span class="order-card-table">${locationLabel(o)}</span> &nbsp; <span class="order-status-pill ${statusPillClass(o.status)}">${o.status}</span></div>
+        <div class="order-card-age">${orderAge(o.timestamp)}</div>
+      </div>
+      <div class="order-items-list">${itemsHtml}</div>
+      <div class="order-items-list" style="margin-top:-4px;color:var(--text-dim)">${o.customerName || 'no name given'}</div>
+      ${comboHtml}
+      <div class="order-card-footer">
+        <span class="order-total">GHS ${o.total.toFixed(2)}</span>
+        <span class="order-pay-badge">${o.payment}</span>
+      </div>
+      <div class="qs-label" style="margin-top:10px">Staff handling this order (required)</div>
+      <select class="order-staff-select" id="foodStaffSel_${o.orderId}" ${isProcessing?'disabled':''} onchange="foodOrderStaffSelections['${o.orderId}']=this.value">
+        ${staffOptionsHtml(selectedStaff)}
+      </select>
+      <div class="order-actions">${actionsHtml}</div>
+    </div>`;
+  }).join('');
+}
+
+async function foodOrderAction(orderId, newStatus){
+  if(processingFoodOrderIds.has(orderId)) return;
+
+  const staffInitials = foodOrderStaffSelections[orderId] || '';
+  if(!staffInitials){ alert('Select which staff member is handling this order first (dropdown on the order card).'); return; }
+  if(newStatus === 'Cancelled' && !confirm('Cancel this order? This cannot be undone.')) return;
+
+  let momoReference = '';
+  const momoInput = document.getElementById('foodMomoRef_' + orderId);
+  if(momoInput) momoReference = momoInput.value.trim();
+
+  processingFoodOrderIds.add(orderId);
+  lastFoodActiveSignature = null;
+  renderFoodOrders();
+
+  let result;
+  try{
+    let rpcResult;
+    if(newStatus === 'Paid'){
+      rpcResult = await supabaseClient.rpc('mark_location_order_paid', {
+        p_table: 'canteen_orders', p_order_id: orderId, p_staff: staffInitials, p_momo: momoReference || null
+      });
+    }else{
+      rpcResult = await supabaseClient.rpc('set_location_order_status', {
+        p_table: 'canteen_orders', p_order_id: orderId, p_new_status: newStatus, p_staff: staffInitials,
+        p_reason: null
+      });
+    }
+    if(rpcResult.error) throw new Error(rpcResult.error.message);
+    result = { ok: true };
+  }catch(e){
+    result = { ok: false, error: e.message };
+  }
+
+  processingFoodOrderIds.delete(orderId);
+
+  if(result.ok){
+    if(newStatus === 'Paid' || newStatus === 'Cancelled') delete foodOrderStaffSelections[orderId];
+    lastFoodActiveSignature = null;
+    loadFoodOrders();
+  }else{
+    lastFoodActiveSignature = null;
+    renderFoodOrders();
+    alert('Could not update order: ' + result.error);
+  }
+}
+
 loadData();
 scheduleNext(loadData, 25000, 10000);
 loadTableOrders();
