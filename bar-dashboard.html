@@ -398,12 +398,6 @@ function getPendingQueue(){
 function savePendingQueue(queue){
   try{ localStorage.setItem(PENDING_KEY, JSON.stringify(queue)); }catch(e){ }
 }
-function queueAction(kind, label, url, clientId){
-  const queue = getPendingQueue();
-  queue.push({ id: clientId, kind, label, url, queuedAt: new Date().toISOString(), attempts: 0, nextRetryAt: 0 });
-  savePendingQueue(queue);
-  renderPendingBanner();
-}
 
 async function flushPendingQueue(silent){
   let queue = getPendingQueue();
@@ -486,13 +480,14 @@ async function loadSupabaseBarData(){
   const stock = stockRes.data.map(s => ({
     item: s.item, unit: s.unit || 'unit', currentQty: parseFloat(s.current_qty)||0, parLevel: parseFloat(s.par_level)||0,
     costPerUnit: parseFloat(s.cost_per_unit)||0, lastRestocked: s.last_restocked ? new Date(s.last_restocked).toLocaleString('en-GB') : '',
+    lastRestockedRaw: s.last_restocked || null,
     lastRestockedBy: s.last_restocked_by || '', unitsPerPack: parseFloat(s.units_per_pack)||0, packLabel: s.pack_label || '',
     lowStock: (parseFloat(s.current_qty)||0) <= (parseFloat(s.par_level)||0),
     category: categoryMap[(s.item||'').trim().toLowerCase()] || 'Bar Ingredient'
   }));
 
   const COCKTAIL_CATS = ['Cocktail','Mocktail','Milkshake','Smoothie','Juice','VIP Special'];
-  const BAR_FIRST = ['Beer','Soft Drink','Water','Energy','Alcoholic Single','Just Sip','Shot','Pizza','Rice Dishes','Fries','Swallow & Stew','Light Bites'];
+  const BAR_FIRST = ['Water','Soft Drink','Just Sip','Beer','Energy','Alcoholic Single','Shot','Pizza','Rice Dishes','Fries','Swallow & Stew','Light Bites'];
   const catRank = c => { const i = BAR_FIRST.indexOf(c); if(i!==-1) return i; const j = COCKTAIL_CATS.indexOf(c); return j!==-1 ? BAR_FIRST.length+j : BAR_FIRST.length+COCKTAIL_CATS.length; };
   const menu = recipesRes.data.map(r => ({ item: r.item_name, category: r.category||'', price: parseFloat(r.price_ghs)||0, source: 'bar' }))
     .concat(foodRes.data.map(r => ({ item: r.item_name, category: r.category||'', price: parseFloat(r.price_ghs)||0, source: 'food' })))
@@ -528,12 +523,13 @@ async function loadSupabaseBarData(){
   const STALE_THRESHOLD_MS = 60 * 24 * 3600 * 1000;
   const now = Date.now();
   const staleStock = stock.filter(s => {
-    if(!s.lastRestocked) return true;
-    const t = new Date(s.lastRestocked).getTime();
+    if(s.currentQty <= 0) return false; // sold off, thrown away, discarded, or expired — nothing sitting on a shelf to flag
+    if(!s.lastRestockedRaw) return true;
+    const t = new Date(s.lastRestockedRaw).getTime();
     return isNaN(t) || (now - t) >= STALE_THRESHOLD_MS;
   }).sort((a,b) => {
-    const da = a.lastRestocked ? new Date(a.lastRestocked).getTime() : null;
-    const db = b.lastRestocked ? new Date(b.lastRestocked).getTime() : null;
+    const da = a.lastRestockedRaw ? new Date(a.lastRestockedRaw).getTime() : null;
+    const db = b.lastRestockedRaw ? new Date(b.lastRestockedRaw).getTime() : null;
     if(da===null && db===null) return 0; if(da===null) return -1; if(db===null) return 1;
     return da - db;
   });
@@ -763,17 +759,23 @@ function renderRestockLog(){
 function renderStaff(){
   const onDutyStaff = (barData.staff||[]).filter(s=>s.active && s.onDuty && (s.name || (s.initials && s.initials.trim())));
   const el = document.getElementById('staffGrid');
-  if(onDutyStaff.length===0){ el.innerHTML = '<div class="empty">Nobody is checked in to the bar right now — use the dropdown above to check in.</div>'; return; }
-  el.innerHTML = onDutyStaff.map(s=>`
-    <div class="staff-card">
-      <div class="staff-initials">${s.initials||'—'}</div>
-      <div class="staff-name">${s.name||'(name not set)'}</div>
-      <div class="staff-meta">${s.workingDays||'Days not set'}<br>${s.workingHours||'Hours not set'}</div>
-      <button class="btn" style="margin-top:10px;background:var(--green)" onclick="toggleOnDuty('${s.initials}', false)">&#9679; ON DUTY — TAP TO CHECK OUT</button>
-    </div>`).join('');
+  if(onDutyStaff.length===0){
+    el.innerHTML = '<div class="empty">Nobody is checked in to the bar right now — use the dropdown above to check in.</div>';
+  }else{
+    el.innerHTML = onDutyStaff.map(s=>`
+      <div class="staff-card">
+        <div class="staff-initials">${s.initials||'—'}</div>
+        <div class="staff-name">${s.name||'(name not set)'}</div>
+        <div class="staff-meta">${s.workingDays||'Days not set'}<br>${s.workingHours||'Hours not set'}</div>
+        <button class="btn" style="margin-top:10px;background:var(--green)" onclick="toggleOnDuty('${s.initials}', false)">&#9679; ON DUTY — TAP TO CHECK OUT</button>
+      </div>`).join('');
+  }
 
-  // Refresh the check-in dropdown too, since who's still eligible to
-  // check in changes whenever someone checks in or out.
+  // FIX: this used to sit after an early "return" above when nobody
+  // was on duty, so the check-in dropdown never got filled in on a
+  // fresh page load — it looked "stuck" with nothing selectable, even
+  // though staff still existed in Supabase. It now always runs,
+  // regardless of whether anyone is currently checked in.
   populateCheckInSelect();
 }
 
@@ -1158,10 +1160,6 @@ function setCartQty(itemName, qty){
   else{ cart[itemName] = qty; }
   updateQuickSellCardQty(itemName);
   renderQuickSellPanel();
-}
-
-function cartItemCount(){
-  return Object.keys(cart).reduce((n,k)=>n + (cart[k]>0?1:0), 0);
 }
 
 function cartSubtotal(){
