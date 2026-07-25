@@ -1,9 +1,24 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE EVENTS & MORE — BAR DASHBOARD (v6.1)
+  THE WHITE HOUSE EVENTS & MORE — BAR DASHBOARD (v6.2)
 
-  v6.1 CHANGES (this session):
+  v6.2 CHANGES (this session — bug fix):
+  - FIXED: dashboard failed to load entirely ("Dashboard can't reach
+    Supabase" banner). Cause: the RLS lockdown migration run earlier
+    this session correctly revoked full-table SELECT on `staff` for
+    anon/authenticated and replaced it with a COLUMN-LIST grant that
+    excludes pin_code. But this file still ran
+    `supabaseClient.from('staff').select('*')` — in Postgres, `SELECT *`
+    against a table where the role only has column-level (not
+    table-level) SELECT privileges fails outright the moment it hits a
+    column that wasn't granted (pin_code), even though every other
+    column WAS readable. That one failed query was inside a
+    Promise.all() with everything else this dashboard loads, so it took
+    the entire page down with it. Fixed by selecting the exact granted
+    column list instead of *.
+
+  v6.1 CHANGES:
   - STAFF ON DUTY now only lists staff who are actually checked in to
     THIS station (the bar). Previously it showed every active staff
     profile with a check-in button sitting on each card, which made it
@@ -471,7 +486,14 @@ async function loadSupabaseBarData(){
     supabaseClient.from('bar_recipes').select('item_name, category, price_ghs'),
     supabaseClient.from('food_menu').select('item_name, category, price_ghs'),
     supabaseClient.from('restock_log').select('*').order('created_at', { ascending: false }).limit(15),
-    supabaseClient.from('staff').select('*').order('slot'),
+    // v6.2 FIX: was select('*'). The staff table now only grants anon/
+    // authenticated column-level SELECT on this exact list (pin_code is
+    // deliberately excluded so it can never leak). SELECT * against a
+    // column-restricted grant fails outright in Postgres — it doesn't
+    // just omit pin_code, it throws — which was taking this whole
+    // Promise.all(), and therefore the entire dashboard load, down with
+    // it. Listing columns explicitly matches what's actually granted.
+    supabaseClient.from('staff').select('id, initials, full_name, department, role, pay_type, pay_rate, phone, active, on_duty, on_duty_since, working_days, working_hours, slot').order('slot'),
     supabaseClient.from('venue_settings').select('key, value')
   ]);
   [stockRes, ordersRes, recipesRes, foodRes, restockRes, staffRes, settingsRes].forEach(r => { if(r.error) throw new Error(r.error.message); });
@@ -1891,4 +1913,3 @@ scheduleNext(loadFoodOrders, 8000, 4000);
 </script>
 </body>
 </html>
-
