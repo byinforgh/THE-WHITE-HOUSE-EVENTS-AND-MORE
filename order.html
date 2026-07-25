@@ -341,7 +341,7 @@ async function loadVenueData(afterLoad){
     if(!locationTypes.length) locationTypes = ['Table','Pickup','Terrace Area','Room Number','Bar Area','VIP Area','Pool','Stage Area','Stage 2 Area'];
 
     const COCKTAIL_CATS = ['Cocktail','Mocktail','Milkshake','Smoothie','Juice','VIP Special'];
-    const BAR_FIRST = ['Beer','Soft Drink','Water','Energy','Alcoholic Single','Just Sip','Shot','Pizza','Rice Dishes','Fries','Swallow & Stew','Light Bites'];
+    const BAR_FIRST = ['Water','Soft Drink','Just Sip','Beer','Energy','Alcoholic Single','Shot','Pizza','Rice Dishes','Fries','Swallow & Stew','Light Bites'];
     const catRank = c => { const i = BAR_FIRST.indexOf(c); if(i!==-1) return i; const j = COCKTAIL_CATS.indexOf(c); return j!==-1 ? BAR_FIRST.length+j : BAR_FIRST.length+COCKTAIL_CATS.length; };
     menu = recipesRes.data.map(r => ({ item: r.item_name, category: r.category||'', price: parseFloat(r.price_ghs)||0, source: 'bar' }))
       .concat(foodRes.data.map(r => ({ item: r.item_name, category: r.category||'', price: parseFloat(r.price_ghs)||0, source: 'food' })))
@@ -660,7 +660,25 @@ async function submitOrder(){
   const custName = document.getElementById('custName').value.trim();
   const phone = document.getElementById('custPhone').value.trim();
   if(!phone){ document.getElementById('submitError').textContent = 'Please enter your phone number or membership number.'; return; }
+  // v4.3: block junk phone/ID entries. A real Ghana mobile number is
+  // 10 digits starting with 0 (or +233/233 followed by 9 digits). A
+  // real membership ID is letters followed by digits (e.g. THWGH12),
+  // not a single stray character. lookedUpCustomer means this value
+  // already matched a real record in Supabase, so it's trusted as-is.
+  if(!lookedUpCustomer){
+    const digitsOnly = phone.replace(/[\s-]/g,'');
+    const isPlausiblePhone = /^0\d{9}$/.test(digitsOnly) || /^(\+233|233)\d{9}$/.test(digitsOnly);
+    const isPlausibleMemberId = /^[A-Za-z]{2,}\d+$/.test(phone);
+    if(!isPlausiblePhone && !isPlausibleMemberId){
+      document.getElementById('submitError').textContent = 'Please enter a real Ghana phone number (e.g. 0241234567) or a valid membership ID (e.g. THWGH12).';
+      return;
+    }
+  }
   if(!custName){ document.getElementById('submitError').textContent = 'Please enter your name.'; return; }
+  if(!lookedUpCustomer && (custName.length <= 3 || !/[A-Za-z]/.test(custName))){
+    document.getElementById('submitError').textContent = 'Please enter your real name (more than 3 letters).';
+    return;
+  }
   if(!selectedPayment){ document.getElementById('submitError').textContent = 'Choose Cash or MoMo first.'; return; }
   const names = Object.keys(cart).filter(k => cart[k] > 0);
   if(names.length === 0){ document.getElementById('submitError').textContent = 'Your cart is empty.'; return; }
@@ -1000,7 +1018,8 @@ function showConfirmation(orders, payment, locType, locDetail, custId){
   if(payment === 'MoMo'){
     payHtml = `<div class="momo-box">
       Send <b>GHS ${total.toFixed(2)}</b> via MoMo to<br>
-      <b>${momoNumber || '(number not set yet — ask staff)'}</b>${momoName ? ' — ' + momoName : ''}<br><br>
+      <b>${momoNumber || '(number not set yet — ask staff)'}</b>${momoName ? ' — ' + momoName : ''}<br>
+      <span style="font-size:12px;color:var(--text-dim)">Depending on your network, the name that shows may say "The White House Events &amp; More"${momoName ? ' or "' + momoName + '"' : ''} — both are correct, it's the same account.</span><br><br>
       Then show the confirmation message on your phone to staff when your order is delivered.
     </div>`;
   }else{
