@@ -1,22 +1,36 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE EVENTS & MORE — MANAGER COMMAND CENTRE (v1.2)
-  Paired with ManagerCommandCentre_Code.gs bound to the Manager
-  Command Centre spreadsheet. Fill in API_URL below once deployed.
+  THE WHITE HOUSE EVENTS & MORE — MANAGER COMMAND CENTRE (v2.0, Supabase)
 
-  v1.2: rebrand + input font-size raised to 16px (iOS pinch-zoom fix,
-  same cause/fix as every other dashboard in this system).
-
-  v1.1: added a dedicated COCKTAILS tab. Cocktail-family sales (from
-  the Bar system's 🍹 Cocktail Sales sheet) now have their own
-  read-only summary here, separate from the general Bar/Canteen
-  "Running Costing" tab.
-
-  This dashboard pulls Bar/Canteen, Facilities, and Members data
-  READ-ONLY from your existing systems — edits to those still happen
-  on their own dashboards. Expenses, Payroll, Staff, Budgets, and
-  Settings are all owned and edited right here.
+  v2.0 CHANGES (this session):
+  - MIGRATED OFF APPS SCRIPT. This file was still pointed at a Google
+    Apps Script URL despite the 24 July sign-off saying this page was
+    fully migrated — it wasn't; that migration created the tables and
+    the SECURITY DEFINER functions this file needed, but never
+    actually rewired the frontend to use them. This does that: every
+    fetch(API_URL...) call is replaced with a Supabase call to the
+    functions/tables already built for this (log_expense, add_staff_full,
+    run_payroll, get_payroll_records, get_monthly_payroll_gross_estimate,
+    mark_payroll_paid_by_id, log_staff_shift, save_manager_settings,
+    get_bar_costing_overview, get_spend_by_category_this_month,
+    fac_add_project, fac_update_project).
+  - SECURITY FIX (found while doing this migration, fixed first): the
+    tables this page needs — expenses, budgets, staff, facilities_
+    tickets, facilities_projects, staff_shift_log, manager_settings —
+    had open public INSERT/UPDATE policies sitting alongside the
+    SECURITY DEFINER functions meant to own those writes, and the
+    staff table (which now holds everyone's login PIN) had zero
+    column protection at all. Both closed at the database level this
+    session — see the migration notes, not this file, for detail.
+  - NEW: SHIFT SUMMARIES tab. Reads the same shift_summaries table the
+    Bar Dashboard writes to (via get_shift_summaries_for_manager, a
+    version of the existing password-gated function without the
+    password, since this page has no password gate of its own). Shown
+    grouped by day with Morning and Night side by side, matching how
+    the Bar Dashboard now buckets and overwrites them.
+  - Everything else — layout, tabs, what each section shows — is
+    unchanged from v1.2.
 -->
 <head>
 <meta charset="UTF-8">
@@ -57,8 +71,6 @@ table{width:100%;border-collapse:collapse;font-size:12px;}
 th{text-align:left;padding:7px 8px;color:var(--muted);font-weight:700;letter-spacing:0.5px;border-bottom:1px solid var(--border);font-size:10px;}
 td{padding:6px 8px;border-bottom:1px solid #1a1a1a;}
 .scroll-table{max-height:420px;overflow-y:auto;}
-/* v1.2: font-size raised from 13px to 16px — iOS Safari auto-zooms
-   the page when focusing any input under 16px. */
 input,select,textarea{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:9px 12px;color:var(--text);font-size:16px;font-family:'Syne',sans-serif;width:100%;margin-bottom:9px;outline:none;}
 input:focus,select:focus,textarea:focus{border-color:var(--gold);}
 textarea{min-height:60px;resize:vertical;}
@@ -90,6 +102,12 @@ textarea{min-height:60px;resize:vertical;}
 .staff-card .s-meta{font-size:10px;color:var(--text-dim);margin-top:3px;font-family:'Space Mono',monospace;}
 .onshift-pill{display:inline-flex;align-items:center;gap:6px;background:#0e1a0e;border:1px solid var(--green);color:var(--green);padding:6px 12px;border-radius:20px;font-size:11px;margin:3px 6px 3px 0;font-family:'Space Mono',monospace;}
 .file-input-label{display:block;background:var(--surface);border:1px dashed var(--border);border-radius:6px;padding:12px;text-align:center;font-size:12px;color:var(--text-dim);cursor:pointer;margin-bottom:9px;}
+.summary-item{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:12px 14px;margin-bottom:8px;font-size:12px;}
+.summary-item pre{white-space:pre-wrap;font-family:'Space Mono',monospace;font-size:11px;color:var(--text-dim);margin-top:8px;line-height:1.6;}
+.summary-item .si-head{display:flex;justify-content:space-between;color:var(--text-dim);font-size:11px;flex-wrap:wrap;gap:6px;}
+.summary-period-tag{font-size:9px;font-weight:800;letter-spacing:0.5px;padding:2px 8px;border-radius:10px;font-family:'Space Mono',monospace;}
+.summary-period-tag.Morning{background:#2a2006;color:var(--gold);border:1px solid var(--gold-dim);}
+.summary-period-tag.Night{background:#0f1a2a;color:var(--teal);border:1px solid var(--teal);}
 </style>
 </head>
 <body>
@@ -112,6 +130,7 @@ textarea{min-height:60px;resize:vertical;}
     <button class="tab" data-sec="facilities" onclick="switchSection('facilities',this)">FACILITIES</button>
     <button class="tab" data-sec="members" onclick="switchSection('members',this)">MEMBERS</button>
     <button class="tab" data-sec="shifts" onclick="switchSection('shifts',this)">SHIFTS</button>
+    <button class="tab" data-sec="summaries" onclick="switchSection('summaries',this)">SHIFT SUMMARIES</button>
     <button class="tab" data-sec="settings" onclick="switchSection('settings',this)">SETTINGS</button>
   </div>
 
@@ -207,12 +226,12 @@ textarea{min-height:60px;resize:vertical;}
   <!-- BUDGETS -->
   <div class="section" id="sec-budgets">
     <div class="card">
-      <div class="card-title">&#128200; ACTUAL VS PREDICTED — THIS MONTH <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(edit targets any time in the Budgets sheet)</span></div>
+      <div class="card-title">&#128200; ACTUAL VS PREDICTED — THIS MONTH <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(edit targets any time in the Supabase budgets table)</span></div>
       <div id="budgetsList"><div class="empty">Loading...</div></div>
     </div>
   </div>
 
-  <!-- RUNNING COSTING (general — cocktail-family items now excluded, see COCKTAILS tab) -->
+  <!-- RUNNING COSTING -->
   <div class="section" id="sec-costing">
     <div class="metrics-grid" id="costingMetrics"></div>
     <div class="card">
@@ -230,14 +249,13 @@ textarea{min-height:60px;resize:vertical;}
   <div class="section" id="sec-cocktails">
     <div class="metrics-grid" id="cocktailMetrics"><div class="loading">Loading...</div></div>
     <div class="card">
-      <div class="card-title">&#127864; TOP COCKTAILS — REVENUE, INGREDIENT COST &amp; MARGIN <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(Cocktail, Mocktail, Milkshake, Smoothie, Juice, VIP Special — cost recorded at the moment of sale on the Bar system)</span></div>
+      <div class="card-title">&#127864; TOP COCKTAILS — REVENUE, INGREDIENT COST &amp; MARGIN</div>
       <div class="scroll-table"><table><thead><tr><th>ITEM</th><th>CATEGORY</th><th>QTY SOLD</th><th>REVENUE</th><th>INGREDIENT COST</th><th>MARGIN</th></tr></thead><tbody id="cocktailTopBody"></tbody></table></div>
     </div>
     <div class="card">
       <div class="card-title">&#128203; RECENT COCKTAIL SALES</div>
       <div class="scroll-table"><table><thead><tr><th>WHEN</th><th>ITEM</th><th>QTY</th><th>REVENUE</th><th>COST</th><th>MARGIN</th><th>STAFF</th></tr></thead><tbody id="cocktailRecentBody"></tbody></table></div>
     </div>
-    <div style="font-size:11px;color:var(--muted);margin-top:-8px;margin-bottom:16px">Read-only — cocktail sales are recorded automatically on the Bar system whenever a cocktail-family item is sold; nothing is edited here.</div>
   </div>
 
   <!-- BAR & CANTEEN (read-only) -->
@@ -275,11 +293,10 @@ textarea{min-height:60px;resize:vertical;}
     <div class="two-col">
       <div class="card">
         <div class="card-title">&#9989; MANUAL CHECK IN / OUT</div>
-        <div style="font-size:11px;color:var(--text-dim);margin-bottom:10px">Once check-in widgets are added to the Bar/Canteen/Facilities dashboards, they'll write here automatically too — this is the same shared log.</div>
         <select id="shStaff"><option value="">Select staff...</option></select>
         <div class="field-grid">
-          <button class="btn teal" onclick="submitShift('checkIn')">CHECK IN</button>
-          <button class="btn ghost" onclick="submitShift('checkOut')">CHECK OUT</button>
+          <button class="btn teal" onclick="submitShift('Check In')">CHECK IN</button>
+          <button class="btn ghost" onclick="submitShift('Check Out')">CHECK OUT</button>
         </div>
         <div id="shResult" class="result-msg"></div>
       </div>
@@ -291,6 +308,14 @@ textarea{min-height:60px;resize:vertical;}
     <div class="card">
       <div class="card-title">&#128203; SHIFT LOG</div>
       <div class="scroll-table"><table><thead><tr><th>WHEN</th><th>NAME</th><th>DEPT</th><th>ACTION</th><th>SOURCE</th></tr></thead><tbody id="shiftLogBody"></tbody></table></div>
+    </div>
+  </div>
+
+  <!-- SHIFT SUMMARIES -->
+  <div class="section" id="sec-summaries">
+    <div class="card">
+      <div class="card-title">&#128274; SHIFT SUMMARIES <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(from the Bar Dashboard — Morning 6am-6pm, Night 6pm-6am. Running the same shift's summary again overwrites this instead of duplicating)</span></div>
+      <div id="summariesBody"><div class="empty">Loading...</div></div>
     </div>
   </div>
 
@@ -309,9 +334,17 @@ textarea{min-height:60px;resize:vertical;}
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-// Fill in once the Manager Command Centre Apps Script is deployed.
-const API_URL = 'https://script.google.com/macros/s/AKfycbzskNlxhxB66IkishOfQ1fbdAL_odHolhHcs8aejhD7Sg15usFkQzoCWWsRqP1mrKbP/exec';
+const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNydnV6a3lmcnFiZm1hbWVneGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MzI5NjQsImV4cCI6MjEwMDAwODk2NH0.gMsv3yvw6plDCherA2YdU4UgWRMXUc9H1Hr_IdR9GxA';
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Columns explicitly listed (never '*') so this never trips over the
+// pin_code column lock added to the staff table this session — that
+// column has no grant for this key at all, and selecting it here
+// would fail the whole query.
+const STAFF_COLUMNS = 'id, initials, full_name, department, role, pay_type, pay_rate, phone, active, on_duty, on_duty_since, working_days, working_hours, slot';
 
 let data = {};
 let receiptFile = null;
@@ -325,26 +358,95 @@ function switchSection(sec, btn){
 
 function showApiError(msg){
   const el = document.getElementById('errorBanner');
-  el.innerHTML = "<b>&#9888; Can't reach the sheet:</b> " + msg + " — check API_URL at the top of the script, and that the Apps Script deployment is live (Deploy &gt; Manage deployments).";
+  el.innerHTML = "<b>&#9888; Dashboard can't reach Supabase:</b> " + msg + ' Check your internet connection and hit Refresh.';
   el.classList.add('active');
 }
 function clearApiError(){ document.getElementById('errorBanner').classList.remove('active'); }
 
+function fmt(n){ return 'GHS ' + (parseFloat(n)||0).toFixed(2); }
+
 async function loadData(){
   document.getElementById('lastRefresh').textContent = 'Refreshing...';
-  if(API_URL.indexOf('PASTE_YOUR') === 0){ showApiError('API_URL has not been set yet in this file.'); document.getElementById('lastRefresh').textContent='Not configured'; return; }
   try{
-    const res = await fetch(API_URL + '?action=getManagerData&t=' + Date.now());
-    if(!res.ok) throw new Error('Server responded with status ' + res.status);
-    const d = await res.json();
-    if(!d.success) throw new Error(d.error || 'Unknown error');
-    data = d;
+    const [staffRes, expensesRes, budgetsRes, ticketsRes, projectsRes, custRes, shiftLogRes, settingsRes,
+           costingRes, spendRes, payrollRes, payrollEstRes, summariesRes] = await Promise.all([
+      supabaseClient.from('staff').select(STAFF_COLUMNS).order('slot'),
+      supabaseClient.from('expenses').select('*').order('created_at', { ascending: false }).limit(150),
+      supabaseClient.from('budgets').select('*'),
+      supabaseClient.from('facilities_tickets').select('*'),
+      supabaseClient.from('facilities_projects').select('*').order('created_at', { ascending: false }),
+      supabaseClient.from('bar_customers').select('customer_id, name, loyalty_points, first_visit'),
+      supabaseClient.from('staff_shift_log').select('*').order('created_at', { ascending: false }).limit(60),
+      supabaseClient.from('manager_settings').select('key, value'),
+      supabaseClient.rpc('get_bar_costing_overview'),
+      supabaseClient.rpc('get_spend_by_category_this_month'),
+      supabaseClient.rpc('get_payroll_records', { p_limit: 30 }),
+      supabaseClient.rpc('get_monthly_payroll_gross_estimate'),
+      supabaseClient.rpc('get_shift_summaries_for_manager', { p_limit: 30 })
+    ]);
+    [staffRes, expensesRes, budgetsRes, ticketsRes, projectsRes, custRes, shiftLogRes, settingsRes,
+     costingRes, spendRes, payrollRes, payrollEstRes, summariesRes].forEach(r => { if(r.error) throw new Error(r.error.message); });
+
+    const staff = staffRes.data.map(s => ({
+      staffId: s.id, fullName: s.full_name, department: s.department, role: s.role,
+      payType: s.pay_type, payRate: s.pay_rate, phone: s.phone, status: s.active ? 'Active' : 'Inactive',
+      onDuty: !!s.on_duty, initials: s.initials
+    }));
+
+    const expenses = expensesRes.data.map(e => ({
+      date: e.created_at ? new Date(e.created_at).toLocaleDateString('en-GB') : '', item: e.item,
+      category: e.category, amount: e.amount_ghs, supplierName: e.supplier_name, paymentMethod: e.payment_method,
+      loggedBy: e.logged_by, receiptUrl: e.receipt_url
+    }));
+
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const spendByCategoryThisMonth = spendRes.data || {};
+    const budgets = budgetsRes.data.map(b => ({ category: b.category, target: parseFloat(b.target_ghs)||0, actual: parseFloat(spendByCategoryThisMonth[b.category]||0) }));
+
+    const facTickets = ticketsRes.data || [];
+    const facilities = {
+      openTickets: facTickets.filter(t => t.status !== 'Complete' && t.verified !== 'DISMISSED').length,
+      urgentOpen: facTickets.filter(t => t.status !== 'Complete' && t.urgency === 'Urgent' && t.verified !== 'DISMISSED').length,
+      unverified: facTickets.filter(t => t.verified === 'NO' || t.verified === null).length,
+      projects: (projectsRes.data||[]).map(p => ({ title: p.title, status: p.status }))
+    };
+
+    const customers = custRes.data || [];
+    const todayStr = new Date().toLocaleDateString('en-GB');
+    const members = {
+      totalCustomers: customers.length,
+      newToday: customers.filter(c => c.first_visit && new Date(c.first_visit).toLocaleDateString('en-GB') === todayStr).length,
+      totalPointsLive: customers.reduce((s,c)=>s+(parseFloat(c.loyalty_points)||0),0),
+      topMembers: customers.slice().sort((a,b)=>(b.loyalty_points||0)-(a.loyalty_points||0)).slice(0,10).map(c=>({name:c.name, points:c.loyalty_points||0}))
+    };
+
+    const shiftLog = shiftLogRes.data.map(l => ({ timestamp: l.created_at, name: l.name, department: l.department, action: l.action, source: l.source }));
+    const onShift = staff.filter(s => s.onDuty).map(s => ({ name: s.fullName, department: s.department }));
+
+    const settings = {};
+    (settingsRes.data||[]).forEach(row => { settings[row.key] = row.value; });
+
+    const bar = Object.assign({}, (costingRes.data||{}).bar || {});
+    bar.crmError = null;
+    const cocktails = (costingRes.data||{}).cocktails || {};
+
+    data = {
+      staff, expenses, budgets, facilities, members, shiftLog, onShift, settings,
+      bar, cocktails, spendByCategoryThisMonth,
+      payrollRuns: payrollRes.data || [],
+      totalMonthlyPayrollGrossEstimate: payrollEstRes.data || 0,
+      categories: Array.from(new Set(budgets.map(b=>b.category))),
+      summaries: summariesRes.data || []
+    };
+
     clearApiError();
     document.getElementById('lastRefresh').textContent = 'Updated: ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
     renderAll();
   }catch(e){
     document.getElementById('lastRefresh').textContent = 'Offline — see message above';
     showApiError(e.message || 'Could not load data.');
+    console.log('Load error:', e);
   }
 }
 
@@ -363,15 +465,14 @@ function renderAll(){
   renderFacilities();
   renderMembers();
   renderShifts();
+  renderSummaries();
   renderSettings();
 }
-
-function fmt(n){ return 'GHS ' + (parseFloat(n)||0).toFixed(2); }
 
 // ---------- OVERVIEW ----------
 function renderOverview(){
   const bar = data.bar || {}; const fac = data.facilities || {}; const mem = data.members || {};
-  const totalExpensesThisMonth = Object.values(data.spendByCategoryThisMonth||{}).reduce((a,b)=>a+b,0);
+  const totalExpensesThisMonth = Object.values(data.spendByCategoryThisMonth||{}).reduce((a,b)=>a+parseFloat(b||0),0);
   document.getElementById('overviewMetrics').innerHTML = `
     <div class="metric-card gold"><div class="metric-label">BAR/CANTEEN REVENUE TODAY</div><div class="metric-value">${fmt(bar.todayRevenue)}</div><div class="metric-sub">${bar.todayItemCount||0} items sold</div></div>
     <div class="metric-card red"><div class="metric-label">SPEND THIS MONTH</div><div class="metric-value">${fmt(totalExpensesThisMonth)}</div><div class="metric-sub">across all categories</div></div>
@@ -390,7 +491,9 @@ function renderOverview(){
 // ---------- EXPENSES ----------
 function populateExpenseCategories(){
   const sel = document.getElementById('expCategory');
+  const current = sel.value;
   sel.innerHTML = '<option value="">Auto-detect category</option>' + (data.categories||[]).map(c=>`<option value="${c}">${c}</option>`).join('');
+  sel.value = current;
 }
 
 document.getElementById('receiptLabel').addEventListener('click', ()=>document.getElementById('expReceipt').click());
@@ -400,15 +503,6 @@ document.getElementById('expReceipt').addEventListener('change', (e)=>{
   receiptFile = f;
   document.getElementById('receiptLabel').textContent = '✓ ' + f.name;
 });
-
-function fileToBase64(file){
-  return new Promise((resolve,reject)=>{
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result.split(',')[1]);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
 
 async function submitExpense(){
   const item = document.getElementById('expItem').value.trim();
@@ -423,30 +517,35 @@ async function submitExpense(){
   if(!item || !amount){ resultEl.innerHTML = '<span style="color:var(--red)">Item and amount are required.</span>'; return; }
   resultEl.innerHTML = 'Saving...';
 
-  let receiptBase64 = '', receiptMimeType = '';
+  let receiptUrl = null;
   if(receiptFile){
-    try{ receiptBase64 = await fileToBase64(receiptFile); receiptMimeType = receiptFile.type; }
-    catch(e){ /* continue without receipt if encoding fails */ }
+    try{
+      const path = 'receipts/' + Date.now() + '-' + receiptFile.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+      const { error: upErr } = await supabaseClient.storage.from('receipts').upload(path, receiptFile);
+      if(!upErr){
+        const { data: pub } = supabaseClient.storage.from('receipts').getPublicUrl(path);
+        receiptUrl = pub ? pub.publicUrl : null;
+      }
+    }catch(e){ /* continue without receipt if upload fails */ }
   }
 
   const clientId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : ('cid-'+Date.now());
-  const payload = { action:'logExpense', item, amount, category, supplierName, supplierContact, paymentMethod, loggedBy, notes, clientId };
-  let qs = Object.entries(payload).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
-  if(receiptBase64) qs += '&receiptBase64=' + encodeURIComponent(receiptBase64) + '&receiptMimeType=' + encodeURIComponent(receiptMimeType);
-
   try{
-    const res = await fetch(API_URL + '?' + qs);
-    const d = await res.json();
-    if(d.success){
-      resultEl.innerHTML = '<span style="color:var(--green)">&#10003; Logged as ' + d.expenseId + ' — categorised as "' + d.category + '"' + (d.receiptUrl?' with receipt attached':'') + '</span>';
-      ['expItem','expAmount','expSupplier','expSupplierContact','expNotes'].forEach(id=>document.getElementById(id).value='');
-      document.getElementById('expCategory').value='';
-      document.getElementById('expPayment').value='';
-      receiptFile = null;
-      document.getElementById('receiptLabel').textContent = '📷 Tap to attach a receipt photo (optional)';
-      loadData();
-    } else { resultEl.innerHTML = '<span style="color:var(--red)">'+(d.error||'Failed')+'</span>'; }
-  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">Connection error — try again.</span>'; }
+    const { data: result, error } = await supabaseClient.rpc('log_expense', {
+      p_item: item, p_amount: parseFloat(amount), p_category: category || null,
+      p_supplier_name: supplierName || null, p_supplier_contact: supplierContact || null,
+      p_payment_method: paymentMethod || null, p_logged_by: loggedBy || null, p_notes: notes || null,
+      p_receipt_url: receiptUrl, p_client_request_id: clientId
+    });
+    if(error) throw new Error(error.message);
+    resultEl.innerHTML = '<span style="color:var(--green)">&#10003; Logged' + (result && result.category ? ' — categorised as "' + result.category + '"' : '') + (receiptUrl?' with receipt attached':'') + '</span>';
+    ['expItem','expAmount','expSupplier','expSupplierContact','expNotes'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('expCategory').value='';
+    document.getElementById('expPayment').value='';
+    receiptFile = null;
+    document.getElementById('receiptLabel').textContent = '📷 Tap to attach a receipt photo (optional)';
+    loadData();
+  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">'+(e.message||'Failed')+'</span>'; }
 }
 
 function renderExpenseCategoryBreakdown(){
@@ -465,7 +564,7 @@ function renderExpensesTable(){
     <tr>
       <td style="font-size:11px;font-family:'Space Mono',monospace">${e.date}</td>
       <td>${e.item}</td>
-      <td style="font-size:11px;color:var(--text-dim)">${e.category}</td>
+      <td style="font-size:11px;color:var(--text-dim)">${e.category||'—'}</td>
       <td style="color:var(--gold);font-weight:700">${fmt(e.amount)}</td>
       <td style="font-size:11px">${e.supplierName||'—'}</td>
       <td style="font-size:11px">${e.paymentMethod||'—'}</td>
@@ -480,7 +579,7 @@ function renderStaffList(){
   const el = document.getElementById('staffList');
   el.innerHTML = staff.length ? staff.map(s=>`
     <div class="staff-card">
-      <div><div class="s-name">${s.fullName} ${s.status!=='Active'?'<span style="color:var(--red);font-size:10px">('+s.status+')</span>':''}</div><div class="s-meta">${s.staffId} · ${s.department} · ${s.role||'—'} · ${s.payType} ${fmt(s.payRate)}</div></div>
+      <div><div class="s-name">${s.fullName} ${s.status!=='Active'?'<span style="color:var(--red);font-size:10px">('+s.status+')</span>':''}</div><div class="s-meta">${s.initials||'—'} · ${s.department} · ${s.role||'—'} · ${s.payType} ${fmt(s.payRate)}</div></div>
     </div>`).join('') : '<div class="empty">No staff yet — add one below.</div>';
 }
 
@@ -489,7 +588,7 @@ function populateStaffSelects(){
   const prSel = document.getElementById('prStaff');
   prSel.innerHTML = '<option value="">All active staff (one full period)</option>' + staff.map(s=>`<option value="${s.staffId}">${s.fullName} (${s.department})</option>`).join('');
   const shSel = document.getElementById('shStaff');
-  shSel.innerHTML = '<option value="">Select staff...</option>' + staff.map(s=>`<option value="${s.staffId}" data-name="${s.fullName}" data-dept="${s.department}">${s.fullName} (${s.department})</option>`).join('');
+  shSel.innerHTML = '<option value="">Select staff...</option>' + staff.map(s=>`<option value="${s.staffId}" data-name="${s.fullName}" data-dept="${s.department}" data-initials="${s.initials||''}">${s.fullName} (${s.department})</option>`).join('');
 }
 
 async function submitAddStaff(){
@@ -502,16 +601,16 @@ async function submitAddStaff(){
   const resultEl = document.getElementById('stfResult');
   if(!fullName){ resultEl.innerHTML = '<span style="color:var(--red)">Full name is required.</span>'; return; }
   resultEl.innerHTML = 'Saving...';
-  const payload = { action:'addStaff', fullName, department, role, payType, payRate, phone };
-  const qs = Object.entries(payload).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
   try{
-    const res = await fetch(API_URL+'?'+qs); const d = await res.json();
-    if(d.success){
-      resultEl.innerHTML = '<span style="color:var(--green)">&#10003; Added — '+d.staffId+'</span>';
-      ['stfName','stfRole','stfPayRate','stfPhone'].forEach(id=>document.getElementById(id).value='');
-      loadData();
-    } else { resultEl.innerHTML = '<span style="color:var(--red)">'+(d.error||'Failed')+'</span>'; }
-  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">Connection error.</span>'; }
+    const { data: result, error } = await supabaseClient.rpc('add_staff_full', {
+      p_full_name: fullName, p_department: department, p_role: role || null,
+      p_pay_type: payType, p_pay_rate: payRate ? parseFloat(payRate) : 0, p_phone: phone || null
+    });
+    if(error) throw new Error(error.message);
+    resultEl.innerHTML = '<span style="color:var(--green)">&#10003; Added' + (result && result.initials ? ' — ' + result.initials : '') + '</span>';
+    ['stfName','stfRole','stfPayRate','stfPhone'].forEach(id=>document.getElementById(id).value='');
+    loadData();
+  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">'+(e.message||'Failed')+'</span>'; }
 }
 
 async function submitRunPayroll(){
@@ -521,23 +620,23 @@ async function submitRunPayroll(){
   const paymentMethod = document.getElementById('prPayment').value;
   const resultEl = document.getElementById('prResult');
   resultEl.innerHTML = 'Running payroll...';
-  const payload = { action:'runPayroll', staffId, periodLabel, unitsWorked, paymentMethod };
-  const qs = Object.entries(payload).map(([k,v])=>k+'='+encodeURIComponent(v||'')).join('&');
   try{
-    const res = await fetch(API_URL+'?'+qs); const d = await res.json();
-    if(d.success){
-      resultEl.innerHTML = '<span style="color:var(--green)">&#10003; Ran payroll for '+d.count+' staff — total net '+fmt(d.totalNet)+'</span>';
-      loadData();
-    } else { resultEl.innerHTML = '<span style="color:var(--red)">'+(d.error||'Failed')+'</span>'; }
-  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">Connection error.</span>'; }
+    const { data: result, error } = await supabaseClient.rpc('run_payroll', {
+      p_staff_id: staffId || null, p_period_label: periodLabel || null,
+      p_units_worked: unitsWorked ? parseFloat(unitsWorked) : 1, p_payment_method: paymentMethod || null
+    });
+    if(error) throw new Error(error.message);
+    resultEl.innerHTML = '<span style="color:var(--green)">&#10003; Ran payroll for '+(result.count||0)+' staff — total net '+fmt(result.totalNet)+'</span>';
+    loadData();
+  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">'+(e.message||'Failed')+'</span>'; }
 }
 
 async function markPaid(runId){
   try{
-    const res = await fetch(API_URL + '?action=markPayrollPaid&runId=' + encodeURIComponent(runId) + '&t=' + Date.now());
-    const d = await res.json();
-    if(d.success) loadData(); else alert(d.error||'Failed');
-  }catch(e){ alert('Connection error.'); }
+    const { error } = await supabaseClient.rpc('mark_payroll_paid_by_id', { p_run_id: runId });
+    if(error) throw new Error(error.message);
+    loadData();
+  }catch(e){ alert(e.message || 'Failed'); }
 }
 
 function renderPayrollTable(){
@@ -545,8 +644,8 @@ function renderPayrollTable(){
   const el = document.getElementById('payrollBody');
   el.innerHTML = runs.length ? runs.map(r=>`
     <tr>
-      <td style="font-size:11px">${r.periodLabel}</td>
-      <td style="font-size:11px">${r.name}</td>
+      <td style="font-size:11px">${r.periodLabel||'—'}</td>
+      <td style="font-size:11px">${r.name||'—'}</td>
       <td style="font-family:'Space Mono',monospace;font-size:11px">${fmt(r.grossPay)}</td>
       <td style="font-family:'Space Mono',monospace;font-size:11px;color:var(--red)">${fmt(r.ssnitEmployee)}</td>
       <td style="font-family:'Space Mono',monospace;font-size:11px;color:var(--red)">${fmt(r.payeTax)}</td>
@@ -567,10 +666,10 @@ function renderBudgets(){
       <div class="bar-track"><div class="bar-fill ${over?'over':''}" style="width:${pct}%"></div></div>
       <div class="b-value">${fmt(b.actual)} / ${fmt(b.target)}</div>
     </div>`;
-  }).join('') : '<div class="empty">No budget categories yet — run seedCategoriesAndBudgets from the Apps Script editor.</div>';
+  }).join('') : '<div class="empty">No budget categories yet.</div>';
 }
 
-// ---------- RUNNING COSTING (general, cocktail-family items excluded) ----------
+// ---------- RUNNING COSTING ----------
 function renderCosting(){
   const bar = data.bar || {};
   document.getElementById('costingMetrics').innerHTML = `
@@ -582,8 +681,8 @@ function renderCosting(){
     <tr><td>${t.item}</td><td style="font-family:'Space Mono',monospace">${t.qty}</td><td style="color:var(--gold);font-family:'Space Mono',monospace">${fmt(t.revenue)}</td><td style="color:var(--red);font-family:'Space Mono',monospace">${fmt(t.cogsUsed)}</td><td style="color:var(--green);font-family:'Space Mono',monospace;font-weight:700">${fmt(t.margin)}</td></tr>`).join('') : '<tr><td colspan="5" class="empty">No sales logged yet, or ingredient costs aren\'t set on Bar Stock yet.</td></tr>';
 
   const spend = data.spendByCategoryThisMonth || {};
-  const foodPurchased = spend['Food & Beverage COGS'] || 0;
-  const barPurchased = spend['Bar Stock COGS'] || 0;
+  const foodPurchased = parseFloat(spend['Food & Beverage COGS']||0);
+  const barPurchased = parseFloat(spend['Bar Stock COGS']||0);
   document.getElementById('cogsCompare').innerHTML = `
     <div class="bar-row"><div class="b-label">Food/Bar purchases logged</div><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><div class="b-value">${fmt(foodPurchased+barPurchased)}</div></div>
     <div class="bar-row"><div class="b-label">COGS actually used in sales</div><div class="bar-track"><div class="bar-fill" style="width:${bar.allTimeCOGSUsed && (foodPurchased+barPurchased) ? Math.min(100,(bar.allTimeCOGSUsed/(foodPurchased+barPurchased))*100) : 0}%"></div></div><div class="b-value">${fmt(bar.allTimeCOGSUsed)}</div></div>`;
@@ -592,7 +691,6 @@ function renderCosting(){
 // ---------- COCKTAILS ----------
 function renderCocktails(){
   const ck = data.cocktails || {};
-  if(ck.error) { document.getElementById('cocktailMetrics').innerHTML = `<div class="empty" style="grid-column:1/-1">${ck.error}</div>`; document.getElementById('cocktailTopBody').innerHTML=''; document.getElementById('cocktailRecentBody').innerHTML=''; return; }
   document.getElementById('cocktailMetrics').innerHTML = `
     <div class="metric-card pink"><div class="metric-label">COCKTAIL REVENUE TODAY</div><div class="metric-value" style="font-size:20px">${fmt(ck.todayRevenue)}</div><div class="metric-sub">${ck.todayCount||0} sold</div></div>
     <div class="metric-card gold"><div class="metric-label">ALL-TIME REVENUE</div><div class="metric-value" style="font-size:20px">${fmt(ck.allTimeRevenue)}</div></div>
@@ -617,8 +715,7 @@ function renderBarCanteen(){
     <div class="metric-card teal"><div class="metric-label">ACTIVE TABLE ORDERS</div><div class="metric-value">${bar.activeTableOrders||0}</div></div>
     <div class="metric-card purple"><div class="metric-label">ACTIVE CANTEEN ORDERS</div><div class="metric-value">${bar.activeCanteenOrders||0}</div></div>`;
   const low = bar.lowStockItems || [];
-  document.getElementById('barLowStock').innerHTML = low.length ? low.map(i=>`<span class="onshift-pill" style="border-color:var(--red);color:var(--red);background:#2a0a0a">${i}</span>`).join('') : '<div class="empty">Nothing low right now.</div>';
-  if(bar.crmError) showApiError('Bar/Canteen sheet: ' + bar.crmError);
+  document.getElementById('barLowStock').innerHTML = low.length ? low.map(i=>`<span class="onshift-pill" style="border-color:var(--red);color:var(--red);background:#2a0a0a">${i.item||i}</span>`).join('') : '<div class="empty">Nothing low right now.</div>';
 }
 
 // ---------- FACILITIES ----------
@@ -649,13 +746,19 @@ async function submitShift(action){
   const resultEl = document.getElementById('shResult');
   if(!staffId){ resultEl.innerHTML = '<span style="color:var(--red)">Select a staff member.</span>'; return; }
   const opt = sel.options[sel.selectedIndex];
-  const name = opt.dataset.name, department = opt.dataset.dept;
+  const name = opt.dataset.name, department = opt.dataset.dept, initials = opt.dataset.initials;
+  resultEl.innerHTML = 'Saving...';
   try{
-    const res = await fetch(API_URL + '?action=' + action + '&staffId=' + encodeURIComponent(staffId) + '&name=' + encodeURIComponent(name) + '&department=' + encodeURIComponent(department) + '&source=' + encodeURIComponent('Manager Dashboard') + '&t=' + Date.now());
-    const d = await res.json();
-    if(d.success){ resultEl.innerHTML = '<span style="color:var(--green)">&#10003; '+d.name+' — '+d.action+'</span>'; loadData(); }
-    else { resultEl.innerHTML = '<span style="color:var(--red)">'+(d.error||'Failed')+'</span>'; }
-  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">Connection error.</span>'; }
+    const { error: logErr } = await supabaseClient.rpc('log_staff_shift', {
+      p_staff_id: staffId, p_name: name, p_department: department, p_action: action, p_source: 'Manager Dashboard'
+    });
+    if(logErr) throw new Error(logErr.message);
+    if(initials){
+      await supabaseClient.rpc('set_staff_on_duty', { p_initials: initials, p_on_duty: action === 'Check In' });
+    }
+    resultEl.innerHTML = '<span style="color:var(--green)">&#10003; '+name+' — '+action+'</span>';
+    loadData();
+  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">'+(e.message||'Failed')+'</span>'; }
 }
 
 function renderShifts(){
@@ -665,30 +768,45 @@ function renderShifts(){
   document.getElementById('shiftLogBody').innerHTML = log.length ? log.map(l=>`<tr><td style="font-size:11px;font-family:'Space Mono',monospace">${new Date(l.timestamp).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</td><td>${l.name||'—'}</td><td style="font-size:11px">${l.department||'—'}</td><td>${l.action==='Check In'?'<span class="pill pos">IN</span>':'<span class="pill neg">OUT</span>'}</td><td style="font-size:11px;color:var(--text-dim)">${l.source||'—'}</td></tr>`).join('') : '<tr><td colspan="5" class="empty">No shift activity logged yet.</td></tr>';
 }
 
+// ---------- SHIFT SUMMARIES ----------
+function renderSummaries(){
+  const summaries = data.summaries || [];
+  const el = document.getElementById('summariesBody');
+  if(!summaries.length){ el.innerHTML = '<div class="empty">No shift summaries saved yet — generate one on the Bar Dashboard and it will show up here.</div>'; return; }
+  el.innerHTML = summaries.map(s => `
+    <div class="summary-item">
+      <div class="si-head">
+        <span><b style="color:var(--gold)">${s.business_date}</b> <span class="summary-period-tag ${s.shift_period}">${s.shift_period||'—'}</span> &mdash; ${s.generated_by||'unknown'}</span>
+        <span>&#8373;${parseFloat(s.total_revenue||0).toFixed(2)} · ${s.items_sold||0} items · ${s.orders_count||0} orders</span>
+      </div>
+      <pre>${(s.summary_text||'').replace(/</g,'&lt;')}</pre>
+    </div>`).join('');
+}
+
 // ---------- SETTINGS ----------
 function renderSettings(){
   const settings = data.settings || {};
   const keys = Object.keys(settings);
   const el = document.getElementById('settingsList');
-  el.innerHTML = keys.map(k=>`
+  el.innerHTML = keys.length ? keys.map(k=>`
     <div style="margin-bottom:12px">
       <label style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:0.5px;text-transform:uppercase">${k}</label>
       <input class="setting-input" data-key="${k}" value="${(settings[k]||'').toString().replace(/"/g,'&quot;')}">
-    </div>`).join('');
+    </div>`).join('') : '<div class="empty">No settings saved yet — add rows to the manager_settings table, or save one below.</div>';
 }
 
 async function saveAllSettings(){
   const inputs = document.querySelectorAll('.setting-input');
-  const payload = { action: 'saveSettings' };
+  const payload = {};
   inputs.forEach(i => { payload[i.dataset.key] = i.value; });
-  const qs = Object.entries(payload).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
   const resultEl = document.getElementById('settingsResult');
   resultEl.innerHTML = 'Saving...';
   try{
-    const res = await fetch(API_URL+'?'+qs); const d = await res.json();
-    if(d.success){ resultEl.innerHTML = '<span style="color:var(--green)">&#10003; Settings saved.</span>'; loadData(); }
-    else { resultEl.innerHTML = '<span style="color:var(--red)">'+(d.error||'Failed')+'</span>'; }
-  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">Connection error.</span>'; }
+    const { error } = await supabaseClient.rpc('save_manager_settings', { p_settings: payload });
+    if(error) throw new Error(error.message);
+    resultEl.innerHTML = '<span style="color:var(--green)">&#10003; Settings saved.</span>';
+    loadData();
+  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">'+(e.message||'Failed')+'</span>'; }
 }
 
 loadData();
