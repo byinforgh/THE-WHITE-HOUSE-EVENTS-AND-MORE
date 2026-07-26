@@ -1,20 +1,29 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE EVENTS & MORE — TABLE ORDER PAGE (v4.5, Supabase-only)
+  THE WHITE HOUSE EVENTS & MORE — TABLE ORDER PAGE (v4.6, Supabase-only)
 
-  v4.5 CHANGES (this session — profile recognition fix):
-  - The full "Welcome back" profile bar (points, visits, most-ordered,
-    favourites, rewards) previously only appeared if THIS browser had a
-    saved record from a past completed order (localStorage). Typing a
-    phone/membership number into the cart on a new device or browser
-    only ever produced a one-line hint — the customer had to place an
-    entire order before anything more showed up, which is the opposite
-    of what was asked for. Fixed: the moment a phone/ID typed into the
-    cart matches an existing customer, the full profile bar now renders
-    immediately, and this device is remembered for next time too — no
-    need to place an order first, and no need to keep retyping a number
-    on a device that's used regularly.
+  v4.6 CHANGES (this session — the actual points/welcome bug):
+  - ROOT CAUSE FOUND for "points don't register" and "no thank you/
+    welcome screen after ordering, and it forgets the customer
+    immediately after." find_or_create_bar_customer returns the
+    customer ID directly as plain text — it always has. But this file
+    was reading the result as `memberData.custId`, which is undefined
+    on a plain string. That meant every single order saved a broken
+    localStorage record (custId: undefined) and passed undefined into
+    the confirmation screen, so its member block never rendered.
+    Verified directly against the live database with the anon role
+    that the points/visit increment itself was ALWAYS working
+    correctly — this was purely the page reading its own answer wrong.
+  - The confirmation card now shows the member's points and visit count
+    immediately, fetched fresh right after the order, instead of only
+    ever pointing down at the separate profile bar (which depended on
+    a second fetch finishing first).
+
+  v4.5 CHANGES (profile recognition fix):
+  - The full "Welcome back" profile bar now renders the moment a typed
+    phone/ID matches an existing customer, not only from a past
+    localStorage record.
 
   v4.4 CHANGES:
   - OUT OF STOCK DETECTION. Menu now loads bar_stock alongside the
@@ -725,9 +734,29 @@ async function submitOrder(){
   if(names.length === 0){ document.getElementById('submitError').textContent = 'Your cart is empty.'; return; }
 
   let submittedCustId = null;
+  let submittedCustPoints = null;
+  let submittedCustVisits = null;
   try{
+    // v4.6 FIX: find_or_create_bar_customer RETURNS text — the
+    // customer ID itself, not an object. Reading memberData.custId
+    // was always undefined, which meant saveMember() saved a broken
+    // record (custId: undefined) on EVERY order, and the confirmation
+    // screen's member block never rendered (its custId check failed).
+    // The database side was always incrementing points correctly —
+    // this was purely a client-side read of the wrong shape. Verified
+    // against the live database before shipping this fix.
     const { data: memberData, error: memberErr } = await supabaseClient.rpc('find_or_create_bar_customer', { p_phone: phone, p_name: custName });
-    if(!memberErr && memberData){ saveMember(memberData.custId, custName, phone); submittedCustId = memberData.custId; }
+    if(!memberErr && memberData){
+      saveMember(memberData, custName, phone);
+      submittedCustId = memberData;
+      // Pull the just-updated points/visits straight away so the
+      // confirmation card can show them immediately, without waiting
+      // on the profile bar below to finish its own separate fetch.
+      try{
+        const { data: freshCust } = await supabaseClient.from('bar_customers').select('loyalty_points, total_visits').eq('customer_id', memberData).maybeSingle();
+        if(freshCust){ submittedCustPoints = freshCust.loyalty_points; submittedCustVisits = freshCust.total_visits; }
+      }catch(e){ /* non-fatal — confirmation still shows the ID either way */ }
+    }
   }catch(e){ console.log('find_or_create_bar_customer failed (non-fatal):', e); }
 
   const barNames = names.filter(n => { const m = menu.find(mm=>mm.item===n); return !m || m.source !== 'food'; });
@@ -788,7 +817,7 @@ async function submitOrder(){
   closeCartModal();
   if(succeeded.length > 0){
     await loadMemberAccount();
-    showConfirmation(succeeded.map(o => ({ data: o.result.data, label: o.payload.label })), selectedPayment, locationType, locationDetail, submittedCustId);
+    showConfirmation(succeeded.map(o => ({ data: o.result.data, label: o.payload.label })), selectedPayment, locationType, locationDetail, submittedCustId, submittedCustPoints, submittedCustVisits);
   }else if(queued.length > 0){
     showQueuedScreen();
   }
@@ -997,7 +1026,7 @@ function showQueuedScreen(){
   document.getElementById('confirmModal').classList.add('show');
 }
 
-function showConfirmation(orders, payment, locType, locDetail, custId){
+function showConfirmation(orders, payment, locType, locDetail, custId, custPoints, custVisits){
   const displayLocType = locType !== undefined && locType !== null ? locType : locationType;
   const displayLocDetail = locDetail !== undefined ? locDetail : locationDetail;
   const el = document.getElementById('confirmContent');
@@ -1017,14 +1046,16 @@ function showConfirmation(orders, payment, locType, locDetail, custId){
 
   let memberBlockHtml = '';
   if(custId){
-    let statsLine = '';
-    const wrap = document.getElementById('memberBarWrap');
-    if(wrap && wrap.style.display === 'block'){
-      statsLine = `<p style="margin-top:6px;color:var(--text-dim);font-size:12px">Your points, visit count, and order history are on your profile below.</p>`;
-    }
+    // v4.6: points/visits are shown right here, right now — no longer
+    // dependent on the separate profile bar having already finished
+    // loading below it. This is the "welcome + points + ID immediately
+    // on Order Sent" fix.
+    const statsLine = (custPoints !== null && custPoints !== undefined)
+      ? `<p style="margin-top:6px;color:var(--gold);font-size:16px;font-weight:800">${custPoints} points &middot; ${custVisits||0} visits</p>`
+      : `<p style="margin-top:6px;color:var(--text-dim);font-size:12px">Your points and visit count are on your profile below.</p>`;
     memberBlockHtml = `
       <div class="momo-box" style="border-color:var(--gold);margin-top:14px">
-        <b style="color:var(--gold)">Your Member ID: ${custId}</b>
+        <b style="color:var(--gold)">Welcome, ${document.getElementById('custName').value.trim() || 'valued guest'}! Your Member ID: ${custId}</b>
         ${statsLine}
         <p style="margin-top:8px;color:var(--text-dim);font-size:12px;line-height:1.6">Save this number. Next time, enter it in the phone/membership field instead of typing your details again — it also tracks your points, rewards, and order history so you don't have to.</p>
         <p style="margin-top:8px;font-size:12px;line-height:1.6">Follow us so you don't miss offers and events:</p>
