@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+  THE WHITE HOUSE EVENTS & MORE — STAFF ORDER (v1.0, Supabase-only)
+
+  NEW FILE. This is the "staff phone ordering tool" that's been listed
+  as not-started across the last several sign-offs. It lets a staff
+  member walk around with their own phone/tablet and place an order
+  on behalf of a customer, landing in the exact same table_orders /
+  canteen_orders queues the customer-facing QR page (order.html)
+  writes to — so it shows up on bar-dashboard.html and the kitchen
+  dashboard exactly like any other order, just tagged with which
+  staff member took it (handled_by).
+
+  This deliberately reuses order.html's menu-loading, cart, and
+  submit-with-offline-queue logic almost line for line, since that
+  code is already tested against your real menu/location data. The
+  differences:
+    - Staff must select their name (from on-duty staff, falling back
+      to all active staff if nobody's checked in — same fallback
+      bar-dashboard.html's Quick Sell uses) before the cart will
+      submit. This is a plain dropdown, no PIN — same interim note as
+      bar-dashboard.html's check-in: real PIN login belongs to this
+      page once it's built out further, not to a screen everyone
+      shares.
+    - No returning-member welcome bar — a staff member taking someone
+      else's order doesn't need to see a stranger's order history.
+    - Customer phone/ID + name are still captured (optional — leave
+      blank for a walk-in) so loyalty points and history still work
+      exactly as they do from the QR flow.
+    - Every order this page sends sets handled_by to the selected
+      staff member's initials, so it's identifiable in the dashboards
+      as staff-taken vs. customer-scanned-the-QR.
+-->
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The White House Events & More — Staff Order</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--black:#0a0a0a;--surface:#111111;--card:#181818;--border:#2a2a2a;--gold:#f5a623;--gold-dim:#c9861a;--teal:#3fb6a8;--red:#ef4444;--green:#22c55e;--text:#f2f2f2;--text-dim:#b5b5b5;--muted:#888;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min-height:100vh;padding-bottom:110px;}
+.header{background:var(--surface);border-bottom:1px solid var(--border);padding:16px 18px;text-align:center;position:sticky;top:0;z-index:50;}
+.header .logo{font-size:17px;font-weight:800;letter-spacing:1px;color:var(--gold);}
+.header .loc-pill{display:inline-block;margin-top:6px;background:var(--border);color:var(--teal);font-family:'Space Mono',monospace;font-size:12px;padding:4px 12px;border-radius:20px;}
+.main{padding:14px 14px 0;max-width:640px;margin:0 auto;}
+@media(min-width:900px){.main{max-width:900px;padding:18px 24px 0;}}
+@media(min-width:1300px){.main{max-width:1240px;padding:22px 32px 0;}}
+
+.staff-gate{background:var(--card);border:1px solid var(--gold-dim);border-radius:10px;padding:16px;margin-bottom:16px;}
+.staff-gate.locked-in{border-color:var(--teal);}
+.field-label{font-size:11px;color:var(--text-dim);font-weight:700;letter-spacing:0.5px;margin:10px 0 4px;text-transform:uppercase;}
+.field-label:first-child{margin-top:0;}
+.select-input,.search-input{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;color:var(--text);font-size:16px;width:100%;margin-bottom:6px;outline:none;font-family:'Syne',sans-serif;}
+.select-input:focus,.search-input:focus{border-color:var(--gold);}
+.staff-current{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.staff-current .sc-name{font-size:16px;font-weight:800;color:var(--teal);}
+.staff-current .sc-change{font-size:11px;color:var(--muted);cursor:pointer;text-decoration:underline;}
+
+.loc-box{margin-bottom:14px;}
+.loc-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px;}
+@media(min-width:900px){.loc-grid{grid-template-columns:repeat(4,1fr);}}
+.loc-option{background:var(--card);border:2px solid var(--border);border-radius:10px;padding:12px 10px;text-align:center;cursor:pointer;font-size:13px;font-weight:700;}
+.loc-option.selected{border-color:var(--gold);background:#1e1706;color:var(--gold);}
+.btn{background:var(--gold);color:var(--black);border:none;padding:14px;border-radius:8px;font-size:14px;font-weight:800;width:100%;cursor:pointer;font-family:'Syne',sans-serif;margin-top:8px;}
+.btn:disabled{opacity:0.5;}
+.btn.secondary{background:var(--border);color:var(--text);}
+
+.group-tab-row{display:flex;gap:8px;margin-bottom:10px;}
+.group-tab-pill{flex:1;background:var(--card);border:2px solid var(--border);color:var(--text-dim);padding:10px 6px;border-radius:10px;font-size:12px;font-weight:800;letter-spacing:0.5px;cursor:pointer;font-family:'Syne',sans-serif;text-align:center;}
+.group-tab-pill.active{background:#1e1706;border-color:var(--gold);color:var(--gold);}
+.tab-row{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:12px;}
+.tab-pill{flex-shrink:0;background:var(--surface);border:1px solid var(--border);color:var(--text-dim);padding:7px 14px;border-radius:20px;font-size:11px;font-weight:700;cursor:pointer;font-family:'Syne',sans-serif;}
+.tab-pill.active{background:var(--gold);color:var(--black);border-color:var(--gold);}
+.menu-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+@media(min-width:900px){.menu-grid{grid-template-columns:repeat(3,1fr);}}
+@media(min-width:1300px){.menu-grid{grid-template-columns:repeat(4,1fr);}}
+.menu-item{position:relative;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;cursor:pointer;text-align:left;}
+.menu-item.in-cart{border-color:var(--gold);background:#1e1706;}
+.menu-item .mi-name{font-size:15px;font-weight:800;line-height:1.25;}
+.menu-item .mi-cat{font-size:10px;color:var(--muted);margin-top:3px;}
+.menu-item .mi-price{font-size:13px;color:var(--gold-dim);font-family:'Space Mono',monospace;margin-top:8px;font-weight:700;}
+.menu-item .mi-qty{position:absolute;top:8px;right:10px;background:var(--gold);color:var(--black);font-family:'Space Mono',monospace;font-weight:800;font-size:12px;border-radius:10px;padding:2px 8px;}
+.empty{text-align:center;padding:30px 10px;color:var(--muted);font-size:13px;}
+.loading{text-align:center;padding:40px 10px;color:var(--muted);font-size:13px;font-family:'Space Mono',monospace;}
+
+.cart-bar{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--gold);padding:14px 16px;display:none;align-items:center;justify-content:space-between;z-index:60;}
+.cart-bar.show{display:flex;}
+.cart-bar-inner{max-width:1240px;margin:0 auto;width:100%;display:flex;align-items:center;justify-content:space-between;}
+.cart-bar .cb-info{font-size:13px;}
+.cart-bar .cb-total{color:var(--gold);font-weight:800;font-family:'Space Mono',monospace;font-size:16px;}
+.cart-bar button{background:var(--gold);color:var(--black);border:none;padding:11px 20px;border-radius:8px;font-weight:800;font-size:13px;cursor:pointer;font-family:'Syne',sans-serif;}
+
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:100;align-items:flex-end;justify-content:center;}
+.modal-overlay.show{display:flex;}
+.modal-sheet{background:var(--surface);border-radius:16px 16px 0 0;padding:20px;max-width:640px;width:100%;max-height:88vh;overflow-y:auto;}
+@media(min-width:900px){.modal-overlay{align-items:center;}.modal-sheet{border-radius:16px;max-width:480px;max-height:82vh;}}
+.modal-title{font-size:16px;font-weight:800;color:var(--gold);margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;}
+.modal-title .close-x{cursor:pointer;color:var(--muted);font-size:20px;}
+.cart-row{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;}
+.cart-row .cr-name{flex:1;font-size:13px;font-weight:700;}
+.cart-row .cr-name .cr-price{display:block;font-size:10px;color:var(--muted);font-weight:400;font-family:'Space Mono',monospace;margin-top:2px;}
+.qty-stepper{display:flex;align-items:center;gap:8px;}
+.qty-stepper button{background:var(--border);border:none;color:var(--text);width:26px;height:26px;border-radius:6px;font-weight:800;font-size:14px;cursor:pointer;}
+.qty-stepper span{font-family:'Space Mono',monospace;font-size:13px;width:18px;text-align:center;}
+.cart-line-total{font-family:'Space Mono',monospace;font-size:13px;color:var(--gold);width:60px;text-align:right;}
+.subtotal-row{display:flex;justify-content:space-between;padding:14px 4px;border-top:1px solid var(--border);margin-top:6px;font-size:15px;font-weight:800;}
+.subtotal-row span:last-child{color:var(--gold);font-family:'Space Mono',monospace;font-size:19px;}
+.pay-options{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0;}
+.pay-option{background:var(--card);border:2px solid var(--border);border-radius:10px;padding:16px 10px;text-align:center;cursor:pointer;}
+.pay-option.selected{border-color:var(--gold);background:#1e1706;}
+.pay-option .po-icon{font-size:22px;}
+.pay-option .po-label{font-size:13px;font-weight:800;margin-top:6px;}
+.error-msg{color:var(--red);font-size:12px;margin-top:8px;}
+.confirm-screen{text-align:center;padding:20px 6px;}
+.confirm-screen .ok-badge{font-size:44px;}
+.confirm-screen h2{color:var(--gold);font-size:18px;margin:10px 0 4px;}
+.confirm-screen .order-id{font-family:'Space Mono',monospace;color:var(--text-dim);font-size:12px;}
+.pending-note{background:#0f1a2a;border:1px solid var(--teal);border-radius:8px;padding:12px 14px;font-size:12px;line-height:1.6;margin:14px 0;color:#cfeceb;}
+.member-hint{font-size:11px;margin:-4px 0 12px;line-height:1.5;display:none;}
+.member-hint.found{display:block;color:var(--teal);}
+.member-hint.new{display:block;color:var(--text-dim);}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div style="display:flex;align-items:center;justify-content:center;gap:10px">
+    <img src="logo.jpg" alt="" style="height:32px;width:auto;border-radius:6px;display:block" onerror="this.style.display='none'">
+    <div class="logo">THE WHITE HOUSE EVENTS & MORE — STAFF ORDER</div>
+  </div>
+  <div class="loc-pill" id="locPill">Select where this order is for</div>
+</div>
+
+<div class="main">
+
+  <div class="staff-gate" id="staffGate">
+    <div class="field-label">Who's taking this order?</div>
+    <select class="select-input" id="staffSelect" onchange="onStaffChange()">
+      <option value="">Loading staff...</option>
+    </select>
+    <div id="staffPickedRow" style="display:none" class="staff-current">
+      <div class="sc-name" id="staffPickedName"></div>
+      <div class="sc-change" onclick="document.getElementById('staffSelect').style.display='block';document.getElementById('staffPickedRow').style.display='none'">change</div>
+    </div>
+  </div>
+
+  <div id="locationBox" class="loc-box">
+    <div class="field-label">Where is this order for?</div>
+    <div class="loc-grid" id="locationGrid"><div class="empty" style="grid-column:1/-1">Loading options…</div></div>
+    <div id="locationDetailBox" style="display:none">
+      <div class="field-label" id="locationDetailLabel">Details</div>
+      <select class="search-input" id="locationDetailSelect" style="display:none"></select>
+      <input class="search-input" id="locationDetailInput" placeholder="">
+    </div>
+  </div>
+
+  <div id="menuArea">
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px">FULL MENU</div>
+    <div class="group-tab-row" id="groupTabs"></div>
+    <div class="tab-row" id="menuTabs"></div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+      <input class="search-input" id="menuSearch" placeholder="Search drinks + food menu..." oninput="renderMenu()" style="margin-bottom:0;flex:1">
+      <button type="button" class="btn secondary" style="width:auto;padding:12px 16px;margin:0" onclick="document.getElementById('menuSearch').value='';renderMenu();">&#10005;</button>
+    </div>
+    <div class="menu-grid" id="menuGrid"><div class="loading">Loading menu…</div></div>
+  </div>
+</div>
+
+<div class="cart-bar" id="cartBar">
+  <div class="cart-bar-inner">
+    <div class="cb-info"><span id="cbCount">0</span> items<br><span class="cb-total" id="cbTotal">GHS 0.00</span></div>
+    <button onclick="openCartModal()">VIEW ORDER</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="cartModal">
+  <div class="modal-sheet">
+    <div class="modal-title"><span>Order Details</span><span class="close-x" onclick="closeCartModal()">&times;</span></div>
+    <div id="cartRows"></div>
+    <div class="subtotal-row"><span>Total</span><span id="modalTotal">GHS 0.00</span></div>
+
+    <div class="field-label">How will they pay?</div>
+    <div class="pay-options">
+      <div class="pay-option" id="payCash" onclick="selectPayment('Cash')">
+        <div class="po-icon">&#128181;</div><div class="po-label">Cash</div>
+      </div>
+      <div class="pay-option" id="payMomo" onclick="selectPayment('MoMo')">
+        <div class="po-icon">&#128241;</div><div class="po-label">MoMo</div>
+      </div>
+    </div>
+
+    <div class="field-label">Customer phone or membership number (optional — leave blank for a walk-in)</div>
+    <input class="search-input" id="custPhone" placeholder="e.g. 0241234567 or THWGH12" onblur="onCustPhoneBlur()">
+    <div class="member-hint" id="memberHint"></div>
+
+    <div class="field-label">Customer name (only needed for a new customer)</div>
+    <input class="search-input" id="custName" placeholder="e.g. Ama Mensah">
+
+    <div id="submitError" class="error-msg"></div>
+    <button class="btn" id="submitBtn" onclick="submitOrder()" disabled>SELECT A PAYMENT METHOD</button>
+    <button class="btn secondary" onclick="closeCartModal()">KEEP BROWSING MENU</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="confirmModal">
+  <div class="modal-sheet">
+    <div class="confirm-screen" id="confirmContent"></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNydnV6a3lmcnFiZm1hbWVneGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MzI5NjQsImV4cCI6MjEwMDAwODk2NH0.gMsv3yvw6plDCherA2YdU4UgWRMXUc9H1Hr_IdR9GxA';
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+let locationType = null;
+let locationDetail = '';
+let menu = [];
+let locationTypes = [];
+let momoNumber = '';
+let momoName = '';
+let cart = {};
+let activeCategory = 'All';
+let selectedPayment = null;
+let lookedUpCustomer = null;
+let selectedStaffInitials = '';
+
+const COCKTAIL_CATEGORIES = ['Cocktail', 'Mocktail', 'Milkshake', 'Smoothie', 'Juice', 'VIP Special'];
+let activeGroup = 'ALL';
+
+function itemGroup(m){
+  if(COCKTAIL_CATEGORIES.indexOf(m.category) !== -1) return 'COCKTAILS';
+  if(m.source === 'food') return 'CANTEEN';
+  return 'BAR';
+}
+function groupFilteredMenu(){
+  if(activeGroup === 'ALL') return menu;
+  return menu.filter(m => itemGroup(m) === activeGroup);
+}
+
+const PENDING_KEY = 'whgh_staff_order_pending_v1';
+function genClientId(){
+  if(window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return 'cid-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+}
+
+function init(){
+  loadStaff();
+  loadVenueData();
+}
+
+// STAFF SELECT — on-duty staff first, falling back to every active
+// staff member if nobody's checked in anywhere yet. Same fallback
+// pattern as bar-dashboard.html's Quick Sell "Served by" list, so an
+// empty check-in board never blocks someone from actually taking an
+// order.
+async function loadStaff(){
+  const sel = document.getElementById('staffSelect');
+  try{
+    const { data, error } = await supabaseClient.from('staff')
+      .select('initials, full_name, active, on_duty')
+      .order('slot');
+    if(error) throw new Error(error.message);
+    const active = (data||[]).filter(s => s.active && s.initials && s.initials.trim());
+    const onDuty = active.filter(s => s.on_duty);
+    const list = onDuty.length ? onDuty : active;
+    if(list.length === 0){
+      sel.innerHTML = '<option value="">No active staff found — add staff in Supabase first</option>';
+      return;
+    }
+    sel.innerHTML = '<option value="">Select your name...</option>' +
+      list.map(s => `<option value="${s.initials}">${s.initials}${s.full_name?' — '+s.full_name:''}</option>`).join('');
+  }catch(e){
+    sel.innerHTML = '<option value="">Could not load staff — check your connection and reload</option>';
+  }
+}
+
+function onStaffChange(){
+  const sel = document.getElementById('staffSelect');
+  selectedStaffInitials = sel.value;
+  if(selectedStaffInitials){
+    document.getElementById('staffGate').classList.add('locked-in');
+    document.getElementById('staffPickedName').textContent = sel.options[sel.selectedIndex].text;
+    document.getElementById('staffPickedRow').style.display = 'flex';
+    sel.style.display = 'none';
+  }
+}
+
+async function loadVenueData(){
+  try{
+    const [recipesRes, foodRes, settingsRes] = await Promise.all([
+      supabaseClient.from('bar_recipes').select('item_name, category, price_ghs'),
+      supabaseClient.from('food_menu').select('item_name, category, price_ghs'),
+      supabaseClient.from('venue_settings').select('key, value')
+    ]);
+    if(recipesRes.error) throw new Error(recipesRes.error.message);
+    if(foodRes.error) throw new Error(foodRes.error.message);
+    if(settingsRes.error) throw new Error(settingsRes.error.message);
+
+    const settings = {};
+    (settingsRes.data||[]).forEach(row => { settings[row.key] = row.value; });
+    momoNumber = settings.momo_number || '';
+    momoName = settings.momo_name || '';
+    try{ locationTypes = settings.location_types ? JSON.parse(settings.location_types) : []; }
+    catch(e){ locationTypes = []; }
+    if(!locationTypes.length) locationTypes = ['Table','Pickup','Terrace Area','Room Number','Bar Area','VIP Area','Pool','Stage Area','Stage 2 Area'];
+
+    const COCKTAIL_CATS = ['Cocktail','Mocktail','Milkshake','Smoothie','Juice','VIP Special'];
+    const BAR_FIRST = ['Water','Soft Drink','Just Sip','Beer','Energy','Alcoholic Single','Shot','Pizza','Rice Dishes','Fries','Swallow & Stew','Light Bites'];
+    const catRank = c => { const i = BAR_FIRST.indexOf(c); if(i!==-1) return i; const j = COCKTAIL_CATS.indexOf(c); return j!==-1 ? BAR_FIRST.length+j : BAR_FIRST.length+COCKTAIL_CATS.length; };
+    menu = recipesRes.data.map(r => ({ item: r.item_name, category: r.category||'', price: parseFloat(r.price_ghs)||0, source: 'bar' }))
+      .concat(foodRes.data.map(r => ({ item: r.item_name, category: r.category||'', price: parseFloat(r.price_ghs)||0, source: 'food' })))
+      .sort((a,b) => catRank(a.category) - catRank(b.category));
+
+    renderLocationOptions();
+    renderGroupTabs();
+    renderTabs();
+    renderMenu();
+    resumePendingOrder();
+  }catch(e){
+    document.getElementById('menuGrid').innerHTML = '<div class="empty" style="grid-column:1/-1">Could not load the menu — check your connection and reload the page.</div>';
+    document.getElementById('locationGrid').innerHTML = '<div class="empty" style="grid-column:1/-1">Could not load options — check your connection and reload.</div>';
+  }
+}
+
+function renderLocationOptions(){
+  const grid = document.getElementById('locationGrid');
+  grid.innerHTML = '';
+  locationTypes.forEach(loc => {
+    const el = document.createElement('div');
+    el.className = 'loc-option' + (locationType===loc ? ' selected' : '');
+    el.textContent = loc;
+    el.onclick = () => selectLocation(loc);
+    grid.appendChild(el);
+  });
+}
+
+function selectLocation(loc){
+  locationType = loc;
+  locationDetail = '';
+  renderLocationOptions();
+  document.getElementById('locPill').textContent = loc;
+
+  const detailBox = document.getElementById('locationDetailBox');
+  const detailLabel = document.getElementById('locationDetailLabel');
+  const detailInput = document.getElementById('locationDetailInput');
+  const detailSelect = document.getElementById('locationDetailSelect');
+
+  if(loc === 'Table'){
+    detailBox.style.display = 'block';
+    detailLabel.textContent = 'Table Number';
+    detailInput.style.display = 'none';
+    detailSelect.style.display = 'block';
+    if(detailSelect.options.length === 0){
+      detailSelect.innerHTML = '<option value="">Select a table...</option>' +
+        Array.from({length:50}, (_,i)=>i+1).map(n=>`<option value="${n}">Table ${n}</option>`).join('');
+    }
+    detailSelect.value = '';
+    detailSelect.onchange = () => { locationDetail = detailSelect.value; };
+  }else if(loc === 'Room Number'){
+    detailBox.style.display = 'block';
+    detailLabel.textContent = 'Room Number';
+    detailSelect.style.display = 'none';
+    detailInput.style.display = 'block';
+    detailInput.placeholder = 'e.g. 204';
+    detailInput.value = '';
+    detailInput.oninput = () => { locationDetail = detailInput.value.trim(); };
+  }else{
+    detailBox.style.display = 'none';
+  }
+}
+
+function renderGroupTabs(){
+  const groups = [{key:'ALL',label:'ALL'},{key:'BAR',label:'BAR'},{key:'CANTEEN',label:'CANTEEN'},{key:'COCKTAILS',label:'COCKTAILS'}];
+  const row = document.getElementById('groupTabs');
+  row.innerHTML = '';
+  groups.forEach(g => {
+    const btn = document.createElement('button');
+    btn.className = 'group-tab-pill' + (activeGroup===g.key?' active':'');
+    btn.textContent = g.label;
+    btn.onclick = () => { activeGroup = g.key; activeCategory = 'All'; renderGroupTabs(); renderTabs(); renderMenu(); };
+    row.appendChild(btn);
+  });
+}
+
+function renderTabs(){
+  const groupMenu = groupFilteredMenu();
+  const counts = {};
+  groupMenu.forEach(m => { const c = m.category || 'Other'; counts[c] = (counts[c]||0)+1; });
+  const cats = Object.keys(counts).sort((a,b)=>counts[b]-counts[a]);
+  if(!cats.includes(activeCategory) && activeCategory !== 'All') activeCategory = 'All';
+  const tabs = [{key:'All', label:'All'}, ...cats.map(c=>({key:c, label:c}))];
+  const row = document.getElementById('menuTabs');
+  row.innerHTML = '';
+  tabs.forEach(t => {
+    const btn = document.createElement('button');
+    btn.className = 'tab-pill' + (activeCategory===t.key?' active':'');
+    btn.textContent = t.label;
+    btn.onclick = () => { activeCategory = t.key; renderTabs(); renderMenu(); };
+    row.appendChild(btn);
+  });
+}
+
+function renderMenu(){
+  const q = (document.getElementById('menuSearch').value||'').toLowerCase();
+  let items = groupFilteredMenu();
+  if(q){ items = items.filter(m => m.item.toLowerCase().includes(q)); }
+  else if(activeCategory !== 'All'){ items = items.filter(m => (m.category||'Other') === activeCategory); }
+  const grid = document.getElementById('menuGrid');
+  if(items.length === 0){ grid.innerHTML = '<div class="empty" style="grid-column:1/-1">No items match</div>'; return; }
+  grid.innerHTML = '';
+  items.forEach(m => {
+    const el = document.createElement('div');
+    el.className = 'menu-item';
+    el.dataset.item = m.item;
+    el.innerHTML = `<span class="mi-qty" style="display:none"></span>
+      <div class="mi-name"></div>
+      <div class="mi-cat"></div>
+      <div class="mi-price">GHS ${m.price.toFixed(2)}</div>`;
+    el.querySelector('.mi-name').textContent = m.item;
+    el.querySelector('.mi-cat').textContent = m.category || '';
+    el.onclick = () => { cart[m.item] = (cart[m.item]||0) + 1; updateMenuCardQty(m.item); updateCartBar(); };
+    grid.appendChild(el);
+    updateMenuCardQtyEl(el, m.item);
+  });
+}
+
+function updateMenuCardQtyEl(el, itemName){
+  const qty = cart[itemName] || 0;
+  el.classList.toggle('in-cart', qty > 0);
+  const badge = el.querySelector('.mi-qty');
+  if(qty > 0){ badge.textContent = qty; badge.style.display = ''; }
+  else { badge.style.display = 'none'; }
+}
+function updateMenuCardQty(itemName){
+  const grid = document.getElementById('menuGrid');
+  const el = grid.querySelector(`[data-item="${CSS.escape(itemName)}"]`);
+  if(el) updateMenuCardQtyEl(el, itemName);
+  else renderMenu();
+}
+
+function cartCount(){ return Object.values(cart).reduce((a,b)=>a+b,0); }
+function cartTotal(){
+  let total = 0;
+  Object.keys(cart).forEach(name => {
+    const m = menu.find(mm => mm.item === name);
+    if(m) total += m.price * cart[name];
+  });
+  return total;
+}
+
+function updateCartBar(){
+  const bar = document.getElementById('cartBar');
+  const count = cartCount();
+  if(count === 0){ bar.classList.remove('show'); return; }
+  bar.classList.add('show');
+  document.getElementById('cbCount').textContent = count;
+  document.getElementById('cbTotal').textContent = 'GHS ' + cartTotal().toFixed(2);
+}
+
+function setQty(name, qty){
+  qty = Math.max(0, Math.floor(qty)||0);
+  if(qty <= 0) delete cart[name]; else cart[name] = qty;
+  updateMenuCardQty(name); updateCartBar(); renderCartModal();
+}
+
+function openCartModal(){
+  if(!selectedStaffInitials){
+    alert('Select your name at the top of the page before opening an order.');
+    return;
+  }
+  document.getElementById('cartModal').classList.add('show');
+  renderCartModal();
+}
+function closeCartModal(){ document.getElementById('cartModal').classList.remove('show'); }
+
+function selectPayment(method){
+  selectedPayment = method;
+  document.getElementById('payCash').classList.toggle('selected', method==='Cash');
+  document.getElementById('payMomo').classList.toggle('selected', method==='MoMo');
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = false;
+  btn.textContent = method === 'MoMo' ? 'SEND ORDER — PAY BY MOMO' : 'SEND ORDER — CASH';
+}
+
+let custLookupToken = 0;
+async function onCustPhoneBlur(){
+  const phoneInput = document.getElementById('custPhone');
+  const nameInput = document.getElementById('custName');
+  const hintEl = document.getElementById('memberHint');
+  const query = phoneInput.value.trim();
+  if(!query){ lookedUpCustomer = null; nameInput.disabled = false; hintEl.className = 'member-hint'; hintEl.textContent = ''; return; }
+  const myToken = ++custLookupToken;
+  hintEl.className = 'member-hint new';
+  hintEl.textContent = 'Checking membership…';
+  try{
+    const { data: custId, error } = await supabaseClient.rpc('find_customer_flexible', { p_query: query });
+    if(myToken !== custLookupToken) return;
+    if(error) throw new Error(error.message);
+    if(custId){
+      const { data: cust, error: custErr } = await supabaseClient.from('bar_customers').select('*').eq('customer_id', custId).maybeSingle();
+      if(myToken !== custLookupToken) return;
+      if(custErr || !cust){
+        lookedUpCustomer = null; nameInput.disabled = false;
+        hintEl.className = 'member-hint new'; hintEl.textContent = "No match — will register as new if a name is given.";
+        return;
+      }
+      lookedUpCustomer = { custId: cust.customer_id, name: cust.name, phone: cust.phone_number };
+      nameInput.value = cust.name; nameInput.disabled = true;
+      hintEl.className = 'member-hint found';
+      hintEl.textContent = `Found: ${cust.name} — ${cust.customer_id} · ${cust.loyalty_points||0} points`;
+    }else{
+      lookedUpCustomer = null; nameInput.disabled = false;
+      hintEl.className = 'member-hint new'; hintEl.textContent = "No match — will register as new if a name is given.";
+    }
+  }catch(e){
+    if(myToken !== custLookupToken) return;
+    lookedUpCustomer = null; nameInput.disabled = false; hintEl.className = 'member-hint'; hintEl.textContent = '';
+  }
+}
+
+function renderCartModal(){
+  const rowsEl = document.getElementById('cartRows');
+  const names = Object.keys(cart).filter(k => cart[k] > 0);
+  if(names.length === 0){
+    rowsEl.innerHTML = '<div class="empty">No items yet — go back and tap the menu.</div>';
+    document.getElementById('modalTotal').textContent = 'GHS 0.00';
+    return;
+  }
+  rowsEl.innerHTML = names.map(name => {
+    const m = menu.find(mm => mm.item === name);
+    const price = m ? m.price : 0;
+    const qty = cart[name];
+    return `<div class="cart-row" data-name="${encodeURIComponent(name)}">
+      <div class="cr-name"><span class="cr-item-name"></span><span class="cr-price">GHS ${price.toFixed(2)} each</span></div>
+      <div class="qty-stepper"><button class="qd">&minus;</button><span>${qty}</span><button class="qi">+</button></div>
+      <div class="cart-line-total">GHS ${(price*qty).toFixed(2)}</div>
+    </div>`;
+  }).join('');
+  rowsEl.querySelectorAll('.cart-row').forEach(row => {
+    const name = decodeURIComponent(row.dataset.name);
+    row.querySelector('.cr-item-name').textContent = name;
+    row.querySelector('.qi').onclick = () => setQty(name, (cart[name]||0)+1);
+    row.querySelector('.qd').onclick = () => setQty(name, (cart[name]||0)-1);
+  });
+  document.getElementById('modalTotal').textContent = 'GHS ' + cartTotal().toFixed(2);
+}
+
+async function submitOrder(){
+  if(!selectedStaffInitials){ document.getElementById('submitError').textContent = 'Select your name at the top of the page first.'; return; }
+  if(!locationType){ document.getElementById('submitError').textContent = 'Choose where this order is for, above the menu.'; closeCartModal(); window.scrollTo({top:0, behavior:'smooth'}); return; }
+  if(locationType === 'Table' && !locationDetail){ document.getElementById('submitError').textContent = 'Choose a table number above the menu.'; closeCartModal(); window.scrollTo({top:0, behavior:'smooth'}); return; }
+  if(locationType === 'Room Number' && !locationDetail){ document.getElementById('submitError').textContent = 'Add the room number above the menu.'; closeCartModal(); window.scrollTo({top:0, behavior:'smooth'}); return; }
+
+  const orderFingerprint = JSON.stringify({ locationType, locationDetail, cart, payment: selectedPayment, staff: selectedStaffInitials });
+  const lastFingerprint = sessionStorage.getItem('whgh_staff_last_order_fingerprint');
+  const lastFingerprintTime = parseInt(sessionStorage.getItem('whgh_staff_last_order_time') || '0', 10);
+  if(lastFingerprint === orderFingerprint && (Date.now() - lastFingerprintTime) < 90000){
+    document.getElementById('submitError').textContent = 'This exact order was just sent — check the confirmation, or change the cart before sending again.';
+    return;
+  }
+
+  const custName = document.getElementById('custName').value.trim();
+  const phone = document.getElementById('custPhone').value.trim();
+  if(!selectedPayment){ document.getElementById('submitError').textContent = 'Choose Cash or MoMo first.'; return; }
+  const names = Object.keys(cart).filter(k => cart[k] > 0);
+  if(names.length === 0){ document.getElementById('submitError').textContent = 'The cart is empty.'; return; }
+
+  let submittedCustId = null;
+  if(phone){
+    try{
+      const { data: memberData, error: memberErr } = await supabaseClient.rpc('find_or_create_bar_customer', { p_phone: phone, p_name: custName });
+      if(!memberErr && memberData) submittedCustId = memberData;
+    }catch(e){ console.log('find_or_create_bar_customer failed (non-fatal):', e); }
+  }
+
+  const barNames = names.filter(n => { const m = menu.find(mm=>mm.item===n); return !m || m.source !== 'food'; });
+  const foodNames = names.filter(n => { const m = menu.find(mm=>mm.item===n); return m && m.source === 'food'; });
+
+  const subOrders = [];
+  if(barNames.length) subOrders.push({ action: 'placeTableOrder', label: 'Drinks & Bar Items', names: barNames });
+  if(foodNames.length) subOrders.push({ action: 'placeCanteenOrder', label: 'Food', names: foodNames });
+
+  const isCombo = subOrders.length > 1;
+  const comboTs = Date.now();
+  const orderIdFor = (action) => (action === 'placeCanteenOrder' ? 'CAN' : 'TBL') + comboTs;
+
+  sessionStorage.setItem('whgh_staff_last_order_fingerprint', orderFingerprint);
+  sessionStorage.setItem('whgh_staff_last_order_time', String(Date.now()));
+
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true; btn.textContent = 'Sending order...';
+  document.getElementById('submitError').textContent = '';
+
+  const outcomes = [];
+  for(const sub of subOrders){
+    const clientId = genClientId();
+    const items = sub.names.map(n => ({item: n, qty: cart[n]}));
+    let notes = 'Taken by staff: ' + selectedStaffInitials;
+    if(isCombo){
+      const other = subOrders.find(s => s !== sub);
+      notes += ' — Also ordered: ' + other.label + ' — ' + orderIdFor(other.action);
+    }
+    const payload = { action: sub.action, label: sub.label, locationType: locationType, locationDetail: locationDetail, itemsJson: JSON.stringify(items), payment: selectedPayment, customerName: custName || 'Walk-in (staff order)', phone: phone, clientId: clientId, orderId: orderIdFor(sub.action), notes: notes, handledBy: selectedStaffInitials };
+    const result = await trySendOrder(payload);
+    outcomes.push({ payload, result, names: sub.names });
+  }
+
+  const failed = outcomes.filter(o => !o.result.ok && !o.result.queued);
+  const queued = outcomes.filter(o => o.result.queued);
+  const succeeded = outcomes.filter(o => o.result.ok);
+
+  succeeded.concat(queued).forEach(o => o.names.forEach(n => delete cart[n]));
+  updateCartBar(); renderMenu();
+  queued.forEach(o => savePendingOrder(o.payload));
+
+  btn.disabled = false; btn.textContent = 'SEND ORDER';
+
+  if(failed.length > 0){
+    renderMenu(); renderCartModal();
+    const already = (succeeded.length + queued.length) > 0 ? ' The rest of the order already went through — only this part needs a retry.' : '';
+    document.getElementById('submitError').textContent = failed.map(o => (o.payload.label + ': ' + (o.result.error || 'Failed'))).join(' — ') + already;
+    btn.disabled = false;
+    btn.textContent = selectedPayment === 'MoMo' ? 'SEND ORDER — PAY BY MOMO' : 'SEND ORDER — CASH';
+    return;
+  }
+
+  closeCartModal();
+  if(succeeded.length > 0){
+    showConfirmation(succeeded.map(o => ({ data: o.result.data, label: o.payload.label })), selectedPayment, locationType, locationDetail, submittedCustId);
+  }else if(queued.length > 0){
+    showQueuedScreen();
+  }
+}
+
+const ORDER_TABLE_BY_ACTION = { placeTableOrder: 'table_orders', placeCanteenOrder: 'canteen_orders' };
+
+async function trySendOrder(payload){
+  const table = ORDER_TABLE_BY_ACTION[payload.action];
+  if(!table) return { ok: false, error: 'Unknown order type: ' + payload.action };
+  if(menu.length === 0) return { ok: false, queued: true, error: 'Menu not loaded yet — will retry' };
+
+  const orderId = payload.orderId || ((payload.action === 'placeCanteenOrder' ? 'CAN' : 'TBL') + Date.now());
+  let items;
+  try{ items = JSON.parse(payload.itemsJson); }catch(e){ items = []; }
+  const total = items.reduce((s, it) => {
+    const m = menu.find(mm => mm.item === it.item);
+    return s + ((m ? m.price : 0) * (it.qty || 0));
+  }, 0);
+
+  try{
+    const { data, error } = await supabaseClient
+      .from(table)
+      .insert([{
+        order_id: orderId,
+        location_type: payload.locationType,
+        location_detail: payload.locationDetail || null,
+        items_json: items,
+        total_ghs: total,
+        payment_method: payload.payment,
+        status: 'Placed',
+        customer_name: payload.customerName,
+        customer_phone: payload.phone,
+        handled_by: payload.handledBy || null,
+        client_request_id: payload.clientId,
+        notes: payload.notes || null
+      }])
+      .select()
+      .single();
+
+    if(error){
+      if(error.code === '23505') return { ok: true, data: { orderId: orderId, total: total, replayed: true } };
+      throw new Error(error.message);
+    }
+    return { ok: true, data: { orderId: data.order_id, total: data.total_ghs } };
+  }catch(e){
+    return { ok: false, queued: true, error: 'No connection' };
+  }
+}
+
+function savePendingOrder(payload){
+  const queue = getPendingQueue();
+  queue.push(Object.assign({}, payload, { queuedAt: payload.queuedAt || Date.now() }));
+  localStorage.setItem(PENDING_KEY, JSON.stringify(queue));
+}
+function savePendingQueueRaw(queue){ try{ localStorage.setItem(PENDING_KEY, JSON.stringify(queue)); }catch(e){} }
+function getPendingQueue(){ try{ return JSON.parse(localStorage.getItem(PENDING_KEY) || '[]'); }catch(e){ return []; } }
+function clearPendingOrder(clientId){ const queue = getPendingQueue().filter(p => p.clientId !== clientId); localStorage.setItem(PENDING_KEY, JSON.stringify(queue)); }
+
+const PENDING_MAX_AGE_MS = 2 * 60 * 60 * 1000;
+let resumeAttempts = 0;
+async function resumePendingOrder(){
+  let queue = getPendingQueue();
+  if(queue.length === 0) return;
+  const now = Date.now();
+  const fresh = queue.filter(p => now - (p.queuedAt || 0) < PENDING_MAX_AGE_MS);
+  if(fresh.length !== queue.length){ savePendingQueueRaw(fresh); queue = fresh; }
+  if(queue.length === 0) return;
+  for(const payload of queue){
+    const result = await trySendOrder(payload);
+    if(result.ok){
+      clearPendingOrder(payload.clientId);
+      resumeAttempts = 0;
+      showConfirmation([{ data: result.data, label: payload.label || 'Order' }], payload.payment, payload.locationType, payload.locationDetail);
+      return;
+    }
+  }
+  showQueuedScreen();
+  resumeAttempts = Math.min(resumeAttempts + 1, 6);
+  const delay = Math.min(30000, 3000 * Math.pow(2, resumeAttempts)) * (0.6 + Math.random() * 0.4);
+  setTimeout(resumePendingOrder, delay);
+}
+window.addEventListener('online', function(){ resumeAttempts = 0; resumePendingOrder(); });
+
+function showQueuedScreen(){
+  const el = document.getElementById('confirmContent');
+  el.innerHTML = `
+    <div class="ok-badge">&#9203;</div>
+    <h2>No connection right now</h2>
+    <p style="font-size:13px;color:var(--text-dim);margin-top:6px">This order is saved on this device and will send automatically once back online. Don't close this tab.</p>
+    <div class="pending-note">Keep this page open — it will keep trying every few seconds and confirm here once it goes through.</div>
+    <button class="btn secondary" onclick="document.getElementById('confirmModal').classList.remove('show')">OK, KEEP WAITING</button>`;
+  document.getElementById('confirmModal').classList.add('show');
+}
+
+function showConfirmation(orders, payment, locType, locDetail, custId){
+  const el = document.getElementById('confirmContent');
+  const total = orders.reduce((s,o) => s + (o.data.total||0), 0);
+  let payHtml = '';
+  if(payment === 'MoMo'){
+    payHtml = `<div class="pending-note" style="border-color:var(--gold-dim);background:#1e1706;color:var(--text)">
+      Customer should send <b>GHS ${total.toFixed(2)}</b> via MoMo to<br>
+      <b>${momoNumber || '(number not set yet — check venue settings)'}</b>${momoName ? ' — ' + momoName : ''}
+    </div>`;
+  }else{
+    payHtml = `<div class="pending-note" style="border-color:var(--gold-dim);background:#1e1706;color:var(--text)">Collect <b>GHS ${total.toFixed(2)}</b> in cash when delivered.</div>`;
+  }
+  const orderLines = orders.map(o => `<div class="order-id">${orders.length>1 ? o.label+': ' : ''}Order ${o.data.orderId} — GHS ${o.data.total.toFixed(2)}</div>`).join('');
+  const custLine = custId ? `<div class="order-id" style="margin-top:8px;color:var(--teal)">Customer ID: ${custId}</div>` : '';
+  el.innerHTML = `
+    <div class="ok-badge">&#9989;</div>
+    <h2>Order sent!</h2>
+    <div class="order-id" style="margin-bottom:6px">${locType || 'Order'}${locDetail ? ' — ' + locDetail : ''} · taken by ${selectedStaffInitials}</div>
+    ${orderLines}
+    ${custLine}
+    ${payHtml}
+    <button class="btn" onclick="document.getElementById('confirmModal').classList.remove('show')">TAKE ANOTHER ORDER</button>`;
+  document.getElementById('confirmModal').classList.add('show');
+}
+
+init();
+</script>
+</body>
+</html>
