@@ -1,7 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE EVENTS & MORE — STAFF ORDER (v1.0, Supabase-only)
+  THE WHITE HOUSE EVENTS & MORE — STAFF ORDER (v1.1, Supabase-only)
+
+  v1.1 CHANGES: numbered table picker generalized to match order.html —
+  any location listed in venue_settings.location_table_ranges (e.g.
+  Bar Area: 1-15) now gets the same "which table" dropdown Table always
+  had, instead of only Table getting one.
 
   NEW FILE. This is the "staff phone ordering tool" that's been listed
   as not-started across the last several sign-offs. It lets a staff
@@ -220,6 +225,7 @@ let locationType = null;
 let locationDetail = '';
 let menu = [];
 let locationTypes = [];
+let locationTableRanges = {}; // e.g. {"Table":50,"Bar Area":15}
 let momoNumber = '';
 let momoName = '';
 let cart = {};
@@ -307,6 +313,9 @@ async function loadVenueData(){
     try{ locationTypes = settings.location_types ? JSON.parse(settings.location_types) : []; }
     catch(e){ locationTypes = []; }
     if(!locationTypes.length) locationTypes = ['Table','Pickup','Terrace Area','Room Number','Bar Area','VIP Area','Pool','Stage Area','Stage 2 Area'];
+    try{ locationTableRanges = settings.location_table_ranges ? JSON.parse(settings.location_table_ranges) : {}; }
+    catch(e){ locationTableRanges = {}; }
+    if(!Object.keys(locationTableRanges).length) locationTableRanges = { 'Table': 50 };
 
     const COCKTAIL_CATS = ['Cocktail','Mocktail','Milkshake','Smoothie','Juice','VIP Special'];
     const BAR_FIRST = ['Water','Soft Drink','Just Sip','Beer','Energy','Alcoholic Single','Shot','Pizza','Rice Dishes','Fries','Swallow & Stew','Light Bites'];
@@ -349,15 +358,14 @@ function selectLocation(loc){
   const detailInput = document.getElementById('locationDetailInput');
   const detailSelect = document.getElementById('locationDetailSelect');
 
-  if(loc === 'Table'){
+  const tableCount = locationTableRanges[loc];
+  if(tableCount){
     detailBox.style.display = 'block';
-    detailLabel.textContent = 'Table Number';
+    detailLabel.textContent = loc === 'Table' ? 'Table Number' : (loc + ' — Table Number');
     detailInput.style.display = 'none';
     detailSelect.style.display = 'block';
-    if(detailSelect.options.length === 0){
-      detailSelect.innerHTML = '<option value="">Select a table...</option>' +
-        Array.from({length:50}, (_,i)=>i+1).map(n=>`<option value="${n}">Table ${n}</option>`).join('');
-    }
+    detailSelect.innerHTML = '<option value="">Select a table...</option>' +
+      Array.from({length:tableCount}, (_,i)=>i+1).map(n=>`<option value="${n}">Table ${n}</option>`).join('');
     detailSelect.value = '';
     detailSelect.onchange = () => { locationDetail = detailSelect.value; };
   }else if(loc === 'Room Number'){
@@ -552,7 +560,7 @@ function renderCartModal(){
 async function submitOrder(){
   if(!selectedStaffInitials){ document.getElementById('submitError').textContent = 'Select your name at the top of the page first.'; return; }
   if(!locationType){ document.getElementById('submitError').textContent = 'Choose where this order is for, above the menu.'; closeCartModal(); window.scrollTo({top:0, behavior:'smooth'}); return; }
-  if(locationType === 'Table' && !locationDetail){ document.getElementById('submitError').textContent = 'Choose a table number above the menu.'; closeCartModal(); window.scrollTo({top:0, behavior:'smooth'}); return; }
+  if(locationTableRanges[locationType] && !locationDetail){ document.getElementById('submitError').textContent = 'Choose a table number above the menu.'; closeCartModal(); window.scrollTo({top:0, behavior:'smooth'}); return; }
   if(locationType === 'Room Number' && !locationDetail){ document.getElementById('submitError').textContent = 'Add the room number above the menu.'; closeCartModal(); window.scrollTo({top:0, behavior:'smooth'}); return; }
 
   const orderFingerprint = JSON.stringify({ locationType, locationDetail, cart, payment: selectedPayment, staff: selectedStaffInitials });
