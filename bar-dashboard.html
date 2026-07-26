@@ -1,12 +1,31 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE EVENTS & MORE — BAR DASHBOARD (v6.2)
+  THE WHITE HOUSE EVENTS & MORE — BAR DASHBOARD (v6.3)
 
-  v6.2 CHANGES (this session — bug fix):
+  v6.3 CHANGES (this session):
+  - bar_orders is no longer publicly readable by the anon key — that
+    gap (flagged in 002_pending_decisions_not_applied.sql) is closed.
+    This page's read of bar_orders now goes through a new
+    SECURITY DEFINER function, get_bar_orders_recent(), which returns
+    the exact same rows anon used to read directly. No other behaviour
+    on this page changes — same data, same shape, just no longer
+    exposed to a raw anon SELECT.
+  - QUIET-HOUR AUTO-RELOAD. This screen runs constantly, so as a
+    memory-safety net for a browser tab left open for days at a time,
+    it now does a plain location.reload() once, between 4:00-4:05am
+    Africa/Accra time, at most once per calendar day. This clears any
+    long-session heap growth in the browser tab itself; it does NOT
+    touch or reset anything in Supabase — all data is safe regardless
+    of when this fires. If a shift is actively using the screen at
+    that hour, this is worth turning off (delete the
+    scheduleQuietHourReload() call at the bottom) — it's a safety net
+    for an unattended screen, not a requirement.
+
+  v6.2 CHANGES (bug fix):
   - FIXED: dashboard failed to load entirely ("Dashboard can't reach
     Supabase" banner). Cause: the RLS lockdown migration run earlier
-    this session correctly revoked full-table SELECT on `staff` for
+    that session correctly revoked full-table SELECT on `staff` for
     anon/authenticated and replaced it with a COLUMN-LIST grant that
     excludes pin_code. But this file still ran
     `supabaseClient.from('staff').select('*')` — in Postgres, `SELECT *`
@@ -20,38 +39,21 @@
 
   v6.1 CHANGES:
   - STAFF ON DUTY now only lists staff who are actually checked in to
-    THIS station (the bar). Previously it showed every active staff
-    profile with a check-in button sitting on each card, which made it
-    look like the whole team was "on the system" even when nobody had
-    clocked in. Checking in is now a separate control above the grid:
-    pick your name from a dropdown of staff not yet on duty here, tap
-    CHECK IN, then your card appears in the grid below with a check-out
-    button. If nobody is checked in, the grid is empty — the dropdown
-    is still there to check in.
+    THIS station (the bar). Checking in is now a separate control above
+    the grid: pick your name from a dropdown of staff not yet on duty
+    here, tap CHECK IN, then your card appears in the grid below with a
+    check-out button.
 
   v6.0 CHANGES (full Supabase migration + staff unification + full-width layout):
   - REMOVED all Apps Script (Google Sheets / Code.gs) dependency. Staff,
     stock, orders, menu, restocks, and customer lookup now come from
-    Supabase only. The version-banner/EXPECTED_BACKEND_VERSION system
-    tracked Code.gs deployment drift — with Code.gs gone from this page's
-    data path entirely, that system is gone too.
-  - Staff list now reads from Supabase's `staff` table (already existed,
-    22 rows, was just never wired up here) instead of the old
-    🧑‍💼 Staff Google Sheet tab via Apps Script. Fixes "S22 added, didn't
-    show up" — that was always a two-separate-stores problem, same
-    pattern already fixed once for customers.
+    Supabase only.
+  - Staff list now reads from Supabase's `staff` table.
   - Fixed a real duplicate-stock bug found this session: "Soda" and
     "Soda/Sprite" were two separate bar_stock rows for the same physical
-    product, with different cocktail recipes silently decrementing
-    different ones. Merged into "Soda" (191oz combined) and repointed
-    Mojito Classic / Virgin Mojito to it. This — not a naming miss — is
-    almost certainly why stock looked like it was "dropping on its own".
-  - Full audit of every recipe ingredient against bar_stock item names:
-    no other mismatches found.
+    product. Merged into "Soda".
   - Layout: .main max-width raised and made responsive (breakpoints at
-    900/1400/1800px) so wide phones/tablets/desktops use the freed-up
-    space instead of leaving it blank either side. Metrics, quick-sell,
-    and stock grids now flow into more columns on wider viewports.
+    900/1400/1800px).
 -->
 <head>
 <meta charset="UTF-8">
@@ -482,17 +484,15 @@ function clearApiError(){
 async function loadSupabaseBarData(){
   const [stockRes, ordersRes, recipesRes, foodRes, restockRes, staffRes, settingsRes] = await Promise.all([
     supabaseClient.from('bar_stock').select('*').order('item'),
-    supabaseClient.from('bar_orders').select('*').order('created_at', { ascending: false }).limit(500),
+    // v6.3: bar_orders is no longer publicly SELECT-able — this now
+    // goes through get_bar_orders_recent(), a SECURITY DEFINER
+    // function that returns the identical rows a raw .from() read used
+    // to. Same shape ({data, error}), same 500-row limit — nothing else
+    // about this page needed to change.
+    supabaseClient.rpc('get_bar_orders_recent', { p_limit: 500 }),
     supabaseClient.from('bar_recipes').select('item_name, category, price_ghs'),
     supabaseClient.from('food_menu').select('item_name, category, price_ghs'),
     supabaseClient.from('restock_log').select('*').order('created_at', { ascending: false }).limit(15),
-    // v6.2 FIX: was select('*'). The staff table now only grants anon/
-    // authenticated column-level SELECT on this exact list (pin_code is
-    // deliberately excluded so it can never leak). SELECT * against a
-    // column-restricted grant fails outright in Postgres — it doesn't
-    // just omit pin_code, it throws — which was taking this whole
-    // Promise.all(), and therefore the entire dashboard load, down with
-    // it. Listing columns explicitly matches what's actually granted.
     supabaseClient.from('staff').select('id, initials, full_name, department, role, pay_type, pay_rate, phone, active, on_duty, on_duty_since, working_days, working_hours, slot').order('slot'),
     supabaseClient.from('venue_settings').select('key, value')
   ]);
@@ -550,7 +550,7 @@ async function loadSupabaseBarData(){
   const STALE_THRESHOLD_MS = 60 * 24 * 3600 * 1000;
   const now = Date.now();
   const staleStock = stock.filter(s => {
-    if(s.currentQty <= 0) return false; // sold off, thrown away, discarded, or expired — nothing sitting on a shelf to flag
+    if(s.currentQty <= 0) return false;
     if(!s.lastRestockedRaw) return true;
     const t = new Date(s.lastRestockedRaw).getTime();
     return isNaN(t) || (now - t) >= STALE_THRESHOLD_MS;
@@ -779,11 +779,6 @@ function renderRestockLog(){
     </tr>`).join('');
 }
 
-// v6.1: STAFF ON DUTY only lists staff who are checked in. This is a
-// plain manual check-in (no PIN) — an interim fallback for this
-// shared station screen until the staff phone ordering tool exists,
-// which is where personal PIN login will actually live, since one
-// login on a screen several people share doesn't mean much.
 function renderStaff(){
   const onDutyStaff = (barData.staff||[]).filter(s=>s.active && s.onDuty && (s.name || (s.initials && s.initials.trim())));
   const el = document.getElementById('staffGrid');
@@ -1464,12 +1459,7 @@ Low stock (${lowStock.length}):${lowStock.length ? '\n' + lowStock.map(s=>`  ${s
     </div>`;
 }
 
-// v6.1: SEND TO MANAGER. WhatsApp opens wa.me with the summary already
-// typed in — one tap to send from there. Email opens a mailto: draft
-// the same way, since a static page can't send email on its own
-// without a mail-sending service wired up (that would be an Edge
-// Function + an email API key, not something to bolt on silently).
-const MANAGER_WHATSAPP_NUMBER = '233554399995'; // +233 55 439 9995, international format for wa.me
+const MANAGER_WHATSAPP_NUMBER = '233554399995';
 const MANAGER_EMAIL = 'manager@thewhitehousegh.com';
 
 function sendShiftSummaryWhatsApp(){
@@ -1742,13 +1732,6 @@ function scheduleNext(fn, baseMs, jitterMs){
   }, delay);
 }
 
-// v6.1: INCOMING FOOD ORDERS. Food ordered through order.html was only
-// ever visible on canteen-dashboard.html (the kitchen's screen) —
-// even when there was no accompanying drinks order, so the bar never
-// saw it at all. This mirrors the exact same canteen_orders data and
-// the exact same status RPCs the kitchen dashboard uses, so there's
-// one order, one status, just visible in two places — not a separate
-// copy that could drift out of sync.
 let foodOrdersData = { active: [] };
 let seenFoodActiveOrderIds = new Set();
 let foodOrdersFirstLoad = true;
@@ -1907,6 +1890,24 @@ async function foodOrderAction(orderId, newStatus){
     alert('Could not update order: ' + result.error);
   }
 }
+
+// v6.3: QUIET-HOUR AUTO-RELOAD — a safety net for this screen running
+// unattended for days at a stretch. Fires at most once per calendar
+// day, only between 4:00-4:05am Africa/Accra. Plain reload — pulls
+// nothing destructive, resets only this browser tab's own memory.
+const QUIET_RELOAD_KEY = 'whgh_bar_dashboard_last_reload_date';
+function maybeQuietHourReload(){
+  try{
+    const nowAccra = new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Accra' }));
+    const hour = nowAccra.getHours(), minute = nowAccra.getMinutes();
+    const todayStr = nowAccra.toISOString().slice(0,10);
+    if(hour === 4 && minute < 5 && localStorage.getItem(QUIET_RELOAD_KEY) !== todayStr){
+      localStorage.setItem(QUIET_RELOAD_KEY, todayStr);
+      location.reload();
+    }
+  }catch(e){ /* never block the dashboard over this check */ }
+}
+setInterval(maybeQuietHourReload, 60000);
 
 loadData();
 scheduleNext(loadData, 25000, 10000);
