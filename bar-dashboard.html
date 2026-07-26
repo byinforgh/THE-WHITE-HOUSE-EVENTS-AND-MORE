@@ -1185,6 +1185,10 @@ function setCartQty(itemName, qty){
   renderQuickSellPanel();
 }
 
+function cartItemCount(){
+  return Object.keys(cart).reduce((n,k)=>n + (cart[k]>0?1:0), 0);
+}
+
 function cartSubtotal(){
   const menu = barData.menu || [];
   let total = 0;
