@@ -1,84 +1,67 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE EVENTS & MORE — TABLE ORDER PAGE (v4.3, Supabase-only)
+  THE WHITE HOUSE EVENTS & MORE — TABLE ORDER PAGE (v4.5, Supabase-only)
 
-  v4.3 CHANGES (this session — QR/profile flow, top priority):
-  - The customer's profile bar (name, ID, points, visits, last visit,
-    most-ordered item, reorder-favourite buttons, recent orders) used
-    to load in the BACKGROUND while the "Order sent!" confirmation was
-    showing. It usually finished in time, but there was no guarantee —
-    if it hadn't finished by the time someone tapped "ORDER SOMETHING
-    ELSE", they'd see the page underneath still on its old state for a
-    moment. Fixed: submitOrder() now AWAITS the profile refresh before
-    the confirmation screen is even shown, so the profile bar is
-    already fully built and correct the instant the confirmation is
-    dismissed — first order or the hundredth, no race, no delay.
-  - The confirmation screen itself now shows points and visit count
-    right there (not just the ID), so a first-time customer sees their
-    whole profile taking shape immediately, before they've even closed
-    the dialog — this was explicitly asked for: "in there they can see
-    their just order, points, name, contact number, last visit, how
-    many visits, most ordered item, reorder favourite item."
-  - Added an explicit "Most ordered" line to the profile bar (favourite
-    items were only shown as reorder buttons before, with no plain-text
-    line naming the single most-ordered item).
-  - Everything else about the ordering flow, menu, and validation is
-    unchanged from v4.2.
+  v4.5 CHANGES (this session — profile recognition fix):
+  - The full "Welcome back" profile bar (points, visits, most-ordered,
+    favourites, rewards) previously only appeared if THIS browser had a
+    saved record from a past completed order (localStorage). Typing a
+    phone/membership number into the cart on a new device or browser
+    only ever produced a one-line hint — the customer had to place an
+    entire order before anything more showed up, which is the opposite
+    of what was asked for. Fixed: the moment a phone/ID typed into the
+    cart matches an existing customer, the full profile bar now renders
+    immediately, and this device is remembered for next time too — no
+    need to place an order first, and no need to keep retyping a number
+    on a device that's used regularly.
+
+  v4.4 CHANGES:
+  - OUT OF STOCK DETECTION. Menu now loads bar_stock alongside the
+    recipes/food menu. An item is marked OUT OF STOCK when:
+      • it's a recipe with named ingredients (bar_recipes.ingredient_1..4)
+        and any one of those ingredients doesn't have enough current_qty
+        in bar_stock, OR
+      • it's a direct-sell item (no ingredients listed) whose name
+        matches a bar_stock row exactly, and that row's current_qty is
+        at or below 0.
+    Items with no matching stock data at all (e.g. food items — kitchen
+    stock isn't wired up yet, per the 25 July note on days_available)
+    are left available, since there's nothing to check them against.
+    Out-of-stock cards gray out, can't be tapped into the cart, and show
+    an inline "Try instead:" suggestion — the next available item in the
+    same category, so a customer isn't just told no with nothing else
+    offered.
+  - NUMBERED LOCATION PICKER GENERALIZED. Previously only "Table" got a
+    1-50 dropdown (hardcoded in this file); everything else was a single
+    tap with no sub-detail. That's now driven by a new venue_settings key,
+    location_table_ranges (e.g. {"Table":50,"Bar Area":15}) — so Bar Area
+    now asks "which table" the same way Table does, starting at 1-15, and
+    any future area can get the same treatment by editing that one
+    Supabase row instead of another code deploy. Areas not listed there
+    keep the old single-tap behaviour (Pickup, Pool, VIP Area, etc.).
+  - Everything else — ordering flow, cart, member bar, validation — is
+    unchanged from v4.3.
+
+  v4.3 CHANGES (QR/profile flow, top priority):
+  - submitOrder() now AWAITS the profile refresh before the confirmation
+    screen is shown, so the profile bar is already fully built and
+    correct the instant the confirmation is dismissed.
+  - The confirmation screen shows points and visit count right there.
+  - Added an explicit "Most ordered" line to the profile bar.
 
   v4.2 CHANGES:
-  - FIXED "no welcome back" / "no customer profile" on return visits.
-    loadMemberAccount() ran FOUR Supabase queries (bar_customers,
-    rewards, table_orders, canteen_orders) inside two Promise.all()
-    calls. Promise.all() is all-or-nothing — if even ONE of those four
-    queries failed (e.g. the new `rewards` table added this session
-    doesn't exist yet, or anon isn't granted SELECT on it yet), the
-    whole function threw, landed in the catch block, and NOTHING was
-    shown: no name, no points, no "Welcome back", no member bar at all
-    — even though the member's own record and order history were
-    perfectly fine. Rewritten with Promise.allSettled() so each query
-    is independent: if `rewards` (or any one table) fails, the member
-    still sees their name, points, visit count, favorites and recent
-    orders — just with an empty/skipped Rewards section instead of the
-    entire bar disappearing.
-  - Also wrapped the HTML-building/render step in its own try/catch so
-    a bad row of data can't silently hide the whole bar either.
-  - Reminder: this bar only appears if this browser previously
-    completed an order on this device (it's stored in localStorage).
-    It will not appear on a different device/browser, or inside an
-    in-app browser (WhatsApp, Instagram, etc.) that clears storage
-    between visits — that is expected, not a bug in this file.
+  - FIXED "no welcome back" / "no customer profile" on return visits by
+    switching loadMemberAccount() to Promise.allSettled() so one failing
+    query (e.g. rewards) doesn't take down the whole member bar.
 
   v4.1 CHANGES:
-  - The returning-member profile bar at the top of this page now also
-    shows REWARDS (with an "eligible now" marker based on current
-    points), FOLLOW US links, and CONTACT US details — this was the
-    piece missing from v4.0's member bar per the standing top-priority
-    item. Nothing about the ordering flow itself changed.
-  - Rewards are pulled live from Supabase's `rewards` table (same one
-    members-dashboard.html reads), so editing rewards there is enough
-    to update what shows here too.
+  - Returning-member bar also shows REWARDS, FOLLOW US, and CONTACT US.
 
   v4.0 CHANGES:
-  - REMOVED Apps Script entirely. Location types and MoMo number/name
-    (previously from action=getMenuPublic) now come from a new public
-    `venue_settings` table in Supabase. Menu already came from Supabase
-    (bar_recipes/food_menu) as of the v3.0 migration note in this file
-    — now everything on this page is Supabase-only.
-  - MEMBER RECOGNITION FIX (was the top pilot complaint): the phone/ID
-    field now looks the customer up (via find_customer_flexible) the
-    moment they finish typing and tab/click away (on blur), not only
-    at the end of a completed order. A match auto-fills and locks the
-    name field and shows a small "Welcome back" note right under the
-    field, before they've added anything to cart or touched checkout.
-    First-time numbers are left editable with no error — they're new,
-    which is expected.
-  - Also re-runs the same lookup right when the cart modal opens, in
-    case they filled in the phone field after already opening it once.
-  - LAYOUT: .main max-width raised and made responsive (breakpoints at
-    900/1300/1700px), menu grid goes 2 → 3 → 4 columns on wider
-    screens instead of leaving space empty on tablets/desktops/wide
-    phones in landscape.
+  - REMOVED Apps Script entirely — menu, location types, MoMo config,
+    and order writes are all Supabase now. Member recognition on
+    phone/ID blur added.
 -->
 <head>
 <meta charset="UTF-8">
@@ -103,7 +86,6 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 @media(min-width:900px){.loc-grid{grid-template-columns:repeat(4,1fr);}}
 .loc-option{background:var(--card);border:2px solid var(--border);border-radius:10px;padding:12px 10px;text-align:center;cursor:pointer;font-size:13px;font-weight:700;}
 .loc-option.selected{border-color:var(--gold);background:#1e1706;color:var(--gold);}
-/* v3.1: font-size raised from 14px to 16px to fix the iOS pinch-zoom bug. */
 .search-input{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;color:var(--text);font-size:16px;width:100%;margin-bottom:12px;outline:none;font-family:'Syne',sans-serif;}
 .search-input:focus{border-color:var(--gold);}
 .search-input:disabled{opacity:0.7;border-color:var(--teal);color:var(--teal);}
@@ -111,9 +93,6 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 .btn:disabled{opacity:0.5;}
 .btn.secondary{background:var(--border);color:var(--text);}
 
-/* v3.1: group filter row (ALL/BAR/CANTEEN/COCKTAILS) — visually a
-   step bolder than the category tabs underneath it, since it's the
-   primary filter and the category tabs are the secondary one. */
 .group-tab-row{display:flex;gap:8px;margin-bottom:10px;}
 .group-tab-pill{flex:1;background:var(--card);border:2px solid var(--border);color:var(--text-dim);padding:10px 6px;border-radius:10px;font-size:12px;font-weight:800;letter-spacing:0.5px;cursor:pointer;font-family:'Syne',sans-serif;text-align:center;}
 .group-tab-pill.active{background:#1e1706;border-color:var(--gold);color:var(--gold);}
@@ -127,10 +106,13 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 @media(min-width:1700px){.menu-grid{grid-template-columns:repeat(5,1fr);}}
 .menu-item{position:relative;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;cursor:pointer;text-align:left;}
 .menu-item.in-cart{border-color:var(--gold);background:#1e1706;}
+.menu-item.out-of-stock{cursor:default;opacity:0.55;border-color:#3a2020;}
 .menu-item .mi-name{font-size:15px;font-weight:800;line-height:1.25;}
 .menu-item .mi-cat{font-size:10px;color:var(--muted);margin-top:3px;}
 .menu-item .mi-price{font-size:13px;color:var(--gold-dim);font-family:'Space Mono',monospace;margin-top:8px;font-weight:700;}
 .menu-item .mi-qty{position:absolute;top:8px;right:10px;background:var(--gold);color:var(--black);font-family:'Space Mono',monospace;font-weight:800;font-size:12px;border-radius:10px;padding:2px 8px;}
+.mi-oos-badge{position:absolute;top:8px;right:10px;background:var(--red);color:#fff;font-family:'Space Mono',monospace;font-weight:800;font-size:9px;border-radius:10px;padding:3px 8px;letter-spacing:0.5px;}
+.mi-alt{font-size:10px;color:var(--teal);margin-top:6px;line-height:1.4;}
 .empty{text-align:center;padding:30px 10px;color:var(--muted);font-size:13px;}
 .loading{text-align:center;padding:40px 10px;color:var(--muted);font-size:13px;font-family:'Space Mono',monospace;}
 
@@ -277,15 +259,10 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-// v4.0: Apps Script is gone from this page. Menu, location types, MoMo
-// config, and order writes are all Supabase now.
 const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNydnV6a3lmcnFiZm1hbWVneGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MzI5NjQsImV4cCI6MjEwMDAwODk2NH0.gMsv3yvw6plDCherA2YdU4UgWRMXUc9H1Hr_IdR9GxA';
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// v4.1: follow-us links, matches members-dashboard.html's footer set.
-// Edit here directly if a handle/URL changes — no Supabase table for
-// this yet.
 const SOCIAL_LINKS = [
   { name:'TikTok',    url:'https://www.tiktok.com/@thewhitehousegh' },
   { name:'Instagram', url:'https://www.instagram.com/thewhitehousegh' },
@@ -297,18 +274,17 @@ let locationType = null;
 let locationDetail = '';
 let menu = [];
 let locationTypes = [];
+let locationTableRanges = {}; // v4.4: {"Table":50,"Bar Area":15,...}
 let momoNumber = '';
 let momoName = '';
 let venueContactPhone = '';
 let cart = {};
 let activeCategory = 'All';
 let selectedPayment = null;
-let lookedUpCustomer = null; // set when onCustPhoneBlur finds a match
+let lookedUpCustomer = null;
 
-// v3.1: group filter — mirrors COCKTAIL_CATEGORIES in the backend.
-// If you add/rename a cocktail-family category, update it here too.
 const COCKTAIL_CATEGORIES = ['Cocktail', 'Mocktail', 'Milkshake', 'Smoothie', 'Juice', 'VIP Special'];
-let activeGroup = 'BAR'; // ALL | BAR | CANTEEN | COCKTAILS — starts on BAR per request
+let activeGroup = 'BAR';
 
 function itemGroup(m){
   if(COCKTAIL_CATEGORIES.indexOf(m.category) !== -1) return 'COCKTAILS';
@@ -331,16 +307,16 @@ function init(){
   const params = new URLSearchParams(window.location.search);
   const loc = params.get('location');
   const detail = params.get('detail');
-  const legacyTable = params.get('table'); // backward compatibility with existing printed QR codes
+  const legacyTable = params.get('table');
   loadMemberAccount();
   loadVenueData(function(){
     if(loc && locationTypes.indexOf(loc) !== -1){
       selectLocation(loc, true);
-      if(detail) {
+      if(detail){
         locationDetail = detail;
-        const detailInput = document.getElementById('locationDetailInput');
         const detailSelect = document.getElementById('locationDetailSelect');
-        if(loc === 'Table') detailSelect.value = detail; else detailInput.value = detail;
+        const detailInput = document.getElementById('locationDetailInput');
+        if(locationTableRanges[loc]) detailSelect.value = detail; else detailInput.value = detail;
       }
     }else if(legacyTable){
       selectLocation('Table', true);
@@ -348,45 +324,81 @@ function init(){
       const detailSelect = document.getElementById('locationDetailSelect');
       if(detailSelect) detailSelect.value = legacyTable;
     }
-    // FIX: this used to run in parallel with loadVenueData, so a queued
-    // order left over from a dropped connection could get replayed
-    // before the menu array had loaded — trySendOrder would then look
-    // up each item's price against an empty menu, silently price
-    // everything at GHS 0.00. Now it only runs once menu is populated.
     resumePendingOrder();
   });
 }
 
+// v4.4: OUT OF STOCK — computed once per menu load from bar_stock.
+// A recipe item with named ingredients needs every listed ingredient
+// to have enough current_qty; a direct-sell item (no ingredients on
+// the row) is checked against a bar_stock row of the same name. Items
+// with nothing to check against (most food items — kitchen stock
+// isn't wired up yet) are left available.
+function computeStockStatus(recipeRows, foodRows, stockRows){
+  const stockByName = {};
+  (stockRows||[]).forEach(s => { stockByName[(s.item||'').trim().toLowerCase()] = parseFloat(s.current_qty)||0; });
+
+  function statusFor(row){
+    const ingredients = [1,2,3,4].map(n => ({ name: row['ingredient_'+n], qty: parseFloat(row['qty_'+n])||0 }))
+      .filter(ing => ing.name && ing.name.trim());
+    if(ingredients.length > 0){
+      for(const ing of ingredients){
+        const have = stockByName[ing.name.trim().toLowerCase()];
+        if(have !== undefined && have < ing.qty) return false; // out of stock
+      }
+      return true;
+    }
+    // No recipe ingredients listed — direct-sell item. Check by its own name.
+    const direct = stockByName[(row.item_name||'').trim().toLowerCase()];
+    if(direct !== undefined) return direct > 0;
+    return true; // nothing to check against — assume available
+  }
+
+  const map = {};
+  (recipeRows||[]).forEach(r => { map[r.item_name] = statusFor(r); });
+  (foodRows||[]).forEach(r => { map[r.item_name] = statusFor(r); });
+  return map;
+}
+
+function findAlternate(item){
+  const inStock = menu.filter(m => m.item !== item.item && m.category === item.category && m.available !== false);
+  if(inStock.length) return inStock[0];
+  const anyInStock = menu.filter(m => m.item !== item.item && itemGroup(m) === itemGroup(item) && m.available !== false);
+  return anyInStock[0] || null;
+}
+
 async function loadVenueData(afterLoad){
   try{
-    const [recipesRes, foodRes, settingsRes] = await Promise.all([
-      supabaseClient.from('bar_recipes').select('item_name, category, price_ghs'),
-      supabaseClient.from('food_menu').select('item_name, category, price_ghs'),
-      supabaseClient.from('venue_settings').select('key, value')
+    const [recipesRes, foodRes, settingsRes, stockRes] = await Promise.all([
+      supabaseClient.from('bar_recipes').select('item_name, category, price_ghs, ingredient_1, qty_1, ingredient_2, qty_2, ingredient_3, qty_3, ingredient_4, qty_4'),
+      supabaseClient.from('food_menu').select('item_name, category, price_ghs, ingredient_1, qty_1, ingredient_2, qty_2, ingredient_3, qty_3, ingredient_4, qty_4'),
+      supabaseClient.from('venue_settings').select('key, value'),
+      supabaseClient.from('bar_stock').select('item, current_qty')
     ]);
     if(recipesRes.error) throw new Error(recipesRes.error.message);
     if(foodRes.error) throw new Error(foodRes.error.message);
     if(settingsRes.error) throw new Error(settingsRes.error.message);
+    if(stockRes.error) throw new Error(stockRes.error.message);
 
     const settings = {};
     (settingsRes.data||[]).forEach(row => { settings[row.key] = row.value; });
     momoNumber = settings.momo_number || '';
     momoName = settings.momo_name || '';
-    // v4.1: contact us number for the member bar. Add a
-    // "contact_phone" row to venue_settings to set/change this; falls
-    // back to the MoMo number's owner if not set, since that's already
-    // a real staff contact.
     venueContactPhone = settings.contact_phone || momoNumber || '';
-    try{
-      locationTypes = settings.location_types ? JSON.parse(settings.location_types) : [];
-    }catch(e){ locationTypes = []; }
+    try{ locationTypes = settings.location_types ? JSON.parse(settings.location_types) : []; }
+    catch(e){ locationTypes = []; }
     if(!locationTypes.length) locationTypes = ['Table','Pickup','Terrace Area','Room Number','Bar Area','VIP Area','Pool','Stage Area','Stage 2 Area'];
+    try{ locationTableRanges = settings.location_table_ranges ? JSON.parse(settings.location_table_ranges) : {}; }
+    catch(e){ locationTableRanges = {}; }
+    if(!Object.keys(locationTableRanges).length) locationTableRanges = { 'Table': 50 };
+
+    const stockStatus = computeStockStatus(recipesRes.data, foodRes.data, stockRes.data);
 
     const COCKTAIL_CATS = ['Cocktail','Mocktail','Milkshake','Smoothie','Juice','VIP Special'];
     const BAR_FIRST = ['Water','Soft Drink','Just Sip','Beer','Energy','Alcoholic Single','Shot','Pizza','Rice Dishes','Fries','Swallow & Stew','Light Bites'];
     const catRank = c => { const i = BAR_FIRST.indexOf(c); if(i!==-1) return i; const j = COCKTAIL_CATS.indexOf(c); return j!==-1 ? BAR_FIRST.length+j : BAR_FIRST.length+COCKTAIL_CATS.length; };
-    menu = recipesRes.data.map(r => ({ item: r.item_name, category: r.category||'', price: parseFloat(r.price_ghs)||0, source: 'bar' }))
-      .concat(foodRes.data.map(r => ({ item: r.item_name, category: r.category||'', price: parseFloat(r.price_ghs)||0, source: 'food' })))
+    menu = recipesRes.data.map(r => ({ item: r.item_name, category: r.category||'', price: parseFloat(r.price_ghs)||0, source: 'bar', available: stockStatus[r.item_name] !== false }))
+      .concat(foodRes.data.map(r => ({ item: r.item_name, category: r.category||'', price: parseFloat(r.price_ghs)||0, source: 'food', available: stockStatus[r.item_name] !== false })))
       .sort((a,b) => catRank(a.category) - catRank(b.category));
 
     renderLocationOptions();
@@ -412,6 +424,9 @@ function renderLocationOptions(){
   });
 }
 
+// v4.4: any location type with an entry in locationTableRanges gets the
+// same numbered-dropdown treatment "Table" always had — driven by the
+// number configured in venue_settings, not hardcoded per location.
 function selectLocation(loc, skipDetailReset){
   locationType = loc;
   if(!skipDetailReset) locationDetail = '';
@@ -423,15 +438,14 @@ function selectLocation(loc, skipDetailReset){
   const detailInput = document.getElementById('locationDetailInput');
   const detailSelect = document.getElementById('locationDetailSelect');
 
-  if(loc === 'Table'){
+  const tableCount = locationTableRanges[loc];
+  if(tableCount){
     detailBox.style.display = 'block';
-    detailLabel.textContent = 'Table Number';
+    detailLabel.textContent = loc === 'Table' ? 'Table Number' : (loc + ' — Table Number');
     detailInput.style.display = 'none';
     detailSelect.style.display = 'block';
-    if(detailSelect.options.length === 0){
-      detailSelect.innerHTML = '<option value="">Select a table...</option>' +
-        Array.from({length:50}, (_,i)=>i+1).map(n=>`<option value="${n}">Table ${n}</option>`).join('');
-    }
+    detailSelect.innerHTML = '<option value="">Select a table...</option>' +
+      Array.from({length:tableCount}, (_,i)=>i+1).map(n=>`<option value="${n}">Table ${n}</option>`).join('');
     detailSelect.value = locationDetail || '';
     detailSelect.onchange = () => { locationDetail = detailSelect.value; };
   }else if(loc === 'Room Number'){
@@ -443,16 +457,10 @@ function selectLocation(loc, skipDetailReset){
     detailInput.value = locationDetail;
     detailInput.oninput = () => { locationDetail = detailInput.value.trim(); };
   }else{
-    // "Delivery" is gone — Terrace Area, Stage 2 Area, Bar Area, VIP
-    // Area, Pool, and Stage Area are all just a spot on the property,
-    // no extra detail needed.
     detailBox.style.display = 'none';
   }
 }
 
-// v3.1: group tabs (ALL/BAR/CANTEEN/COCKTAILS) sit above the existing
-// category tabs and filter the menu first; the category tabs below
-// then only show categories present within the selected group.
 function renderGroupTabs(){
   const groups = [
     { key: 'ALL', label: 'ALL' },
@@ -498,34 +506,38 @@ function renderTabs(){
 function renderMenu(){
   const q = (document.getElementById('menuSearch').value||'').toLowerCase();
   let items = groupFilteredMenu();
-  if(q){
-    // A search term searches everything in the current BAR/CANTEEN/
-    // COCKTAILS group tab, ignoring the category tab underneath it.
-    items = items.filter(m => m.item.toLowerCase().includes(q));
-  } else if(activeCategory !== 'All'){
-    items = items.filter(m => (m.category||'Other') === activeCategory);
-  }
+  if(q){ items = items.filter(m => m.item.toLowerCase().includes(q)); }
+  else if(activeCategory !== 'All'){ items = items.filter(m => (m.category||'Other') === activeCategory); }
   const grid = document.getElementById('menuGrid');
   if(items.length === 0){ grid.innerHTML = '<div class="empty" style="grid-column:1/-1">No items match</div>'; return; }
   grid.innerHTML = '';
   items.forEach(m => {
     const el = document.createElement('div');
-    el.className = 'menu-item';
+    el.className = 'menu-item' + (m.available === false ? ' out-of-stock' : '');
     el.dataset.item = m.item;
-    el.innerHTML = `<span class="mi-qty" style="display:none"></span>
+    let altHtml = '';
+    if(m.available === false){
+      const alt = findAlternate(m);
+      if(alt) altHtml = `<div class="mi-alt">Try instead: ${alt.item}</div>`;
+    }
+    el.innerHTML = `${m.available === false ? '<span class="mi-oos-badge">OUT OF STOCK</span>' : '<span class="mi-qty" style="display:none"></span>'}
       <div class="mi-name"></div>
       <div class="mi-cat"></div>
-      <div class="mi-price">GHS ${m.price.toFixed(2)}</div>`;
+      <div class="mi-price">GHS ${m.price.toFixed(2)}</div>
+      ${altHtml}`;
     el.querySelector('.mi-name').textContent = m.item;
     el.querySelector('.mi-cat').textContent = m.category || '';
-    // Update only THIS card in place instead of tearing down and
-    // rebuilding the entire grid on every single tap — rebuilding on
-    // every tap is the classic cause of a tap "not registering the
-    // first time" on a phone, since the element under the user's
-    // finger can be mid-replacement when the tap resolves.
-    el.onclick = () => { cart[m.item] = (cart[m.item]||0) + 1; updateMenuCardQty(m.item); updateCartBar(); };
+    if(m.available === false){
+      // Unclickable — tapping an out-of-stock card does nothing. The
+      // alternate suggestion text isn't a button either on purpose:
+      // it's informational, the customer still picks from the grid.
+    }else{
+      el.onclick = () => { cart[m.item] = (cart[m.item]||0) + 1; updateMenuCardQty(m.item); updateCartBar(); };
+      grid.appendChild(el);
+      updateMenuCardQtyEl(el, m.item);
+      return;
+    }
     grid.appendChild(el);
-    updateMenuCardQtyEl(el, m.item);
   });
 }
 
@@ -533,6 +545,7 @@ function updateMenuCardQtyEl(el, itemName){
   const qty = cart[itemName] || 0;
   el.classList.toggle('in-cart', qty > 0);
   const badge = el.querySelector('.mi-qty');
+  if(!badge) return;
   if(qty > 0){ badge.textContent = qty; badge.style.display = ''; }
   else { badge.style.display = 'none'; }
 }
@@ -540,7 +553,7 @@ function updateMenuCardQty(itemName){
   const grid = document.getElementById('menuGrid');
   const el = grid.querySelector(`[data-item="${CSS.escape(itemName)}"]`);
   if(el) updateMenuCardQtyEl(el, itemName);
-  else renderMenu(); // item isn't currently rendered (e.g. filtered out) — fall back to a full render
+  else renderMenu();
 }
 
 function cartCount(){ return Object.values(cart).reduce((a,b)=>a+b,0); }
@@ -571,9 +584,6 @@ function setQty(name, qty){
 function openCartModal(){
   document.getElementById('cartModal').classList.add('show');
   renderCartModal();
-  // In case they typed a phone/ID before ever opening the cart, or
-  // the earlier blur lookup didn't fire (e.g. autofill), check again
-  // now that the field is visible and populated.
   const phone = document.getElementById('custPhone').value.trim();
   if(phone) onCustPhoneBlur();
 }
@@ -588,11 +598,6 @@ function selectPayment(method){
   btn.textContent = method === 'MoMo' ? 'SUBMIT ORDER — PAY BY MOMO' : 'SUBMIT ORDER — PAY CASH ON DELIVERY/PICKUP';
 }
 
-// v4.0: MEMBER RECOGNITION — fires when the phone/ID field loses focus.
-// Looks the customer up via find_customer_flexible; on a match, fills
-// in and locks the name field (so a returning member never has to
-// retype it) and shows a "Welcome back" note. On no match, leaves the
-// name field open for a first-time customer — no error, that's normal.
 let custLookupToken = 0;
 async function onCustPhoneBlur(){
   const phoneInput = document.getElementById('custPhone');
@@ -614,7 +619,7 @@ async function onCustPhoneBlur(){
 
   try{
     const { data: custId, error } = await supabaseClient.rpc('find_customer_flexible', { p_query: query });
-    if(myToken !== custLookupToken) return; // a newer lookup superseded this one
+    if(myToken !== custLookupToken) return;
     if(error) throw new Error(error.message);
 
     if(custId){
@@ -631,7 +636,13 @@ async function onCustPhoneBlur(){
       nameInput.value = cust.name;
       nameInput.disabled = true;
       hintEl.className = 'member-hint found';
-      hintEl.textContent = `&#10003; Welcome back, ${cust.name} — ${cust.customer_id} · ${cust.loyalty_points||0} points`.replace('&#10003;','✓');
+      hintEl.textContent = `Welcome back, ${cust.name} — ${cust.customer_id} · ${cust.loyalty_points||0} points`;
+      // v4.5: don't wait for an order to be submitted — a matched
+      // phone/ID means we already know who this is, so show the full
+      // profile (points, visits, favourites, rewards) right now, and
+      // remember this device so it shows automatically next time too.
+      saveMember(cust.customer_id, cust.name, cust.phone_number || query);
+      renderFullProfileBar(cust.customer_id, cust.name, cust.phone_number || query);
     }else{
       lookedUpCustomer = null;
       nameInput.disabled = false;
@@ -640,8 +651,6 @@ async function onCustPhoneBlur(){
     }
   }catch(e){
     if(myToken !== custLookupToken) return;
-    // Lookup failing shouldn't block ordering — just fall back to a
-    // normal manual name entry, same as if they'd never been looked up.
     lookedUpCustomer = null;
     nameInput.disabled = false;
     hintEl.className = 'member-hint';
@@ -678,7 +687,7 @@ function renderCartModal(){
 
 async function submitOrder(){
   if(!locationType){ document.getElementById('submitError').textContent = 'Please choose where this order is for, above the menu.'; closeCartModal(); window.scrollTo({top:0, behavior:'smooth'}); return; }
-  if(locationType === 'Table' && !locationDetail){
+  if(locationTableRanges[locationType] && !locationDetail){
     document.getElementById('submitError').textContent = 'Please choose a table number above the menu.';
     closeCartModal(); window.scrollTo({top:0, behavior:'smooth'}); return;
   }
@@ -686,11 +695,6 @@ async function submitOrder(){
     document.getElementById('submitError').textContent = 'Please add the room number above the menu.';
     closeCartModal(); window.scrollTo({top:0, behavior:'smooth'}); return;
   }
-  // Guard against firing the exact same order twice in quick succession —
-  // a double-tap, or a stray resubmit from the browser restoring a
-  // cached page state. Same location + same cart + same payment method
-  // within the last 90 seconds is blocked outright instead of sent
-  // again.
   const orderFingerprint = JSON.stringify({ locationType, locationDetail, cart, payment: selectedPayment });
   const lastFingerprint = sessionStorage.getItem('whgh_last_order_fingerprint');
   const lastFingerprintTime = parseInt(sessionStorage.getItem('whgh_last_order_time') || '0', 10);
@@ -702,11 +706,6 @@ async function submitOrder(){
   const custName = document.getElementById('custName').value.trim();
   const phone = document.getElementById('custPhone').value.trim();
   if(!phone){ document.getElementById('submitError').textContent = 'Please enter your phone number or membership number.'; return; }
-  // v4.3: block junk phone/ID entries. A real Ghana mobile number is
-  // 10 digits starting with 0 (or +233/233 followed by 9 digits). A
-  // real membership ID is letters followed by digits (e.g. THWGH12),
-  // not a single stray character. lookedUpCustomer means this value
-  // already matched a real record in Supabase, so it's trusted as-is.
   if(!lookedUpCustomer){
     const digitsOnly = phone.replace(/[\s-]/g,'');
     const isPlausiblePhone = /^0\d{9}$/.test(digitsOnly) || /^(\+233|233)\d{9}$/.test(digitsOnly);
@@ -725,19 +724,12 @@ async function submitOrder(){
   const names = Object.keys(cart).filter(k => cart[k] > 0);
   if(names.length === 0){ document.getElementById('submitError').textContent = 'Your cart is empty.'; return; }
 
-  // find-or-create the customer record now, at submit time, so the
-  // confirmation and any future visit already has their ID/points.
-  // If onCustPhoneBlur already found them, this just re-confirms it.
   let submittedCustId = null;
   try{
     const { data: memberData, error: memberErr } = await supabaseClient.rpc('find_or_create_bar_customer', { p_phone: phone, p_name: custName });
     if(!memberErr && memberData){ saveMember(memberData.custId, custName, phone); submittedCustId = memberData.custId; }
   }catch(e){ console.log('find_or_create_bar_customer failed (non-fatal):', e); }
 
-  // This page shows drinks AND food together, but they have to land on
-  // two different staff queues (bar vs canteen) — a mixed cart becomes
-  // two separate orders under the hood, invisible to the customer.
-  // Unknown/missing source defaults to the bar queue.
   const barNames = names.filter(n => { const m = menu.find(mm=>mm.item===n); return !m || m.source !== 'food'; });
   const foodNames = names.filter(n => { const m = menu.find(mm=>mm.item===n); return m && m.source === 'food'; });
 
@@ -745,13 +737,6 @@ async function submitOrder(){
   if(barNames.length) subOrders.push({ action: 'placeTableOrder', label: 'Drinks & Bar Items', names: barNames });
   if(foodNames.length) subOrders.push({ action: 'placeCanteenOrder', label: 'Food', names: foodNames });
 
-  // COMBO LINKING: when someone orders both drinks and food, the bar
-  // queue and kitchen queue are still deliberately separate (so bar
-  // staff aren't shown food orders and vice versa), but each one's
-  // notes field now names the other's order ID. Both dashboards use
-  // this to show a small "also ordered: X — status Y" badge, so
-  // staff know a table has a second order in flight elsewhere instead
-  // of the two queues looking unrelated.
   const isCombo = subOrders.length > 1;
   const comboTs = Date.now();
   const orderIdFor = (action) => (action === 'placeCanteenOrder' ? 'CAN' : 'TBL') + comboTs;
@@ -802,15 +787,6 @@ async function submitOrder(){
 
   closeCartModal();
   if(succeeded.length > 0){
-    // v4.3: AWAIT the profile refresh before showing (or right as we
-    // show) the confirmation, instead of firing it in the background
-    // and hoping it finishes before the customer taps through. This
-    // is the fix for "even after tapping order something else it
-    // should already show their profile" — by the time the
-    // confirmation screen itself is even built, the page underneath
-    // it is already fully up to date: new ID, points, visit count,
-    // last visit, most-ordered item, and this order in their recent
-    // history.
     await loadMemberAccount();
     showConfirmation(succeeded.map(o => ({ data: o.result.data, label: o.payload.label })), selectedPayment, locationType, locationDetail, submittedCustId);
   }else if(queued.length > 0){
@@ -818,30 +794,16 @@ async function submitOrder(){
   }
 }
 
-// Bar orders (table_orders) and food orders (canteen_orders) write
-// directly to Postgres.
-const ORDER_TABLE_BY_ACTION = {
-  placeTableOrder: 'table_orders',
-  placeCanteenOrder: 'canteen_orders'
-};
+const ORDER_TABLE_BY_ACTION = { placeTableOrder: 'table_orders', placeCanteenOrder: 'canteen_orders' };
 
 async function trySendOrder(payload){
   const table = ORDER_TABLE_BY_ACTION[payload.action];
-  if(!table){
-    return { ok: false, error: 'Unknown order type: ' + payload.action };
-  }
-  if(menu.length === 0){
-    // Menu hasn't loaded yet (e.g. a queued order replaying before
-    // loadVenueData finished) — pricing everything at 0 would be
-    // silently wrong, so queue instead and retry once it's loaded.
-    return { ok: false, queued: true, error: 'Menu not loaded yet — will retry' };
-  }
+  if(!table) return { ok: false, error: 'Unknown order type: ' + payload.action };
+  if(menu.length === 0) return { ok: false, queued: true, error: 'Menu not loaded yet — will retry' };
 
   const orderId = payload.orderId || ((payload.action === 'placeCanteenOrder' ? 'CAN' : 'TBL') + Date.now());
   let items;
   try{ items = JSON.parse(payload.itemsJson); }catch(e){ items = []; }
-  // itemsJson only carries {item, qty} — look the price up from the
-  // loaded menu by item name, same as cartTotal() does elsewhere.
   const total = items.reduce((s, it) => {
     const m = menu.find(mm => mm.item === it.item);
     return s + ((m ? m.price : 0) * (it.qty || 0));
@@ -867,14 +829,9 @@ async function trySendOrder(payload){
       .single();
 
     if(error){
-      // Same clientId submitted twice (e.g. a retry after a dropped
-      // connection) — treat as a successful replay, not a failure.
-      if(error.code === '23505'){
-        return { ok: true, data: { orderId: orderId, total: total, replayed: true } };
-      }
+      if(error.code === '23505') return { ok: true, data: { orderId: orderId, total: total, replayed: true } };
       throw new Error(error.message);
     }
-
     return { ok: true, data: { orderId: data.order_id, total: data.total_ghs } };
   }catch(e){
     return { ok: false, queued: true, error: 'No connection' };
@@ -886,34 +843,18 @@ function savePendingOrder(payload){
   queue.push(Object.assign({}, payload, { queuedAt: payload.queuedAt || Date.now() }));
   localStorage.setItem(PENDING_KEY, JSON.stringify(queue));
 }
-function savePendingQueueRaw(queue){
-  try{ localStorage.setItem(PENDING_KEY, JSON.stringify(queue)); }catch(e){ /* storage unavailable */ }
-}
-function getPendingQueue(){
-  try{ return JSON.parse(localStorage.getItem(PENDING_KEY) || '[]'); }catch(e){ return []; }
-}
-function clearPendingOrder(clientId){
-  const queue = getPendingQueue().filter(p => p.clientId !== clientId);
-  localStorage.setItem(PENDING_KEY, JSON.stringify(queue));
-}
+function savePendingQueueRaw(queue){ try{ localStorage.setItem(PENDING_KEY, JSON.stringify(queue)); }catch(e){} }
+function getPendingQueue(){ try{ return JSON.parse(localStorage.getItem(PENDING_KEY) || '[]'); }catch(e){ return []; } }
+function clearPendingOrder(clientId){ const queue = getPendingQueue().filter(p => p.clientId !== clientId); localStorage.setItem(PENDING_KEY, JSON.stringify(queue)); }
 
-// Diagnosed 24 July: a queued order with no expiry could in principle
-// keep trying to send forever on every page load. 2 hours is long
-// enough to cover a real dropped-connection order, short enough that
-// a customer is never surprised by an old order firing days later.
 const PENDING_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 
 async function resumePendingOrder(){
   let queue = getPendingQueue();
   if(queue.length === 0) return;
-
   const now = Date.now();
   const fresh = queue.filter(p => now - (p.queuedAt || 0) < PENDING_MAX_AGE_MS);
-  if(fresh.length !== queue.length){
-    console.warn('Dropped ' + (queue.length - fresh.length) + ' queued order(s) older than 2 hours without sending them.');
-    savePendingQueueRaw(fresh);
-    queue = fresh;
-  }
+  if(fresh.length !== queue.length){ savePendingQueueRaw(fresh); queue = fresh; }
   if(queue.length === 0) return;
 
   for(const payload of queue){
@@ -934,33 +875,18 @@ async function resumePendingOrder(){
 let resumeAttempts = 0;
 window.addEventListener('online', function(){ resumeAttempts = 0; resumePendingOrder(); });
 
-// Membership persistence — once a customer gives name+phone, keep
-// their ID on this device so returning (even re-scanning the same QR)
-// shows their points/history immediately instead of starting over.
-// NOTE: some in-app browsers (WhatsApp, Instagram, etc.) don't
-// reliably persist localStorage between visits — if a pilot member
-// says "it keeps forgetting me", ask which app they opened the link
-// from before assuming this code is at fault. Also: this bar will
-// never appear unless localStorage successfully saved on a PREVIOUS
-// completed order on this same browser — a fresh browser or a
-// cleared cache will not show it either, which is expected, not a bug.
 const MEMBER_KEY = 'whgh_member_v2';
 function getSavedMember(){ try{ return JSON.parse(localStorage.getItem(MEMBER_KEY)||'null'); }catch(e){ return null; } }
-function saveMember(custId, name, phone){
-  try{ localStorage.setItem(MEMBER_KEY, JSON.stringify({custId, name, phone})); }catch(e){}
-}
+function saveMember(custId, name, phone){ try{ localStorage.setItem(MEMBER_KEY, JSON.stringify({custId, name, phone})); }catch(e){} }
 
-// v4.2 FIX: rewritten to use Promise.allSettled() instead of two
-// Promise.all() calls. Promise.all() rejects the INSTANT any one of
-// its promises rejects, which meant a single failing query — most
-// likely `rewards`, since that table/grant was only added this
-// session — took the whole function into its catch block and skipped
-// rendering the member bar entirely: no name, no points, no "Welcome
-// back", nothing. Now every query is independent, so one bad table
-// only costs its own section instead of the whole bar.
-// v4.3: submitOrder() now AWAITS this whole function before showing
-// the confirmation screen, so the profile is guaranteed correct and
-// visible underneath by the time the customer dismisses it — no race.
+// v4.5: split into two pieces. renderFullProfileBar() does the fetch
+// + render for any known custId/name/phone. loadMemberAccount() is now
+// just the localStorage-driven entry point that calls it on page load.
+// onCustPhoneBlur() below now also calls renderFullProfileBar() the
+// moment a match is found on THIS visit — so typing a phone/ID into
+// the cart field, even on a brand new device or browser, shows the
+// full profile immediately instead of only a one-line hint and making
+// the customer place an order first before anything shows.
 async function loadMemberAccount(){
   const member = getSavedMember();
   if(!member) return;
@@ -969,26 +895,24 @@ async function loadMemberAccount(){
   if(phoneInput && !phoneInput.value) phoneInput.value = member.phone;
   if(nameInput && !nameInput.value){ nameInput.value = member.name; nameInput.disabled = true; }
   lookedUpCustomer = { custId: member.custId, name: member.name, phone: member.phone };
+  await renderFullProfileBar(member.custId, member.name, member.phone);
+}
 
+async function renderFullProfileBar(custId, name, phone){
   const [custRes, rewardsRes, tableOrdersRes, canteenOrdersRes] = await Promise.allSettled([
-    supabaseClient.from('bar_customers').select('*').eq('customer_id', member.custId).maybeSingle(),
+    supabaseClient.from('bar_customers').select('*').eq('customer_id', custId).maybeSingle(),
     supabaseClient.from('rewards').select('*').eq('active', true).order('points_required', { ascending: true }),
-    supabaseClient.from('table_orders').select('items_json, created_at, total_ghs').eq('customer_phone', member.phone).order('created_at', { ascending:false }).limit(20),
-    supabaseClient.from('canteen_orders').select('items_json, created_at, total_ghs').eq('customer_phone', member.phone).order('created_at', { ascending:false }).limit(20)
+    supabaseClient.from('table_orders').select('items_json, created_at, total_ghs').eq('customer_phone', phone).order('created_at', { ascending:false }).limit(20),
+    supabaseClient.from('canteen_orders').select('items_json, created_at, total_ghs').eq('customer_phone', phone).order('created_at', { ascending:false }).limit(20)
   ]);
 
   const okData = (settled) => (settled.status === 'fulfilled' && !settled.value.error) ? settled.value.data : null;
-  const failReason = (settled) => settled.status === 'fulfilled' ? settled.value.error : settled.reason;
 
   const cust = okData(custRes);
   const rewardsData = okData(rewardsRes) || [];
   const tableOrders = okData(tableOrdersRes) || [];
   const canteenOrders = okData(canteenOrdersRes) || [];
-
-  if(!cust && custRes.status !== 'fulfilled' || (custRes.status === 'fulfilled' && custRes.value.error)) console.log('bar_customers lookup issue:', failReason(custRes));
-  if(!okData(rewardsRes)) console.log('rewards lookup issue (non-fatal — Rewards section will just be empty):', failReason(rewardsRes));
-  if(!okData(tableOrdersRes)) console.log('table_orders lookup issue:', failReason(tableOrdersRes));
-  if(!okData(canteenOrdersRes)) console.log('canteen_orders lookup issue:', failReason(canteenOrdersRes));
+  const displayName = (cust && cust.name) || name;
 
   try{
     const allOrders = [...(tableOrders||[]), ...(canteenOrders||[])].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
@@ -1002,23 +926,18 @@ async function loadMemberAccount(){
 
     const wrap = document.getElementById('memberBarWrap');
     const content = document.getElementById('memberBarContent');
-    let html = `<div class="mw-title">Welcome back to The White House Events & More, ${member.name}!</div><div>${member.custId}</div>`;
+    let html = `<div class="mw-title">Welcome back to The White House Events & More, ${displayName}!</div><div>${custId}</div>`;
     if(cust) html += `<div class="mw-points">${currentPoints} points &middot; ${cust.total_visits||0} visits</div>`;
-    html += `<div class="mw-phone">Phone on file: ${member.phone} &middot; <span style="color:var(--teal)">&#128274; kept private, never sold or shared</span></div>`;
+    html += `<div class="mw-phone">Phone on file: ${phone} &middot; <span style="color:var(--teal)">&#128274; kept private, never sold or shared</span></div>`;
 
-    // v4.3: explicit plain-text "most ordered" line — the favourite
-    // buttons already existed, but nothing said in words which single
-    // item is their most-ordered, which was asked for by name.
     if(topFavorite){
       html += `<div class="mw-favorite-line">Most ordered: <b style="color:var(--gold)">${topFavorite}</b></div>`;
     }
-
     if(favorites.length){
       html += `<div class="mw-favorites-label">Your usual — tap to add:</div>`;
       html += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">` +
         favorites.map(f => `<button type="button" class="btn" style="width:auto;padding:10px 16px;margin:0;font-size:14px" onclick="reorderFavorite('${f.replace(/'/g,"\\'")}')">+ ${f}</button>`).join('') + `</div>`;
     }
-
     if(allOrders.length){
       html += `<div class="mw-recent-label">Recent orders:</div>` +
         allOrders.slice(0,5).map(o => {
@@ -1028,16 +947,6 @@ async function loadMemberAccount(){
         }).join('');
     }
 
-    // v4.1: REWARDS — the piece the top-priority note flagged as
-    // missing. Shows every active reward and marks which ones this
-    // member can redeem right now with their current point balance.
-    // Actual redemption still happens on the Members dashboard (or
-    // ask staff at the bar) — this is a preview, not a redeem button,
-    // since redemption needs staff confirmation of who's collecting.
-    // v4.2: if the rewards query failed (table missing / not granted
-    // to anon yet), rewardsData is just [] here — we say so plainly
-    // instead of silently showing "no rewards set up yet", which
-    // would look identical to an intentionally-empty rewards table.
     const rewards = rewardsData || [];
     html += `<div class="mw-section-label">&#127942; Rewards</div>`;
     if(rewards.length){
@@ -1055,11 +964,9 @@ async function loadMemberAccount(){
       html += `<div style="font-size:12px;color:var(--text-dim)">No rewards set up yet — check back soon.</div>`;
     }
 
-    // v4.1: FOLLOW US
     html += `<div class="mw-section-label">Follow us</div>`;
     html += `<div class="mw-social-row">` + SOCIAL_LINKS.map(l => `<a class="mw-social-link" href="${l.url}" target="_blank" rel="noopener">${l.name}</a>`).join('') + `</div>`;
 
-    // v4.1: CONTACT US
     html += `<div class="mw-section-label">Contact us</div>`;
     if(venueContactPhone){
       html += `<div class="mw-contact-line">Call or WhatsApp: <a href="tel:${venueContactPhone}">${venueContactPhone}</a></div>`;
@@ -1091,12 +998,6 @@ function showQueuedScreen(){
 }
 
 function showConfirmation(orders, payment, locType, locDetail, custId){
-  // Diagnosed 24 July: this used to always read the live locationType/
-  // locationDetail globals, which reset to nothing on every fresh page
-  // load. That made a resumed queued order show "null" as its location
-  // even though the order itself had the correct location saved all
-  // along. Now it uses whichever location was actually passed in for
-  // THIS order.
   const displayLocType = locType !== undefined && locType !== null ? locType : locationType;
   const displayLocDetail = locDetail !== undefined ? locDetail : locationDetail;
   const el = document.getElementById('confirmContent');
@@ -1114,20 +1015,11 @@ function showConfirmation(orders, payment, locType, locDetail, custId){
   }
   const orderLines = orders.map(o => `<div class="order-id">${orders.length>1 ? o.label+': ' : ''}Order ${o.data.orderId} — GHS ${o.data.total.toFixed(2)}</div>`).join('');
 
-  // v4.3: the confirmation now also shows points and visit count right
-  // here, not just the ID — pulled from the just-refreshed member bar
-  // data (loadMemberAccount has already run and completed by this
-  // point). A first-time customer sees their whole profile taking
-  // shape immediately: ID, points, visits, all in one place, before
-  // they've even tapped through.
-  const savedMember = getSavedMember();
   let memberBlockHtml = '';
   if(custId){
     let statsLine = '';
     const wrap = document.getElementById('memberBarWrap');
     if(wrap && wrap.style.display === 'block'){
-      // Profile bar underneath is already built and correct — no
-      // second Supabase round trip needed, just point to it plainly.
       statsLine = `<p style="margin-top:6px;color:var(--text-dim);font-size:12px">Your points, visit count, and order history are on your profile below.</p>`;
     }
     memberBlockHtml = `
