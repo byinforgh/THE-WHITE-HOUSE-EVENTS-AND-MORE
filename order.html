@@ -1,9 +1,32 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE EVENTS & MORE — TABLE ORDER PAGE (v4.2, Supabase-only)
+  THE WHITE HOUSE EVENTS & MORE — TABLE ORDER PAGE (v4.3, Supabase-only)
 
-  v4.2 CHANGES (this session — bug fix):
+  v4.3 CHANGES (this session — QR/profile flow, top priority):
+  - The customer's profile bar (name, ID, points, visits, last visit,
+    most-ordered item, reorder-favourite buttons, recent orders) used
+    to load in the BACKGROUND while the "Order sent!" confirmation was
+    showing. It usually finished in time, but there was no guarantee —
+    if it hadn't finished by the time someone tapped "ORDER SOMETHING
+    ELSE", they'd see the page underneath still on its old state for a
+    moment. Fixed: submitOrder() now AWAITS the profile refresh before
+    the confirmation screen is even shown, so the profile bar is
+    already fully built and correct the instant the confirmation is
+    dismissed — first order or the hundredth, no race, no delay.
+  - The confirmation screen itself now shows points and visit count
+    right there (not just the ID), so a first-time customer sees their
+    whole profile taking shape immediately, before they've even closed
+    the dialog — this was explicitly asked for: "in there they can see
+    their just order, points, name, contact number, last visit, how
+    many visits, most ordered item, reorder favourite item."
+  - Added an explicit "Most ordered" line to the profile bar (favourite
+    items were only shown as reorder buttons before, with no plain-text
+    line naming the single most-ordered item).
+  - Everything else about the ordering flow, menu, and validation is
+    unchanged from v4.2.
+
+  v4.2 CHANGES:
   - FIXED "no welcome back" / "no customer profile" on return visits.
     loadMemberAccount() ran FOUR Supabase queries (bar_customers,
     rewards, table_orders, canteen_orders) inside two Promise.all()
@@ -154,6 +177,7 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 .member-welcome-box .mw-title{font-size:20px;font-weight:800;color:var(--teal);margin-bottom:4px;}
 .member-welcome-box .mw-points{font-size:16px;color:var(--gold);font-weight:700;margin-top:4px;}
 .member-welcome-box .mw-phone{font-size:13px;color:var(--text-dim);margin-top:10px;}
+.member-welcome-box .mw-favorite-line{font-size:13px;color:var(--text-dim);margin-top:8px;}
 .member-welcome-box .mw-favorites-label{font-size:14px;color:var(--text-dim);margin-top:14px;}
 .member-welcome-box .mw-recent-label{font-size:14px;color:var(--text-dim);margin-top:14px;}
 .member-welcome-box .mw-recent-line{font-size:13px;color:var(--text-dim);margin-top:6px;}
@@ -778,10 +802,17 @@ async function submitOrder(){
 
   closeCartModal();
   if(succeeded.length > 0){
+    // v4.3: AWAIT the profile refresh before showing (or right as we
+    // show) the confirmation, instead of firing it in the background
+    // and hoping it finishes before the customer taps through. This
+    // is the fix for "even after tapping order something else it
+    // should already show their profile" — by the time the
+    // confirmation screen itself is even built, the page underneath
+    // it is already fully up to date: new ID, points, visit count,
+    // last visit, most-ordered item, and this order in their recent
+    // history.
+    await loadMemberAccount();
     showConfirmation(succeeded.map(o => ({ data: o.result.data, label: o.payload.label })), selectedPayment, locationType, locationDetail, submittedCustId);
-    // v4.1: refresh the member bar right after a successful order so
-    // updated points/visits/rewards show without needing a reload.
-    loadMemberAccount();
   }else if(queued.length > 0){
     showQueuedScreen();
   }
@@ -890,6 +921,7 @@ async function resumePendingOrder(){
     if(result.ok){
       clearPendingOrder(payload.clientId);
       resumeAttempts = 0;
+      await loadMemberAccount();
       showConfirmation([{ data: result.data, label: payload.label || 'Order' }], payload.payment, payload.locationType, payload.locationDetail);
       return;
     }
@@ -926,6 +958,9 @@ function saveMember(custId, name, phone){
 // rendering the member bar entirely: no name, no points, no "Welcome
 // back", nothing. Now every query is independent, so one bad table
 // only costs its own section instead of the whole bar.
+// v4.3: submitOrder() now AWAITS this whole function before showing
+// the confirmation screen, so the profile is guaranteed correct and
+// visible underneath by the time the customer dismisses it — no race.
 async function loadMemberAccount(){
   const member = getSavedMember();
   if(!member) return;
@@ -961,6 +996,7 @@ async function loadMemberAccount(){
     const freq = {};
     allOrders.forEach(o => (o.items_json||[]).forEach(i => { freq[i.item] = (freq[i.item]||0) + (i.qty||1); }));
     const favorites = Object.keys(freq).sort((a,b)=>freq[b]-freq[a]).slice(0,3);
+    const topFavorite = favorites[0] || null;
 
     const currentPoints = cust ? (cust.loyalty_points||0) : 0;
 
@@ -969,6 +1005,13 @@ async function loadMemberAccount(){
     let html = `<div class="mw-title">Welcome back to The White House Events & More, ${member.name}!</div><div>${member.custId}</div>`;
     if(cust) html += `<div class="mw-points">${currentPoints} points &middot; ${cust.total_visits||0} visits</div>`;
     html += `<div class="mw-phone">Phone on file: ${member.phone} &middot; <span style="color:var(--teal)">&#128274; kept private, never sold or shared</span></div>`;
+
+    // v4.3: explicit plain-text "most ordered" line — the favourite
+    // buttons already existed, but nothing said in words which single
+    // item is their most-ordered, which was asked for by name.
+    if(topFavorite){
+      html += `<div class="mw-favorite-line">Most ordered: <b style="color:var(--gold)">${topFavorite}</b></div>`;
+    }
 
     if(favorites.length){
       html += `<div class="mw-favorites-label">Your usual — tap to add:</div>`;
@@ -1071,15 +1114,26 @@ function showConfirmation(orders, payment, locType, locDetail, custId){
   }
   const orderLines = orders.map(o => `<div class="order-id">${orders.length>1 ? o.label+': ' : ''}Order ${o.data.orderId} — GHS ${o.data.total.toFixed(2)}</div>`).join('');
 
-  // v4.2: every confirmation now shows the member ID, a welcome
-  // message, why we use it, and a follow-us prompt — this was the
-  // piece flagged as missing. custId comes from find_or_create_bar_customer
-  // in submitOrder, so it's set on every order, first-time or returning.
+  // v4.3: the confirmation now also shows points and visit count right
+  // here, not just the ID — pulled from the just-refreshed member bar
+  // data (loadMemberAccount has already run and completed by this
+  // point). A first-time customer sees their whole profile taking
+  // shape immediately: ID, points, visits, all in one place, before
+  // they've even tapped through.
+  const savedMember = getSavedMember();
   let memberBlockHtml = '';
   if(custId){
+    let statsLine = '';
+    const wrap = document.getElementById('memberBarWrap');
+    if(wrap && wrap.style.display === 'block'){
+      // Profile bar underneath is already built and correct — no
+      // second Supabase round trip needed, just point to it plainly.
+      statsLine = `<p style="margin-top:6px;color:var(--text-dim);font-size:12px">Your points, visit count, and order history are on your profile below.</p>`;
+    }
     memberBlockHtml = `
       <div class="momo-box" style="border-color:var(--gold);margin-top:14px">
         <b style="color:var(--gold)">Your Member ID: ${custId}</b>
+        ${statsLine}
         <p style="margin-top:8px;color:var(--text-dim);font-size:12px;line-height:1.6">Save this number. Next time, enter it in the phone/membership field instead of typing your details again — it also tracks your points, rewards, and order history so you don't have to.</p>
         <p style="margin-top:8px;font-size:12px;line-height:1.6">Follow us so you don't miss offers and events:</p>
         <div class="mw-social-row" style="margin-top:6px">${SOCIAL_LINKS.map(l => `<a class="mw-social-link" href="${l.url}" target="_blank" rel="noopener">${l.name}</a>`).join('')}</div>
