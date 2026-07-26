@@ -4,6 +4,13 @@
   THE WHITE HOUSE EVENTS & MORE — BAR DASHBOARD (v6.3)
 
   v6.3 CHANGES (this session):
+  - MIDNIGHT RESET FIXED. "Today's Orders" and the live metrics used to
+    filter by calendar date, so they emptied out at 00:00 Africa/Accra
+    even mid-shift. Now they filter by a shift-boundary timestamp
+    (venue_settings.current_shift_started_at) that only moves forward
+    when GENERATE SHIFT SUMMARY is clicked — via the new
+    advance_shift_boundary() function. An overnight shift now keeps its
+    full totals right up until it's actually closed out, never before.
   - bar_orders is no longer publicly readable by the anon key — that
     gap (flagged in 002_pending_decisions_not_applied.sql) is closed.
     This page's read of bar_orders now goes through a new
@@ -489,7 +496,11 @@ async function loadSupabaseBarData(){
     // function that returns the identical rows a raw .from() read used
     // to. Same shape ({data, error}), same 500-row limit — nothing else
     // about this page needed to change.
-    supabaseClient.rpc('get_bar_orders_recent', { p_limit: 500 }),
+    // v6.3: bumped from 500 to 1500 — now that "today" is a shift
+    // boundary instead of a calendar day (see below), a busy shift
+    // running past midnight needs more than 500 rows of history to
+    // stay complete until GENERATE SHIFT SUMMARY is clicked.
+    supabaseClient.rpc('get_bar_orders_recent', { p_limit: 1500 }),
     supabaseClient.from('bar_recipes').select('item_name, category, price_ghs'),
     supabaseClient.from('food_menu').select('item_name, category, price_ghs'),
     supabaseClient.from('restock_log').select('*').order('created_at', { ascending: false }).limit(15),
@@ -526,17 +537,28 @@ async function loadSupabaseBarData(){
     active: s.active !== false, onDuty: !!s.on_duty
   }));
 
-  const GHANA_TZ_TODAY = new Date().toLocaleDateString('en-CA', {timeZone:'Africa/Accra'});
+  // v6.3 FIX: this used to reset at midnight Africa/Accra because it
+  // filtered by CALENDAR DATE — wrong for a shift that's still running
+  // past midnight (an order at 19:55 shouldn't vanish from "today" at
+  // 00:00 while the same shift is still open). Now it filters by a
+  // shift-boundary TIMESTAMP instead (venue_settings.
+  // current_shift_started_at), which only moves forward when
+  // GENERATE SHIFT SUMMARY is actually clicked — see
+  // generateShiftSummary() below. If that setting is somehow missing,
+  // falls back to today's calendar start so the dashboard never
+  // breaks, it just behaves like before until the setting exists.
+  const shiftStartedAtRaw = venueSettings.current_shift_started_at;
+  const shiftStartedAt = shiftStartedAtRaw ? new Date(shiftStartedAtRaw) : (() => { const d = new Date(); d.setHours(0,0,0,0); return d; })();
+  const shiftStartedAtMs = shiftStartedAt.getTime();
   const todayOrders = [];
   let todayRevenue = 0, todayItemCount = 0;
   const salesByItem = {}, revenueByPayment = {};
   ordersRes.data.forEach(o => {
-    const d = new Date(o.created_at);
-    const dayStr = d.toLocaleDateString('en-CA', {timeZone:'Africa/Accra'});
+    const orderMs = new Date(o.created_at).getTime();
     const qty = parseFloat(o.qty)||0, lineTotal = parseFloat(o.line_total_ghs)||0;
     if(!salesByItem[o.item_name]) salesByItem[o.item_name] = {item:o.item_name, qty:0, revenue:0};
     salesByItem[o.item_name].qty += qty; salesByItem[o.item_name].revenue += lineTotal;
-    if(dayStr === GHANA_TZ_TODAY){
+    if(!isNaN(orderMs) && orderMs >= shiftStartedAtMs){
       todayOrders.push({ timestamp: o.created_at, orderId: o.order_id, item: o.item_name, qty, unitPrice: parseFloat(o.unit_price_ghs)||0,
         lineTotal, staffInitials: o.staff_initials||'', custId: o.customer_id||'—', payment: o.payment_method||'Unspecified' });
       todayRevenue += lineTotal; todayItemCount += qty;
@@ -1434,10 +1456,17 @@ Low stock (${lowStock.length}):${lowStock.length ? '\n' + lowStock.map(s=>`  ${s
       p_items_sold: totalItems,
       p_orders_count: orders.length
     });
+    // v6.3: THIS is what makes "Today's Orders" reset — not midnight.
+    // Only after the summary is safely saved does the shift boundary
+    // move forward, so a shift running past midnight keeps its full
+    // totals right up until this button is pressed.
+    await supabaseClient.rpc('advance_shift_boundary');
+    setTimeout(() => loadData(), 400);
   }catch(e){ console.log('Could not save shift summary to archive:', e); }
 
   el.innerHTML = `
     <div class="shift-summary-box">
+      <div style="color:var(--teal);font-size:11px;margin-bottom:10px">&#10003; Shift closed — Today's Orders and the metrics above will reset to this new shift's totals in a moment.</div>
       <h4>Revenue</h4>
       <div class="shift-summary-row"><span>Total</span><span style="color:var(--gold);font-family:'Space Mono',monospace">&#8373;${totalRevenue.toFixed(2)}</span></div>
       <div class="shift-summary-row"><span>Items sold</span><span style="font-family:'Space Mono',monospace">${totalItems}</span></div>
