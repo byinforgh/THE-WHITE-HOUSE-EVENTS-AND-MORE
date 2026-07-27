@@ -1587,7 +1587,20 @@ let lastActiveSignature = null;
 let orderStaffSelections = {};
 let processingOrderIds = new Set();
 
+let sharedAudioCtx = null;
 function playOrderBeep(){
+  try{
+    if(!sharedAudioCtx) sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if(sharedAudioCtx.state === 'suspended') sharedAudioCtx.resume();
+    const osc = sharedAudioCtx.createOscillator();
+    const gain = sharedAudioCtx.createGain();
+    osc.connect(gain); gain.connect(sharedAudioCtx.destination);
+    osc.frequency.value = 880;  // 660 in canteen-dashboard.html
+    gain.gain.setValueAtTime(0.15, sharedAudioCtx.currentTime);
+    osc.start(); osc.stop(sharedAudioCtx.currentTime + 0.18);
+    osc.onended = () => { osc.disconnect(); gain.disconnect(); };
+  }catch(e){ }
+}
   try{
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const osc = ctx.createOscillator();
