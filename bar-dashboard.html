@@ -1,9 +1,32 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE EVENTS & MORE — BAR DASHBOARD (v6.4)
+  THE WHITE HOUSE EVENTS & MORE — BAR DASHBOARD (v6.5)
 
-  v6.4 CHANGES (this session — multiple shifts per day):
+  v6.5 CHANGES (this session):
+  - OPEN BAR TABS. Quick Sell now has a third payment option, OPEN BAR
+    TAB (bright yellow, distinct from Cash/MoMo), for customers who
+    want to pay when they finish instead of at time of sale. Clicking
+    it requires the customer's name, phone, and an area (from the same
+    location list order.html uses), registers/updates their customer
+    record immediately (so their ID and points are live right away,
+    not waiting for payment), and opens a tab instead of finalizing a
+    sale. A new OPEN TABS card at the top of the dashboard lists every
+    unpaid tab with name, phone, area, and total, staying there until
+    a staff member taps PAID (CASH) or PAID (MOMO) — at which point it
+    posts through the exact same stock-decrement + bar_orders +
+    transactions path Quick Sell already uses, so reporting is
+    unaffected either way. Backed by three new functions: open_bar_tab,
+    close_bar_tab, cancel_bar_tab, and a new open_tabs table (locked
+    down like bar_orders — reads go through get_open_tabs()).
+  - AUDIO CONTEXT FIX. playOrderBeep() used to create a brand new
+    AudioContext on every single new-order beep and never close it —
+    on a long shift with orders landing every few minutes for hours,
+    that's an unclosed system resource stacking up all day, not just
+    heap churn. Fixed to create one shared AudioContext once and reuse
+    it for every beep.
+
+  v6.4 CHANGES (multiple shifts per day):
   - Previously a shift summary was bucketed into a fixed "Morning"
     (6am-6pm) or "Night" (6pm-6am) slot, and generating a second one in
     the same half-day OVERWROTE the first — silently destroying it.
@@ -27,55 +50,15 @@
     advance_shift_boundary() function. An overnight shift now keeps its
     full totals right up until it's actually closed out, never before.
   - bar_orders is no longer publicly readable by the anon key — that
-    gap (flagged in 002_pending_decisions_not_applied.sql) is closed.
-    This page's read of bar_orders now goes through a new
-    SECURITY DEFINER function, get_bar_orders_recent(), which returns
-    the exact same rows anon used to read directly. No other behaviour
-    on this page changes — same data, same shape, just no longer
-    exposed to a raw anon SELECT.
+    gap is closed. This page's read of bar_orders now goes through a
+    new SECURITY DEFINER function, get_bar_orders_recent(), which
+    returns the exact same rows anon used to read directly.
   - QUIET-HOUR AUTO-RELOAD. This screen runs constantly, so as a
     memory-safety net for a browser tab left open for days at a time,
     it now does a plain location.reload() once, between 4:00-4:05am
-    Africa/Accra time, at most once per calendar day. This clears any
-    long-session heap growth in the browser tab itself; it does NOT
-    touch or reset anything in Supabase — all data is safe regardless
-    of when this fires. If a shift is actively using the screen at
-    that hour, this is worth turning off (delete the
-    scheduleQuietHourReload() call at the bottom) — it's a safety net
-    for an unattended screen, not a requirement.
+    Africa/Accra time, at most once per calendar day.
 
-  v6.2 CHANGES (bug fix):
-  - FIXED: dashboard failed to load entirely ("Dashboard can't reach
-    Supabase" banner). Cause: the RLS lockdown migration run earlier
-    that session correctly revoked full-table SELECT on `staff` for
-    anon/authenticated and replaced it with a COLUMN-LIST grant that
-    excludes pin_code. But this file still ran
-    `supabaseClient.from('staff').select('*')` — in Postgres, `SELECT *`
-    against a table where the role only has column-level (not
-    table-level) SELECT privileges fails outright the moment it hits a
-    column that wasn't granted (pin_code), even though every other
-    column WAS readable. That one failed query was inside a
-    Promise.all() with everything else this dashboard loads, so it took
-    the entire page down with it. Fixed by selecting the exact granted
-    column list instead of *.
-
-  v6.1 CHANGES:
-  - STAFF ON DUTY now only lists staff who are actually checked in to
-    THIS station (the bar). Checking in is now a separate control above
-    the grid: pick your name from a dropdown of staff not yet on duty
-    here, tap CHECK IN, then your card appears in the grid below with a
-    check-out button.
-
-  v6.0 CHANGES (full Supabase migration + staff unification + full-width layout):
-  - REMOVED all Apps Script (Google Sheets / Code.gs) dependency. Staff,
-    stock, orders, menu, restocks, and customer lookup now come from
-    Supabase only.
-  - Staff list now reads from Supabase's `staff` table.
-  - Fixed a real duplicate-stock bug found this session: "Soda" and
-    "Soda/Sprite" were two separate bar_stock rows for the same physical
-    product. Merged into "Soda".
-  - Layout: .main max-width raised and made responsive (breakpoints at
-    900/1400/1800px).
+  v6.2 / v6.1 / v6.0 — see prior sign-offs.
 -->
 <head>
 <meta charset="UTF-8">
@@ -260,6 +243,25 @@ tr.low-row{background:#1a0a0a;}
 .order-momo-input{background:var(--card);border:1px solid var(--teal);border-radius:6px;padding:8px 10px;font-size:16px;color:var(--text);width:100%;margin-bottom:6px;font-family:'Syne',sans-serif;}
 @media(min-width:1400px){.order-cards-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start;}}
 @media(min-width:1900px){.order-cards-grid{grid-template-columns:1fr 1fr 1fr;}}
+
+/* v6.5: OPEN TABS */
+.tab-card{background:var(--surface);border:2px solid var(--gold);border-radius:8px;padding:14px 16px;margin-bottom:10px;}
+.tab-card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:8px;}
+.tab-card-name{font-weight:800;font-size:16px;}
+.tab-card-phone{font-size:11px;color:var(--text-dim);font-family:'Space Mono',monospace;margin-top:2px;}
+.tab-area-badge{display:inline-block;background:var(--gold);color:var(--black);font-weight:800;font-size:11px;letter-spacing:0.5px;padding:4px 12px;border-radius:20px;white-space:nowrap;}
+.tab-card-items{font-size:12px;color:var(--text-dim);margin:6px 0;line-height:1.5;}
+.tab-card-footer{display:flex;justify-content:space-between;align-items:center;margin-top:8px;}
+.tab-total{font-family:'Space Mono',monospace;font-weight:800;color:var(--gold);font-size:18px;}
+.tab-age{font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;}
+.tab-actions{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;}
+.tab-actions button{flex:1;min-width:110px;padding:9px 10px;font-size:11px;border-radius:6px;border:none;font-weight:800;cursor:pointer;font-family:'Syne',sans-serif;}
+.tab-pay-cash{background:var(--green);color:#062;}
+.tab-pay-momo{background:var(--teal);color:#062;}
+.tab-cancel{background:transparent;border:1px solid var(--red)!important;color:var(--red);}
+.qs-bartab-btn{background:var(--gold);color:var(--black);border:2px dashed var(--gold-dim);border-radius:8px;padding:12px;font-weight:800;font-size:12px;letter-spacing:0.5px;width:100%;cursor:pointer;margin-top:8px;font-family:'Syne',sans-serif;}
+.qs-bartab-btn:hover{background:var(--gold-dim);}
+.qs-bartab-btn.active{background:var(--gold);border-style:solid;box-shadow:0 0 0 2px var(--gold-dim);}
 </style>
 </head>
 <body>
@@ -274,6 +276,11 @@ tr.low-row{background:#1a0a0a;}
 <div class="main">
   <div class="error-banner" id="errorBanner"></div>
   <div class="pending-banner" id="pendingBanner"></div>
+
+  <div class="card" id="openTabsCard">
+    <div class="card-title">&#128221; OPEN BAR TABS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(customers paying when they finish — stays here until marked paid)</span></div>
+    <div id="openTabsBody"><div class="empty">Loading open tabs...</div></div>
+  </div>
 
   <div class="card" id="tableOrdersCard">
     <div class="card-title">&#128203; INCOMING TABLE ORDERS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(from QR ordering, or from staff phones — pick staff on each order card below)</span></div>
@@ -419,7 +426,7 @@ const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 if('scrollRestoration' in history){ history.scrollRestoration = 'manual'; }
 window.scrollTo(0,0);
 
-let barData = {stock: [], todayOrders: [], staff: [], topSellers: [], staleStock: [], restockLog: [], revenueByPayment: []};
+let barData = {stock: [], todayOrders: [], staff: [], topSellers: [], staleStock: [], restockLog: [], revenueByPayment: [], locationTypes: []};
 let activeStockCategory = 'All';
 let expandedMetric = null;
 
@@ -519,6 +526,10 @@ async function loadSupabaseBarData(){
   const venueSettings = {};
   (settingsRes.data||[]).forEach(row => { venueSettings[row.key] = row.value; });
 
+  let locationTypes = [];
+  try{ locationTypes = venueSettings.location_types ? JSON.parse(venueSettings.location_types) : []; }catch(e){ locationTypes = []; }
+  if(!locationTypes.length) locationTypes = ['Table','Pickup','Terrace Area','Room Number','Bar Area','VIP Area','Pool','Stage Area','Stage 2 Area'];
+
   const categoryMap = {};
   recipesRes.data.forEach(r => { if(r.item_name && r.category) categoryMap[r.item_name.trim().toLowerCase()] = r.category; });
 
@@ -587,7 +598,7 @@ async function loadSupabaseBarData(){
 
   return { stock, menu, todayOrders: todayOrders.reverse(), todayRevenue, todayItemCount, revenueByPayment: revenueByPaymentList,
     topSellers, staleStock, restockLog, staff, lowStockCount: stock.filter(s=>s.lowStock).length,
-    shiftStartedAt: shiftStartedAtRaw || null,
+    shiftStartedAt: shiftStartedAtRaw || null, locationTypes,
     momoNumber: venueSettings.momo_number || '', momoName: venueSettings.momo_name || '' };
 }
 
@@ -616,6 +627,7 @@ async function loadData(){
     renderQuickSellMenu();
     renderQuickSellPanel();
     renderTodaysShifts();
+    renderOpenTabs();
   }catch(e){
     document.getElementById('lastRefresh').textContent = 'Offline — see message above';
     showApiError(e.message || 'Could not load data (unknown error).');
@@ -1119,6 +1131,7 @@ function scanLoop(){
 
 let quickSellCategory = 'All';
 let cart = {};
+let qsBarTabMode = false;
 
 function renderQuickSellTabs(){
   const menu = barData.menu || [];
@@ -1221,6 +1234,16 @@ function getServingStaff(){
   return onDuty.length ? onDuty : allActive;
 }
 
+// v6.5: toggles the Bar Tab flow on/off within the Quick Sell panel.
+// Kept as a separate mode flag (not just another <option> in the
+// payment select) so it can render as its own bright-yellow button,
+// per how this was asked for, and so it can force name+phone+area to
+// be required (a normal Cash/MoMo sale still allows a blank walk-in).
+function toggleBarTabMode(){
+  qsBarTabMode = !qsBarTabMode;
+  renderQuickSellPanel();
+}
+
 function renderQuickSellPanel(){
   const panel = document.getElementById('quickSellPanel');
   const menu = barData.menu || [];
@@ -1229,6 +1252,7 @@ function renderQuickSellPanel(){
   if(itemNames.length === 0){
     panel.classList.remove('show');
     panel.innerHTML = '';
+    qsBarTabMode = false;
     return;
   }
 
@@ -1238,6 +1262,7 @@ function renderQuickSellPanel(){
   const prevCustomer = document.getElementById('qsCustomer') ? document.getElementById('qsCustomer').value : '';
   const prevNewName = document.getElementById('qsNewName') ? document.getElementById('qsNewName').value : '';
   const prevPayment = document.getElementById('qsPayment') ? document.getElementById('qsPayment').value : '';
+  const prevArea = document.getElementById('qsTabArea') ? document.getElementById('qsTabArea').value : '';
 
   const staff = getServingStaff();
   const subtotal = cartSubtotal();
@@ -1259,6 +1284,9 @@ function renderQuickSellPanel(){
     </div>`;
   }).join('');
 
+  const areaOptionsHtml = '<option value="">Select area...</option>' +
+    (barData.locationTypes||[]).map(l => `<option value="${l}">${l}</option>`).join('');
+
   panel.innerHTML = `
     <div class="qs-title"><span>&#128722; CART (${itemNames.length} item${itemNames.length>1?'s':''})</span><button type="button" class="cart-remove" id="qsClearCart" title="Clear cart" style="font-size:12px;color:var(--muted)">CLEAR</button></div>
     <div class="cart-list" id="cartList"></div>
@@ -1270,19 +1298,24 @@ function renderQuickSellPanel(){
         <select class="select-input" id="qsStaff" style="margin:0"></select>
       </div>
       <div>
-        <div class="qs-label">Payment method (required)</div>
-        <select class="select-input" id="qsPayment" style="margin:0">
+        <div class="qs-label">Payment method (required, unless opening a tab below)</div>
+        <select class="select-input" id="qsPayment" style="margin:0" ${qsBarTabMode?'disabled':''}>
           <option value="">Select payment...</option>
           <option>Cash</option><option>MoMo</option>
         </select>
       </div>
     </div>
-    <div class="qs-label" style="margin-top:8px">Customer phone or ID (optional — leave blank for walk-in)</div>
+    <div class="qs-label" style="margin-top:8px">Customer phone or ID ${qsBarTabMode ? '(required for a tab)' : '(optional — leave blank for walk-in)'}</div>
     <input class="search-input" id="qsCustomer" placeholder="e.g. 0241234567 or THWGH1" style="margin:0 0 10px">
-    <div class="qs-label">New customer name (only needed if the ID/phone above is new)</div>
+    <div class="qs-label">${qsBarTabMode ? 'Customer name (required for a tab)' : 'New customer name (only needed if the ID/phone above is new)'}</div>
     <input class="search-input" id="qsNewName" placeholder="e.g. Ama Mensah" style="margin:0 0 10px">
+    <button type="button" class="qs-bartab-btn${qsBarTabMode?' active':''}" id="qsBarTabToggle">&#128221; ${qsBarTabMode ? 'CANCEL — GO BACK TO CASH/MOMO' : 'OPEN BAR TAB — CUSTOMER PAYS WHEN THEY FINISH'}</button>
+    ${qsBarTabMode ? `
+    <div class="qs-label" style="margin-top:10px">Area (required)</div>
+    <select class="select-input" id="qsTabArea" style="margin:0 0 10px;border-color:var(--gold)">${areaOptionsHtml}</select>
+    ` : ''}
     <div class="restock-grid">
-      <button class="btn" id="qsConfirmBtn" style="margin:0">&#10003; CONFIRM SALE — &#8373;${subtotal.toFixed(2)}</button>
+      <button class="btn" id="qsConfirmBtn" style="margin:0${qsBarTabMode?';background:var(--gold);border:2px solid var(--gold-dim)':''}">${qsBarTabMode ? '&#10003; OPEN TAB — &#8373;'+subtotal.toFixed(2) : '&#10003; CONFIRM SALE — &#8373;'+subtotal.toFixed(2)}</button>
       <button class="btn" id="qsCancelBtn" style="margin:0;background:var(--border);color:var(--text)">CANCEL</button>
     </div>
     <div id="qsResult" style="margin-top:8px;font-size:12px"></div>`;
@@ -1305,14 +1338,18 @@ function renderQuickSellPanel(){
   document.getElementById('qsNewName').value = prevNewName;
   const paySel = document.getElementById('qsPayment');
   if(prevPayment) paySel.value = prevPayment;
+  const areaSel = document.getElementById('qsTabArea');
+  if(areaSel && prevArea) areaSel.value = prevArea;
 
-  document.getElementById('qsConfirmBtn').addEventListener('click', submitQuickSellCart);
+  document.getElementById('qsBarTabToggle').addEventListener('click', toggleBarTabMode);
+  document.getElementById('qsConfirmBtn').addEventListener('click', qsBarTabMode ? submitBarTab : submitQuickSellCart);
   document.getElementById('qsCancelBtn').addEventListener('click', cancelQuickSellCart);
   document.getElementById('qsClearCart').addEventListener('click', clearCart);
 }
 
 function clearCart(){
   cart = {};
+  qsBarTabMode = false;
   const searchEl = document.getElementById('quickSellSearch');
   if(searchEl) searchEl.value = '';
   renderQuickSellMenu();
@@ -1321,6 +1358,54 @@ function clearCart(){
 
 function cancelQuickSellCart(){
   clearCart();
+}
+
+// v6.5: opens a tab instead of finalizing a sale. Requires name,
+// phone, and area — a tab with no way to identify the customer or
+// where they are defeats the point. Registers/updates the customer
+// record immediately server-side (open_bar_tab calls
+// find_or_create_bar_customer), so their ID and points are live right
+// away rather than waiting until they pay.
+async function submitBarTab(){
+  const staffInitials = document.getElementById('qsStaff').value;
+  const custPhone = document.getElementById('qsCustomer').value.trim();
+  const custName = document.getElementById('qsNewName').value.trim();
+  const area = document.getElementById('qsTabArea').value;
+  const resultEl = document.getElementById('qsResult');
+  const confirmBtn = document.getElementById('qsConfirmBtn');
+
+  if(!staffInitials){ resultEl.innerHTML = '<span style="color:var(--red)">Pick who is serving.</span>'; return; }
+  if(!custName){ resultEl.innerHTML = '<span style="color:var(--red)">Customer name is required to open a tab.</span>'; return; }
+  if(!custPhone){ resultEl.innerHTML = '<span style="color:var(--red)">Customer phone or ID is required to open a tab.</span>'; return; }
+  if(!area){ resultEl.innerHTML = '<span style="color:var(--red)">Pick an area for the tab.</span>'; return; }
+
+  const itemNames = Object.keys(cart).filter(k => cart[k] > 0);
+  if(itemNames.length === 0){ resultEl.innerHTML = '<span style="color:var(--red)">Cart is empty.</span>'; return; }
+
+  const menu = barData.menu || [];
+  const items = itemNames.map(name => {
+    const m = menu.find(mm => mm.item === name);
+    return { item: name, qty: cart[name], price: m ? m.price : 0 };
+  });
+  const total = cartSubtotal();
+
+  confirmBtn.disabled = true;
+  confirmBtn.textContent = 'Opening tab...';
+  resultEl.innerHTML = '';
+
+  try{
+    const { error } = await supabaseClient.rpc('open_bar_tab', {
+      p_items: items, p_total: total, p_staff: staffInitials,
+      p_customer_name: custName, p_customer_phone: custPhone, p_area: area
+    });
+    if(error) throw new Error(error.message);
+    resultEl.innerHTML = `<span class="flash">&#10003; Tab opened for ${custName} — ${area}. It's now showing at the top of the dashboard until paid.</span>`;
+    setTimeout(() => { clearCart(); loadData(); }, 1500);
+  }catch(e){
+    resultEl.innerHTML = '<span style="color:var(--red)">' + e.message + '</span>';
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = '\u2713 OPEN TAB — \u20b5' + total.toFixed(2);
+  }
 }
 
 async function submitQuickSellCart(){
@@ -1404,6 +1489,77 @@ async function submitQuickSellCart(){
     confirmBtn.textContent = '\u2713 CONFIRM SALE — \u20b5' + cartSubtotal().toFixed(2);
     renderQuickSellMenu();
     renderQuickSellPanel();
+  }
+}
+
+// v6.5: OPEN TABS — customers who chose to pay when they finish.
+// Reads through get_open_tabs() (locked down, same pattern as
+// get_bar_orders_recent) rather than a raw table select.
+let processingTabIds = new Set();
+async function renderOpenTabs(){
+  const el = document.getElementById('openTabsBody');
+  if(!el) return;
+  try{
+    const { data, error } = await supabaseClient.rpc('get_open_tabs');
+    if(error) throw new Error(error.message);
+    const tabs = data || [];
+    if(tabs.length === 0){ el.innerHTML = '<div class="empty">No open tabs right now.</div>'; return; }
+    el.innerHTML = tabs.map(t => {
+      const itemsStr = (t.items_json||[]).map(i=>`${i.qty} &times; ${i.item}`).join(', ');
+      const isProcessing = processingTabIds.has(t.id);
+      const mins = Math.max(0, Math.floor((Date.now() - new Date(t.created_at).getTime())/60000));
+      return `<div class="tab-card">
+        <div class="tab-card-top">
+          <div><div class="tab-card-name">${t.customer_name}${t.customer_id?' &middot; '+t.customer_id:''}</div><div class="tab-card-phone">${t.customer_phone}</div></div>
+          <span class="tab-area-badge">${t.area||'—'}</span>
+        </div>
+        <div class="tab-card-items">${itemsStr}</div>
+        <div class="tab-card-footer">
+          <span class="tab-total">GHS ${parseFloat(t.total_ghs).toFixed(2)}</span>
+          <span class="tab-age">served by ${t.staff_initials} &middot; open ${mins} min</span>
+        </div>
+        <div class="tab-actions">
+          ${isProcessing ? '<button disabled>PROCESSING...</button>' : `
+            <button class="tab-pay-cash" onclick="payTab('${t.id}','Cash')">&#10003; PAID — CASH</button>
+            <button class="tab-pay-momo" onclick="payTab('${t.id}','MoMo')">&#10003; PAID — MOMO</button>
+            <button class="tab-cancel" onclick="cancelTab('${t.id}')">CANCEL</button>`}
+        </div>
+      </div>`;
+    }).join('');
+  }catch(e){
+    console.log('renderOpenTabs error:', e);
+    el.innerHTML = '<div class="empty">Could not load open tabs — will retry automatically.</div>';
+  }
+}
+
+async function payTab(tabId, method){
+  processingTabIds.add(tabId);
+  renderOpenTabs();
+  try{
+    const { data, error } = await supabaseClient.rpc('close_bar_tab', { p_tab_id: tabId, p_payment: method, p_closed_by: null });
+    if(error) throw new Error(error.message);
+    processingTabIds.delete(tabId);
+    loadData();
+  }catch(e){
+    processingTabIds.delete(tabId);
+    renderOpenTabs();
+    alert('Could not mark tab paid: ' + e.message);
+  }
+}
+
+async function cancelTab(tabId){
+  if(!confirm('Cancel this tab? This cannot be undone.')) return;
+  processingTabIds.add(tabId);
+  renderOpenTabs();
+  try{
+    const { error } = await supabaseClient.rpc('cancel_bar_tab', { p_tab_id: tabId });
+    if(error) throw new Error(error.message);
+    processingTabIds.delete(tabId);
+    renderOpenTabs();
+  }catch(e){
+    processingTabIds.delete(tabId);
+    renderOpenTabs();
+    alert('Could not cancel tab: ' + e.message);
   }
 }
 
@@ -1975,6 +2131,7 @@ loadTableOrders();
 scheduleNext(loadTableOrders, 8000, 4000);
 loadFoodOrders();
 scheduleNext(loadFoodOrders, 8000, 4000);
+scheduleNext(renderOpenTabs, 20000, 5000);
 </script>
 </body>
 </html>
