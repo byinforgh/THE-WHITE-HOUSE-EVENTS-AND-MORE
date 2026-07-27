@@ -1588,7 +1588,6 @@ let orderStaffSelections = {};
 let processingOrderIds = new Set();
 
 let sharedAudioCtx = null;
-let sharedAudioCtx = null;
 function playOrderBeep(){
   try{
     if(!sharedAudioCtx) sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
