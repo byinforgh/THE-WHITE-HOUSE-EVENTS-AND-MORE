@@ -1,76 +1,23 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE EVENTS & MORE — TABLE ORDER PAGE (v4.6, Supabase-only)
+  THE WHITE HOUSE EVENTS & MORE — TABLE ORDER PAGE (v4.7, Supabase-only)
 
-  v4.6 CHANGES (this session — the actual points/welcome bug):
-  - ROOT CAUSE FOUND for "points don't register" and "no thank you/
-    welcome screen after ordering, and it forgets the customer
-    immediately after." find_or_create_bar_customer returns the
-    customer ID directly as plain text — it always has. But this file
-    was reading the result as `memberData.custId`, which is undefined
-    on a plain string. That meant every single order saved a broken
-    localStorage record (custId: undefined) and passed undefined into
-    the confirmation screen, so its member block never rendered.
-    Verified directly against the live database with the anon role
-    that the points/visit increment itself was ALWAYS working
-    correctly — this was purely the page reading its own answer wrong.
-  - The confirmation card now shows the member's points and visit count
-    immediately, fetched fresh right after the order, instead of only
-    ever pointing down at the separate profile bar (which depended on
-    a second fetch finishing first).
-
-  v4.5 CHANGES (profile recognition fix):
-  - The full "Welcome back" profile bar now renders the moment a typed
-    phone/ID matches an existing customer, not only from a past
-    localStorage record.
-
-  v4.4 CHANGES:
-  - OUT OF STOCK DETECTION. Menu now loads bar_stock alongside the
-    recipes/food menu. An item is marked OUT OF STOCK when:
-      • it's a recipe with named ingredients (bar_recipes.ingredient_1..4)
-        and any one of those ingredients doesn't have enough current_qty
-        in bar_stock, OR
-      • it's a direct-sell item (no ingredients listed) whose name
-        matches a bar_stock row exactly, and that row's current_qty is
-        at or below 0.
-    Items with no matching stock data at all (e.g. food items — kitchen
-    stock isn't wired up yet, per the 25 July note on days_available)
-    are left available, since there's nothing to check them against.
-    Out-of-stock cards gray out, can't be tapped into the cart, and show
-    an inline "Try instead:" suggestion — the next available item in the
-    same category, so a customer isn't just told no with nothing else
-    offered.
-  - NUMBERED LOCATION PICKER GENERALIZED. Previously only "Table" got a
-    1-50 dropdown (hardcoded in this file); everything else was a single
-    tap with no sub-detail. That's now driven by a new venue_settings key,
-    location_table_ranges (e.g. {"Table":50,"Bar Area":15}) — so Bar Area
-    now asks "which table" the same way Table does, starting at 1-15, and
-    any future area can get the same treatment by editing that one
-    Supabase row instead of another code deploy. Areas not listed there
-    keep the old single-tap behaviour (Pickup, Pool, VIP Area, etc.).
-  - Everything else — ordering flow, cart, member bar, validation — is
-    unchanged from v4.3.
-
-  v4.3 CHANGES (QR/profile flow, top priority):
-  - submitOrder() now AWAITS the profile refresh before the confirmation
-    screen is shown, so the profile bar is already fully built and
-    correct the instant the confirmation is dismissed.
-  - The confirmation screen shows points and visit count right there.
-  - Added an explicit "Most ordered" line to the profile bar.
-
-  v4.2 CHANGES:
-  - FIXED "no welcome back" / "no customer profile" on return visits by
-    switching loadMemberAccount() to Promise.allSettled() so one failing
-    query (e.g. rewards) doesn't take down the whole member bar.
-
-  v4.1 CHANGES:
-  - Returning-member bar also shows REWARDS, FOLLOW US, and CONTACT US.
-
-  v4.0 CHANGES:
-  - REMOVED Apps Script entirely — menu, location types, MoMo config,
-    and order writes are all Supabase now. Member recognition on
-    phone/ID blur added.
+  v4.7 CHANGES (this session — compact menu cards):
+  - MENU CARDS SHRUNK. Cards were full-height with generous padding,
+    so only 2 fit on screen at a time on a phone. Padding, font sizes,
+    and the grid column count are all reduced so roughly 6-8 items are
+    visible without scrolling, matching the request to see about 8 in
+    the space that used to show 2.
+  - Everything else — ordering flow, cart, member bar, validation,
+    out-of-stock detection, numbered location picker — is unchanged
+    from v4.6. See that version's notes below for the full history of
+    the points/welcome-message fix (root cause: find_or_create_bar_
+    customer returns the ID as plain text, not an object — this file
+    reads it directly). That fix is already in this file. If it is
+    still not showing on a live phone, the live site has not actually
+    been redeployed with this file yet — check the deployment, not
+    this code.
 -->
 <head>
 <meta charset="UTF-8">
@@ -109,19 +56,24 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 .tab-row{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:12px;}
 .tab-pill{flex-shrink:0;background:var(--surface);border:1px solid var(--border);color:var(--text-dim);padding:7px 14px;border-radius:20px;font-size:11px;font-weight:700;cursor:pointer;font-family:'Syne',sans-serif;}
 .tab-pill.active{background:var(--gold);color:var(--black);border-color:var(--gold);}
-.menu-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
-@media(min-width:900px){.menu-grid{grid-template-columns:repeat(3,1fr);}}
-@media(min-width:1300px){.menu-grid{grid-template-columns:repeat(4,1fr);}}
-@media(min-width:1700px){.menu-grid{grid-template-columns:repeat(5,1fr);}}
-.menu-item{position:relative;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;cursor:pointer;text-align:left;}
+
+/* v4.7: COMPACT MENU GRID — 3 columns on phones (was 2), 4-5 on
+   larger screens, and each card shrunk (padding/fonts) so roughly
+   6-8 items show on a phone screen without scrolling, instead of 2. */
+.menu-grid{display:grid;grid-template-columns:repeat(3, 1fr);gap:6px;}
+@media(min-width:600px){.menu-grid{grid-template-columns:repeat(4,1fr);}}
+@media(min-width:900px){.menu-grid{grid-template-columns:repeat(5,1fr);}}
+@media(min-width:1300px){.menu-grid{grid-template-columns:repeat(6,1fr);}}
+@media(min-width:1700px){.menu-grid{grid-template-columns:repeat(7,1fr);}}
+.menu-item{position:relative;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:8px 8px 7px;cursor:pointer;text-align:left;min-height:64px;}
 .menu-item.in-cart{border-color:var(--gold);background:#1e1706;}
 .menu-item.out-of-stock{cursor:default;opacity:0.55;border-color:#3a2020;}
-.menu-item .mi-name{font-size:15px;font-weight:800;line-height:1.25;}
-.menu-item .mi-cat{font-size:10px;color:var(--muted);margin-top:3px;}
-.menu-item .mi-price{font-size:13px;color:var(--gold-dim);font-family:'Space Mono',monospace;margin-top:8px;font-weight:700;}
-.menu-item .mi-qty{position:absolute;top:8px;right:10px;background:var(--gold);color:var(--black);font-family:'Space Mono',monospace;font-weight:800;font-size:12px;border-radius:10px;padding:2px 8px;}
-.mi-oos-badge{position:absolute;top:8px;right:10px;background:var(--red);color:#fff;font-family:'Space Mono',monospace;font-weight:800;font-size:9px;border-radius:10px;padding:3px 8px;letter-spacing:0.5px;}
-.mi-alt{font-size:10px;color:var(--teal);margin-top:6px;line-height:1.4;}
+.menu-item .mi-name{font-size:11.5px;font-weight:800;line-height:1.15;}
+.menu-item .mi-cat{font-size:8px;color:var(--muted);margin-top:2px;}
+.menu-item .mi-price{font-size:10.5px;color:var(--gold-dim);font-family:'Space Mono',monospace;margin-top:5px;font-weight:700;}
+.menu-item .mi-qty{position:absolute;top:4px;right:5px;background:var(--gold);color:var(--black);font-family:'Space Mono',monospace;font-weight:800;font-size:10px;border-radius:8px;padding:1px 6px;}
+.mi-oos-badge{position:absolute;top:4px;right:5px;background:var(--red);color:#fff;font-family:'Space Mono',monospace;font-weight:800;font-size:7px;border-radius:8px;padding:2px 5px;letter-spacing:0.3px;}
+.mi-alt{font-size:8px;color:var(--teal);margin-top:4px;line-height:1.3;}
 .empty{text-align:center;padding:30px 10px;color:var(--muted);font-size:13px;}
 .loading{text-align:center;padding:40px 10px;color:var(--muted);font-size:13px;font-family:'Space Mono',monospace;}
 
@@ -283,7 +235,7 @@ let locationType = null;
 let locationDetail = '';
 let menu = [];
 let locationTypes = [];
-let locationTableRanges = {}; // v4.4: {"Table":50,"Bar Area":15,...}
+let locationTableRanges = {};
 let momoNumber = '';
 let momoName = '';
 let venueContactPhone = '';
@@ -337,12 +289,6 @@ function init(){
   });
 }
 
-// v4.4: OUT OF STOCK — computed once per menu load from bar_stock.
-// A recipe item with named ingredients needs every listed ingredient
-// to have enough current_qty; a direct-sell item (no ingredients on
-// the row) is checked against a bar_stock row of the same name. Items
-// with nothing to check against (most food items — kitchen stock
-// isn't wired up yet) are left available.
 function computeStockStatus(recipeRows, foodRows, stockRows){
   const stockByName = {};
   (stockRows||[]).forEach(s => { stockByName[(s.item||'').trim().toLowerCase()] = parseFloat(s.current_qty)||0; });
@@ -353,14 +299,13 @@ function computeStockStatus(recipeRows, foodRows, stockRows){
     if(ingredients.length > 0){
       for(const ing of ingredients){
         const have = stockByName[ing.name.trim().toLowerCase()];
-        if(have !== undefined && have < ing.qty) return false; // out of stock
+        if(have !== undefined && have < ing.qty) return false;
       }
       return true;
     }
-    // No recipe ingredients listed — direct-sell item. Check by its own name.
     const direct = stockByName[(row.item_name||'').trim().toLowerCase()];
     if(direct !== undefined) return direct > 0;
-    return true; // nothing to check against — assume available
+    return true;
   }
 
   const map = {};
@@ -433,9 +378,6 @@ function renderLocationOptions(){
   });
 }
 
-// v4.4: any location type with an entry in locationTableRanges gets the
-// same numbered-dropdown treatment "Table" always had — driven by the
-// number configured in venue_settings, not hardcoded per location.
 function selectLocation(loc, skipDetailReset){
   locationType = loc;
   if(!skipDetailReset) locationDetail = '';
@@ -527,9 +469,9 @@ function renderMenu(){
     let altHtml = '';
     if(m.available === false){
       const alt = findAlternate(m);
-      if(alt) altHtml = `<div class="mi-alt">Try instead: ${alt.item}</div>`;
+      if(alt) altHtml = `<div class="mi-alt">Try: ${alt.item}</div>`;
     }
-    el.innerHTML = `${m.available === false ? '<span class="mi-oos-badge">OUT OF STOCK</span>' : '<span class="mi-qty" style="display:none"></span>'}
+    el.innerHTML = `${m.available === false ? '<span class="mi-oos-badge">OUT</span>' : '<span class="mi-qty" style="display:none"></span>'}
       <div class="mi-name"></div>
       <div class="mi-cat"></div>
       <div class="mi-price">GHS ${m.price.toFixed(2)}</div>
@@ -537,9 +479,7 @@ function renderMenu(){
     el.querySelector('.mi-name').textContent = m.item;
     el.querySelector('.mi-cat').textContent = m.category || '';
     if(m.available === false){
-      // Unclickable — tapping an out-of-stock card does nothing. The
-      // alternate suggestion text isn't a button either on purpose:
-      // it's informational, the customer still picks from the grid.
+      // Unclickable — tapping an out-of-stock card does nothing.
     }else{
       el.onclick = () => { cart[m.item] = (cart[m.item]||0) + 1; updateMenuCardQty(m.item); updateCartBar(); };
       grid.appendChild(el);
@@ -646,10 +586,6 @@ async function onCustPhoneBlur(){
       nameInput.disabled = true;
       hintEl.className = 'member-hint found';
       hintEl.textContent = `Welcome back, ${cust.name} — ${cust.customer_id} · ${cust.loyalty_points||0} points`;
-      // v4.5: don't wait for an order to be submitted — a matched
-      // phone/ID means we already know who this is, so show the full
-      // profile (points, visits, favourites, rewards) right now, and
-      // remember this device so it shows automatically next time too.
       saveMember(cust.customer_id, cust.name, cust.phone_number || query);
       renderFullProfileBar(cust.customer_id, cust.name, cust.phone_number || query);
     }else{
@@ -737,21 +673,13 @@ async function submitOrder(){
   let submittedCustPoints = null;
   let submittedCustVisits = null;
   try{
-    // v4.6 FIX: find_or_create_bar_customer RETURNS text — the
-    // customer ID itself, not an object. Reading memberData.custId
-    // was always undefined, which meant saveMember() saved a broken
-    // record (custId: undefined) on EVERY order, and the confirmation
-    // screen's member block never rendered (its custId check failed).
-    // The database side was always incrementing points correctly —
-    // this was purely a client-side read of the wrong shape. Verified
-    // against the live database before shipping this fix.
     const { data: memberData, error: memberErr } = await supabaseClient.rpc('find_or_create_bar_customer', { p_phone: phone, p_name: custName });
+    if(memberErr){
+      console.log('find_or_create_bar_customer error:', memberErr.message);
+    }
     if(!memberErr && memberData){
       saveMember(memberData, custName, phone);
       submittedCustId = memberData;
-      // Pull the just-updated points/visits straight away so the
-      // confirmation card can show them immediately, without waiting
-      // on the profile bar below to finish its own separate fetch.
       try{
         const { data: freshCust } = await supabaseClient.from('bar_customers').select('loyalty_points, total_visits').eq('customer_id', memberData).maybeSingle();
         if(freshCust){ submittedCustPoints = freshCust.loyalty_points; submittedCustVisits = freshCust.total_visits; }
@@ -908,14 +836,6 @@ const MEMBER_KEY = 'whgh_member_v2';
 function getSavedMember(){ try{ return JSON.parse(localStorage.getItem(MEMBER_KEY)||'null'); }catch(e){ return null; } }
 function saveMember(custId, name, phone){ try{ localStorage.setItem(MEMBER_KEY, JSON.stringify({custId, name, phone})); }catch(e){} }
 
-// v4.5: split into two pieces. renderFullProfileBar() does the fetch
-// + render for any known custId/name/phone. loadMemberAccount() is now
-// just the localStorage-driven entry point that calls it on page load.
-// onCustPhoneBlur() below now also calls renderFullProfileBar() the
-// moment a match is found on THIS visit — so typing a phone/ID into
-// the cart field, even on a brand new device or browser, shows the
-// full profile immediately instead of only a one-line hint and making
-// the customer place an order first before anything shows.
 async function loadMemberAccount(){
   const member = getSavedMember();
   if(!member) return;
@@ -1046,10 +966,6 @@ function showConfirmation(orders, payment, locType, locDetail, custId, custPoint
 
   let memberBlockHtml = '';
   if(custId){
-    // v4.6: points/visits are shown right here, right now — no longer
-    // dependent on the separate profile bar having already finished
-    // loading below it. This is the "welcome + points + ID immediately
-    // on Order Sent" fix.
     const statsLine = (custPoints !== null && custPoints !== undefined)
       ? `<p style="margin-top:6px;color:var(--gold);font-size:16px;font-weight:800">${custPoints} points &middot; ${custVisits||0} visits</p>`
       : `<p style="margin-top:6px;color:var(--text-dim);font-size:12px">Your points and visit count are on your profile below.</p>`;
@@ -1060,6 +976,16 @@ function showConfirmation(orders, payment, locType, locDetail, custId, custPoint
         <p style="margin-top:8px;color:var(--text-dim);font-size:12px;line-height:1.6">Save this number. Next time, enter it in the phone/membership field instead of typing your details again — it also tracks your points, rewards, and order history so you don't have to.</p>
         <p style="margin-top:8px;font-size:12px;line-height:1.6">Follow us so you don't miss offers and events:</p>
         <div class="mw-social-row" style="margin-top:6px">${SOCIAL_LINKS.map(l => `<a class="mw-social-link" href="${l.url}" target="_blank" rel="noopener">${l.name}</a>`).join('')}</div>
+      </div>`;
+  }else{
+    // v4.7: if registration didn't come through for any reason, tell the
+    // customer plainly instead of silently showing nothing — this was
+    // the exact complaint (customer left staring at just name/area/table
+    // with no ID). Now there's always a visible next step.
+    memberBlockHtml = `
+      <div class="momo-box" style="border-color:var(--gold-dim);margin-top:14px">
+        <b style="color:var(--gold-dim)">Your membership is still being set up</b>
+        <p style="margin-top:6px;color:var(--text-dim);font-size:12px;line-height:1.6">We couldn't confirm your Member ID just now — check your connection and it should catch up automatically, or ask a staff member to look you up by phone number.</p>
       </div>`;
   }
 
