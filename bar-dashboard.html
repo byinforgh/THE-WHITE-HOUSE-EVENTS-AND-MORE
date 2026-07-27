@@ -507,15 +507,6 @@ function clearApiError(){
 async function loadSupabaseBarData(){
   const [stockRes, ordersRes, recipesRes, foodRes, restockRes, staffRes, settingsRes] = await Promise.all([
     supabaseClient.from('bar_stock').select('*').order('item'),
-    // v6.3: bar_orders is no longer publicly SELECT-able — this now
-    // goes through get_bar_orders_recent(), a SECURITY DEFINER
-    // function that returns the identical rows a raw .from() read used
-    // to. Same shape ({data, error}), same 500-row limit — nothing else
-    // about this page needed to change.
-    // v6.3: bumped from 500 to 1500 — now that "today" is a shift
-    // boundary instead of a calendar day (see below), a busy shift
-    // running past midnight needs more than 500 rows of history to
-    // stay complete until GENERATE SHIFT SUMMARY is clicked.
     supabaseClient.rpc('get_bar_orders_recent', { p_limit: 1500 }),
     supabaseClient.from('bar_recipes').select('item_name, category, price_ghs'),
     supabaseClient.from('food_menu').select('item_name, category, price_ghs'),
@@ -553,16 +544,6 @@ async function loadSupabaseBarData(){
     active: s.active !== false, onDuty: !!s.on_duty
   }));
 
-  // v6.3 FIX: this used to reset at midnight Africa/Accra because it
-  // filtered by CALENDAR DATE — wrong for a shift that's still running
-  // past midnight (an order at 19:55 shouldn't vanish from "today" at
-  // 00:00 while the same shift is still open). Now it filters by a
-  // shift-boundary TIMESTAMP instead (venue_settings.
-  // current_shift_started_at), which only moves forward when
-  // GENERATE SHIFT SUMMARY is actually clicked — see
-  // generateShiftSummary() below. If that setting is somehow missing,
-  // falls back to today's calendar start so the dashboard never
-  // breaks, it just behaves like before until the setting exists.
   const shiftStartedAtRaw = venueSettings.current_shift_started_at;
   const shiftStartedAt = shiftStartedAtRaw ? new Date(shiftStartedAtRaw) : (() => { const d = new Date(); d.setHours(0,0,0,0); return d; })();
   const shiftStartedAtMs = shiftStartedAt.getTime();
@@ -574,9 +555,6 @@ async function loadSupabaseBarData(){
     const qty = parseFloat(o.qty)||0, lineTotal = parseFloat(o.line_total_ghs)||0;
     if(!salesByItem[o.item_name]) salesByItem[o.item_name] = {item:o.item_name, qty:0, revenue:0};
     salesByItem[o.item_name].qty += qty; salesByItem[o.item_name].revenue += lineTotal;
-    // v6.4: strictly-greater-than, not >=. The boundary itself is the
-    // LAST order of the previous shift (see advance_shift_boundary) —
-    // using >= would count that same order again in the new shift.
     if(!isNaN(orderMs) && orderMs > shiftStartedAtMs){
       todayOrders.push({ timestamp: o.created_at, orderId: o.order_id, item: o.item_name, qty, unitPrice: parseFloat(o.unit_price_ghs)||0,
         lineTotal, staffInitials: o.staff_initials||'', custId: o.customer_id||'—', payment: o.payment_method||'Unspecified' });
@@ -1478,10 +1456,6 @@ Low stock (${lowStock.length}):${lowStock.length ? '\n' + lowStock.map(s=>`  ${s
       p_orders_count: orders.length,
       p_shift_started_at: barData.shiftStartedAt || null
     });
-    // v6.4: THIS is what makes "Today's Orders" reset — not midnight,
-    // and not a fixed clock time either. The boundary becomes the
-    // LAST order of the shift just closed, so the very next order —
-    // whenever it actually happens — is what starts the new shift.
     const lastOrderAt = orders.length ? orders[orders.length-1].timestamp : null;
     await supabaseClient.rpc('advance_shift_boundary', { p_last_order_at: lastOrderAt });
     setTimeout(() => { loadData(); renderTodaysShifts(); }, 400);
@@ -1511,13 +1485,6 @@ Low stock (${lowStock.length}):${lowStock.length ? '\n' + lowStock.map(s=>`  ${s
     </div>`;
 }
 
-// v6.4: shows every shift generated today side by side (Shift 1 on
-// the left, Shift 2 on the right, wrapping to a new row for a 3rd+),
-// with a combined total underneath. Pulled from get_todays_shift_
-// summaries() rather than assembled from barData, since older shifts'
-// line-level detail (by staff/by item) isn't kept after the shift is
-// closed — only the totals and the saved summary_text are. Combining
-// stays to totals for that reason, which is also just simpler to read.
 async function renderTodaysShifts(){
   const area = document.getElementById('todaysShiftsArea');
   if(!area) return;
@@ -1595,7 +1562,7 @@ function playOrderBeep(){
     const osc = sharedAudioCtx.createOscillator();
     const gain = sharedAudioCtx.createGain();
     osc.connect(gain); gain.connect(sharedAudioCtx.destination);
-    osc.frequency.value = 880;  // 660 in canteen-dashboard.html
+    osc.frequency.value = 880;
     gain.gain.setValueAtTime(0.15, sharedAudioCtx.currentTime);
     osc.start(); osc.stop(sharedAudioCtx.currentTime + 0.18);
     osc.onended = () => { osc.disconnect(); gain.disconnect(); };
@@ -1988,10 +1955,6 @@ async function foodOrderAction(orderId, newStatus){
   }
 }
 
-// v6.3: QUIET-HOUR AUTO-RELOAD — a safety net for this screen running
-// unattended for days at a stretch. Fires at most once per calendar
-// day, only between 4:00-4:05am Africa/Accra. Plain reload — pulls
-// nothing destructive, resets only this browser tab's own memory.
 const QUIET_RELOAD_KEY = 'whgh_bar_dashboard_last_reload_date';
 function maybeQuietHourReload(){
   try{
