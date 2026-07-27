@@ -1,9 +1,24 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE EVENTS & MORE — BAR DASHBOARD (v6.3)
+  THE WHITE HOUSE EVENTS & MORE — BAR DASHBOARD (v6.4)
 
-  v6.3 CHANGES (this session):
+  v6.4 CHANGES (this session — multiple shifts per day):
+  - Previously a shift summary was bucketed into a fixed "Morning"
+    (6am-6pm) or "Night" (6pm-6am) slot, and generating a second one in
+    the same half-day OVERWROTE the first — silently destroying it.
+    Reworked to sequential shift numbers per calendar day: every
+    GENERATE SHIFT SUMMARY click saves a new, separate shift. Today's
+    shifts now display side by side (Shift 1, Shift 2, ... wrapping to
+    a new row past that) with a COMBINED total underneath, in the
+    SHIFT SUMMARY card.
+  - "Start the shift from the first order": closing a shift no longer
+    sets the next shift's start to the exact moment the button was
+    clicked. It's set to the LAST order of the shift just closed, so
+    the next shift's window opens naturally at whatever order actually
+    comes in next — no dead gap, nothing to configure.
+
+  v6.3 CHANGES (midnight reset fix):
   - MIDNIGHT RESET FIXED. "Today's Orders" and the live metrics used to
     filter by calendar date, so they emptied out at 00:00 Africa/Accra
     even mid-shift. Now they filter by a shift-boundary timestamp
@@ -363,6 +378,7 @@ tr.low-row{background:#1a0a0a;}
     <div class="card-title">&#128274; SHIFT SUMMARY <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(today's totals — copy to share on WhatsApp/SMS manually)</span></div>
     <button class="btn" onclick="generateShiftSummary()">GENERATE SHIFT SUMMARY</button>
     <div id="shiftSummaryBody" style="margin-top:12px"></div>
+    <div id="todaysShiftsArea" style="margin-top:16px"></div>
   </div>
 
   <div class="card">
@@ -558,7 +574,10 @@ async function loadSupabaseBarData(){
     const qty = parseFloat(o.qty)||0, lineTotal = parseFloat(o.line_total_ghs)||0;
     if(!salesByItem[o.item_name]) salesByItem[o.item_name] = {item:o.item_name, qty:0, revenue:0};
     salesByItem[o.item_name].qty += qty; salesByItem[o.item_name].revenue += lineTotal;
-    if(!isNaN(orderMs) && orderMs >= shiftStartedAtMs){
+    // v6.4: strictly-greater-than, not >=. The boundary itself is the
+    // LAST order of the previous shift (see advance_shift_boundary) —
+    // using >= would count that same order again in the new shift.
+    if(!isNaN(orderMs) && orderMs > shiftStartedAtMs){
       todayOrders.push({ timestamp: o.created_at, orderId: o.order_id, item: o.item_name, qty, unitPrice: parseFloat(o.unit_price_ghs)||0,
         lineTotal, staffInitials: o.staff_initials||'', custId: o.customer_id||'—', payment: o.payment_method||'Unspecified' });
       todayRevenue += lineTotal; todayItemCount += qty;
@@ -590,6 +609,7 @@ async function loadSupabaseBarData(){
 
   return { stock, menu, todayOrders: todayOrders.reverse(), todayRevenue, todayItemCount, revenueByPayment: revenueByPaymentList,
     topSellers, staleStock, restockLog, staff, lowStockCount: stock.filter(s=>s.lowStock).length,
+    shiftStartedAt: shiftStartedAtRaw || null,
     momoNumber: venueSettings.momo_number || '', momoName: venueSettings.momo_name || '' };
 }
 
@@ -617,6 +637,7 @@ async function loadData(){
     renderQuickSellTabs();
     renderQuickSellMenu();
     renderQuickSellPanel();
+    renderTodaysShifts();
   }catch(e){
     document.getElementById('lastRefresh').textContent = 'Offline — see message above';
     showApiError(e.message || 'Could not load data (unknown error).');
@@ -1454,14 +1475,16 @@ Low stock (${lowStock.length}):${lowStock.length ? '\n' + lowStock.map(s=>`  ${s
       p_summary_text: window._shiftSummaryText,
       p_total_revenue: totalRevenue,
       p_items_sold: totalItems,
-      p_orders_count: orders.length
+      p_orders_count: orders.length,
+      p_shift_started_at: barData.shiftStartedAt || null
     });
-    // v6.3: THIS is what makes "Today's Orders" reset — not midnight.
-    // Only after the summary is safely saved does the shift boundary
-    // move forward, so a shift running past midnight keeps its full
-    // totals right up until this button is pressed.
-    await supabaseClient.rpc('advance_shift_boundary');
-    setTimeout(() => loadData(), 400);
+    // v6.4: THIS is what makes "Today's Orders" reset — not midnight,
+    // and not a fixed clock time either. The boundary becomes the
+    // LAST order of the shift just closed, so the very next order —
+    // whenever it actually happens — is what starts the new shift.
+    const lastOrderAt = orders.length ? orders[orders.length-1].timestamp : null;
+    await supabaseClient.rpc('advance_shift_boundary', { p_last_order_at: lastOrderAt });
+    setTimeout(() => { loadData(); renderTodaysShifts(); }, 400);
   }catch(e){ console.log('Could not save shift summary to archive:', e); }
 
   el.innerHTML = `
@@ -1486,6 +1509,48 @@ Low stock (${lowStock.length}):${lowStock.length ? '\n' + lowStock.map(s=>`  ${s
       <button class="btn" style="margin-top:8px" onclick="copyShiftSummary()">&#128203; COPY AS TEXT</button>
       <div id="shiftCopyResult" style="margin-top:6px;font-size:11px"></div>
     </div>`;
+}
+
+// v6.4: shows every shift generated today side by side (Shift 1 on
+// the left, Shift 2 on the right, wrapping to a new row for a 3rd+),
+// with a combined total underneath. Pulled from get_todays_shift_
+// summaries() rather than assembled from barData, since older shifts'
+// line-level detail (by staff/by item) isn't kept after the shift is
+// closed — only the totals and the saved summary_text are. Combining
+// stays to totals for that reason, which is also just simpler to read.
+async function renderTodaysShifts(){
+  const area = document.getElementById('todaysShiftsArea');
+  if(!area) return;
+  try{
+    const { data, error } = await supabaseClient.rpc('get_todays_shift_summaries');
+    if(error) throw new Error(error.message);
+    const shifts = data || [];
+    if(shifts.length === 0){ area.innerHTML = ''; return; }
+
+    const combined = shifts.reduce((acc, s) => ({
+      revenue: acc.revenue + (parseFloat(s.total_revenue)||0),
+      items: acc.items + (parseFloat(s.items_sold)||0),
+      orders: acc.orders + (parseInt(s.orders_count)||0)
+    }), { revenue: 0, items: 0, orders: 0 });
+
+    const cardsHtml = shifts.map(s => `
+      <div class="shift-summary-box" style="flex:1;min-width:240px">
+        <div style="color:var(--gold);font-weight:800;font-size:12px;letter-spacing:0.5px;margin-bottom:8px">SHIFT ${s.shift_number}</div>
+        <div class="shift-summary-row"><span>Revenue</span><span style="color:var(--gold);font-family:'Space Mono',monospace">&#8373;${(parseFloat(s.total_revenue)||0).toFixed(2)}</span></div>
+        <div class="shift-summary-row"><span>Items sold</span><span style="font-family:'Space Mono',monospace">${s.items_sold||0}</span></div>
+        <div class="shift-summary-row"><span>Orders</span><span style="font-family:'Space Mono',monospace">${s.orders_count||0}</span></div>
+        <div style="font-size:10px;color:var(--muted);margin-top:8px;font-family:'Space Mono',monospace">closed ${new Date(s.created_at).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</div>
+      </div>`).join('');
+
+    area.innerHTML = `
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">${cardsHtml}</div>
+      <div class="shift-summary-box" style="border-color:var(--gold-dim)">
+        <div style="color:var(--gold);font-weight:800;font-size:12px;letter-spacing:0.5px;margin-bottom:8px">COMBINED — TODAY (${shifts.length} shift${shifts.length>1?'s':''})</div>
+        <div class="shift-summary-row"><span>Total revenue</span><span style="color:var(--gold);font-family:'Space Mono',monospace;font-weight:700">&#8373;${combined.revenue.toFixed(2)}</span></div>
+        <div class="shift-summary-row"><span>Total items sold</span><span style="font-family:'Space Mono',monospace">${combined.items}</span></div>
+        <div class="shift-summary-row"><span>Total orders</span><span style="font-family:'Space Mono',monospace">${combined.orders}</span></div>
+      </div>`;
+  }catch(e){ console.log('renderTodaysShifts error:', e); }
 }
 
 const MANAGER_WHATSAPP_NUMBER = '233554399995';
