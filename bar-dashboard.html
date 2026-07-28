@@ -25,6 +25,11 @@
     that's an unclosed system resource stacking up all day, not just
     heap churn. Fixed to create one shared AudioContext once and reuse
     it for every beep.
+  - COMPACT TAB CARDS. Open Bar Tabs now render 2-3 across in a grid
+    instead of full width, with a small × in the corner to cancel and
+    CASH / MOMO as two side-by-side buttons instead of three stacked
+    full-width buttons. Table-order and food-order cards got the same
+    tightened padding/sizing.
 
   v6.4 CHANGES (multiple shifts per day):
   - Previously a shift summary was bucketed into a fixed "Morning"
@@ -258,7 +263,9 @@ tr.low-row{background:#1a0a0a;}
 .tab-actions button{flex:1;min-width:110px;padding:9px 10px;font-size:11px;border-radius:6px;border:none;font-weight:800;cursor:pointer;font-family:'Syne',sans-serif;}
 .tab-pay-cash{background:var(--green);color:#062;}
 .tab-pay-momo{background:var(--teal);color:#062;}
-.tab-cancel/* compact grid + smaller cards, per feedback */
+.tab-cancel{background:transparent;border:1px solid var(--red)!important;color:var(--red);}
+
+/* v6.5: compact grid + smaller cards, per feedback */
 @media(min-width:900px){#openTabsBody{display:grid;grid-template-columns:1fr 1fr;gap:10px;}}
 @media(min-width:1400px){#openTabsBody{grid-template-columns:1fr 1fr 1fr;}}
 .tab-card{padding:10px 12px;margin-bottom:0;position:relative;}
@@ -269,12 +276,12 @@ tr.low-row{background:#1a0a0a;}
 .tab-card-x{position:absolute;top:8px;right:10px;background:transparent;border:none;color:var(--red);font-size:16px;line-height:1;cursor:pointer;padding:2px 4px;}
 .tab-actions{margin-top:8px;gap:6px;}
 .tab-actions button{min-width:0;padding:8px 6px;font-size:10px;}
-
 @media(min-width:1400px){.order-cards-grid{grid-template-columns:1fr 1fr 1fr;}}
 .order-card{padding:10px 12px;}
 .order-card-table{font-size:16px;}
 .order-items-list{font-size:13px;margin:4px 0 6px;}
-.order-total{font-size:17px;}{background:transparent;border:1px solid var(--red)!important;color:var(--red);}
+.order-total{font-size:17px;}
+
 .qs-bartab-row{display:flex;justify-content:flex-end;margin-top:16px;margin-bottom:2px;}
 .qs-bartab-btn{background:#e8790a;color:#fff;border:1px solid #b85f08;border-radius:6px;padding:6px 10px;font-weight:800;font-size:10px;letter-spacing:0.3px;width:auto;max-width:25%;cursor:pointer;font-family:'Syne',sans-serif;line-height:1.3;}
 .qs-bartab-btn:hover{background:#c76608;}
@@ -1542,6 +1549,7 @@ async function renderOpenTabs(){
       <button class="tab-pay-momo" onclick="payTab('${t.id}','MoMo')">MOMO</button>`}
   </div>
 </div>`;
+    }).join('');
   }catch(e){
     console.log('renderOpenTabs error:', e);
     el.innerHTML = '<div class="empty">Could not load open tabs — will retry automatically.</div>';
