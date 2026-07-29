@@ -476,10 +476,6 @@ function setQty(name, qty){
 }
 
 function openCartModal(){
-  if(!selectedStaffInitials){
-    alert('Select your name at the top of the page before opening an order.');
-    return;
-  }
   document.getElementById('cartModal').classList.add('show');
   renderCartModal();
 }
@@ -558,7 +554,6 @@ function renderCartModal(){
 }
 
 async function submitOrder(){
-  if(!selectedStaffInitials){ document.getElementById('submitError').textContent = 'Select your name at the top of the page first.'; return; }
   if(!locationType){ document.getElementById('submitError').textContent = 'Choose where this order is for, above the menu.'; closeCartModal(); window.scrollTo({top:0, behavior:'smooth'}); return; }
   if(locationTableRanges[locationType] && !locationDetail){ document.getElementById('submitError').textContent = 'Choose a table number above the menu.'; closeCartModal(); window.scrollTo({top:0, behavior:'smooth'}); return; }
   if(locationType === 'Room Number' && !locationDetail){ document.getElementById('submitError').textContent = 'Add the room number above the menu.'; closeCartModal(); window.scrollTo({top:0, behavior:'smooth'}); return; }
@@ -580,7 +575,7 @@ async function submitOrder(){
   let submittedCustId = null;
   if(phone){
     try{
-      const { data: memberData, error: memberErr } = await supabaseClient.rpc('find_or_create_bar_customer', { p_phone: phone, p_name: custName });
+      const { data: memberData, error: memberErr } = await supabaseClient.rpc('find_or_create_bar_customer', { p_query: phone, p_name: custName });
       if(!memberErr && memberData) submittedCustId = memberData;
     }catch(e){ console.log('find_or_create_bar_customer failed (non-fatal):', e); }
   }
@@ -607,12 +602,16 @@ async function submitOrder(){
   for(const sub of subOrders){
     const clientId = genClientId();
     const items = sub.names.map(n => ({item: n, qty: cart[n]}));
-    let notes = 'Taken by staff: ' + selectedStaffInitials;
+    let notes = selectedStaffInitials ? ('Taken by staff: ' + selectedStaffInitials) : '';
     if(isCombo){
       const other = subOrders.find(s => s !== sub);
       notes += ' — Also ordered: ' + other.label + ' — ' + orderIdFor(other.action);
     }
-    const payload = { action: sub.action, label: sub.label, locationType: locationType, locationDetail: locationDetail, itemsJson: JSON.stringify(items), payment: selectedPayment, customerName: custName || 'Walk-in (staff order)', phone: phone, clientId: clientId, orderId: orderIdFor(sub.action), notes: notes, handledBy: selectedStaffInitials };
+    // place_table_order/place_canteen_order both reject an empty
+    // customer_phone (RAISE EXCEPTION), unlike the old raw insert which
+    // silently accepted ''. Walk-ins with no phone need a placeholder or
+    // every no-phone staff order will now fail outright.
+    const payload = { action: sub.action, label: sub.label, locationType: locationType, locationDetail: locationDetail, itemsJson: JSON.stringify(items), payment: selectedPayment, customerName: custName || 'Walk-in (staff order)', phone: phone || 'Walk-in', clientId: clientId, orderId: orderIdFor(sub.action), notes: notes, handledBy: selectedStaffInitials };
     const result = await trySendOrder(payload);
     outcomes.push({ payload, result, names: sub.names });
   }
@@ -644,11 +643,17 @@ async function submitOrder(){
   }
 }
 
-const ORDER_TABLE_BY_ACTION = { placeTableOrder: 'table_orders', placeCanteenOrder: 'canteen_orders' };
+const ORDER_RPC_BY_ACTION = { placeTableOrder: 'place_table_order', placeCanteenOrder: 'place_canteen_order' };
 
+// v-SECURITY: orders now go through the place_table_order /
+// place_canteen_order SECURITY DEFINER functions instead of a raw
+// .insert() straight into table_orders/canteen_orders. This is what
+// lets the public write policies on those two tables be closed
+// without breaking staff-taken orders. Do not revert to
+// .from(table).insert()
 async function trySendOrder(payload){
-  const table = ORDER_TABLE_BY_ACTION[payload.action];
-  if(!table) return { ok: false, error: 'Unknown order type: ' + payload.action };
+  const rpcName = ORDER_RPC_BY_ACTION[payload.action];
+  if(!rpcName) return { ok: false, error: 'Unknown order type: ' + payload.action };
   if(menu.length === 0) return { ok: false, queued: true, error: 'Menu not loaded yet — will retry' };
 
   const orderId = payload.orderId || ((payload.action === 'placeCanteenOrder' ? 'CAN' : 'TBL') + Date.now());
@@ -660,30 +665,27 @@ async function trySendOrder(payload){
   }, 0);
 
   try{
-    const { data, error } = await supabaseClient
-      .from(table)
-      .insert([{
-        order_id: orderId,
-        location_type: payload.locationType,
-        location_detail: payload.locationDetail || null,
-        items_json: items,
-        total_ghs: total,
-        payment_method: payload.payment,
-        status: 'Placed',
-        customer_name: payload.customerName,
-        customer_phone: payload.phone,
-        handled_by: payload.handledBy || null,
-        client_request_id: payload.clientId,
-        notes: payload.notes || null
-      }])
-      .select()
-      .single();
+    const { data, error } = await supabaseClient.rpc(rpcName, {
+      p_order_id: orderId,
+      p_location_type: payload.locationType,
+      p_location_detail: payload.locationDetail || null,
+      p_items_json: items,
+      p_total_ghs: total,
+      p_payment_method: payload.payment,
+      p_customer_name: payload.customerName,
+      p_customer_phone: payload.phone,
+      p_client_request_id: payload.clientId,
+      p_notes: payload.notes || null,
+      p_handled_by: payload.handledBy || null
+    });
 
     if(error){
       if(error.code === '23505') return { ok: true, data: { orderId: orderId, total: total, replayed: true } };
       throw new Error(error.message);
     }
-    return { ok: true, data: { orderId: data.order_id, total: data.total_ghs } };
+    const row = Array.isArray(data) ? data[0] : data;
+    if(!row) throw new Error('Order did not return a row');
+    return { ok: true, data: { orderId: row.order_id, total: row.total_ghs } };
   }catch(e){
     return { ok: false, queued: true, error: 'No connection' };
   }
@@ -751,7 +753,7 @@ function showConfirmation(orders, payment, locType, locDetail, custId){
   el.innerHTML = `
     <div class="ok-badge">&#9989;</div>
     <h2>Order sent!</h2>
-    <div class="order-id" style="margin-bottom:6px">${locType || 'Order'}${locDetail ? ' — ' + locDetail : ''} · taken by ${selectedStaffInitials}</div>
+    <div class="order-id" style="margin-bottom:6px">${locType || 'Order'}${locDetail ? ' — ' + locDetail : ''}${selectedStaffInitials ? ' · taken by ' + selectedStaffInitials : ''}</div>
     ${orderLines}
     ${custLine}
     ${payHtml}
