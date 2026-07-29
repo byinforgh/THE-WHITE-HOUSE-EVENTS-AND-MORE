@@ -1,9 +1,25 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE EVENTS & MORE — BAR DASHBOARD (v6.5)
+  THE WHITE HOUSE EVENTS & MORE — BAR DASHBOARD (v6.6)
 
-  v6.5 CHANGES (this session):
+  v6.6 CHANGES (this session):
+  - OLD SAFARI DATE-PARSING FIX. Supabase/Postgres returns timestamps like
+    "2026-07-29 02:58:00.123456+00" (a space instead of "T", no trailing
+    "Z"). Chrome and newer Safari parse that leniently, but older Safari
+    (e.g. macOS Catalina) returns Invalid Date for the exact same string —
+    silently, with no error shown anywhere. Every date comparison built on
+    that (Today's Orders, the Orders Today / Low Stock metrics, the shift
+    boundary, restock "last restocked" dates, order ages, stale-stock
+    sorting) then quietly failed on those machines, while everything NOT
+    date-filtered (stock counts, menu items) kept working fine — which is
+    exactly the "some things update, some don't, nothing in the console"
+    symptom this was causing on the older MacBook. Added a toDate() helper
+    that normalizes the string before handing it to `new Date(...)`, and
+    every Supabase-sourced timestamp parse in the file now goes through it.
+    No backend or data change — this is a read-side parsing fix only.
+
+  v6.5 CHANGES:
   - OPEN BAR TABS. Quick Sell now has a third payment option, OPEN BAR
     TAB (bright yellow, distinct from Cash/MoMo), for customers who
     want to pay when they finish instead of at time of sale. Clicking
@@ -454,6 +470,23 @@ let barData = {stock: [], todayOrders: [], staff: [], topSellers: [], staleStock
 let activeStockCategory = 'All';
 let expandedMetric = null;
 
+// Safe date parser. Older Safari (e.g. Catalina/WebKit) fails to parse
+// Postgres/Supabase timestamp strings like "2026-07-29 02:58:00.123456+00"
+// (space instead of "T", no trailing "Z") and silently returns Invalid Date,
+// which then breaks every date comparison (today's orders, shift boundary,
+// restock dates, etc.) with no visible error. Chrome is lenient and parses
+// it fine, which is why this only shows up on older Macs/Safari. Route every
+// Supabase-timestamp parse through this instead of raw `new Date(...)`.
+function toDate(v){
+  if(v === null || v === undefined || v === '') return null;
+  if(v instanceof Date) return v;
+  let s = String(v).trim();
+  if(s.indexOf('T') === -1) s = s.replace(' ', 'T');
+  if(!/[Zz]$|[+-]\d{2}:?\d{2}$/.test(s)) s += 'Z';
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? new Date(v) : d;
+}
+
 const PENDING_KEY = 'whgh_pending_actions_v1';
 
 function genClientId(){
@@ -559,7 +592,7 @@ async function loadSupabaseBarData(){
 
   const stock = stockRes.data.map(s => ({
     item: s.item, unit: s.unit || 'unit', currentQty: parseFloat(s.current_qty)||0, parLevel: parseFloat(s.par_level)||0,
-    costPerUnit: parseFloat(s.cost_per_unit)||0, lastRestocked: s.last_restocked ? new Date(s.last_restocked).toLocaleString('en-GB') : '',
+    costPerUnit: parseFloat(s.cost_per_unit)||0, lastRestocked: s.last_restocked ? toDate(s.last_restocked).toLocaleString('en-GB') : '',
     lastRestockedRaw: s.last_restocked || null,
     lastRestockedBy: s.last_restocked_by || '', unitsPerPack: parseFloat(s.units_per_pack)||0, packLabel: s.pack_label || '',
     lowStock: (parseFloat(s.current_qty)||0) <= (parseFloat(s.par_level)||0),
@@ -580,13 +613,14 @@ async function loadSupabaseBarData(){
   }));
 
   const shiftStartedAtRaw = venueSettings.current_shift_started_at;
-  const shiftStartedAt = shiftStartedAtRaw ? new Date(shiftStartedAtRaw) : (() => { const d = new Date(); d.setHours(0,0,0,0); return d; })();
+  const shiftStartedAt = shiftStartedAtRaw ? toDate(shiftStartedAtRaw) : (() => { const d = new Date(); d.setHours(0,0,0,0); return d; })();
   const shiftStartedAtMs = shiftStartedAt.getTime();
   const todayOrders = [];
   let todayRevenue = 0, todayItemCount = 0;
   const salesByItem = {}, revenueByPayment = {};
   ordersRes.data.forEach(o => {
-    const orderMs = new Date(o.created_at).getTime();
+    const orderMsDate = toDate(o.created_at);
+    const orderMs = orderMsDate ? orderMsDate.getTime() : NaN;
     const qty = parseFloat(o.qty)||0, lineTotal = parseFloat(o.line_total_ghs)||0;
     if(!salesByItem[o.item_name]) salesByItem[o.item_name] = {item:o.item_name, qty:0, revenue:0};
     salesByItem[o.item_name].qty += qty; salesByItem[o.item_name].revenue += lineTotal;
@@ -606,17 +640,20 @@ async function loadSupabaseBarData(){
   const staleStock = stock.filter(s => {
     if(s.currentQty <= 0) return false;
     if(!s.lastRestockedRaw) return true;
-    const t = new Date(s.lastRestockedRaw).getTime();
+    const tD = toDate(s.lastRestockedRaw);
+    const t = tD ? tD.getTime() : NaN;
     return isNaN(t) || (now - t) >= STALE_THRESHOLD_MS;
   }).sort((a,b) => {
-    const da = a.lastRestockedRaw ? new Date(a.lastRestockedRaw).getTime() : null;
-    const db = b.lastRestockedRaw ? new Date(b.lastRestockedRaw).getTime() : null;
+    const daD = a.lastRestockedRaw ? toDate(a.lastRestockedRaw) : null;
+    const dbD = b.lastRestockedRaw ? toDate(b.lastRestockedRaw) : null;
+    const da = daD ? daD.getTime() : null;
+    const db = dbD ? dbD.getTime() : null;
     if(da===null && db===null) return 0; if(da===null) return -1; if(db===null) return 1;
     return da - db;
   });
 
   const restockLog = restockRes.data.map(r => ({
-    timestamp: new Date(r.created_at).toLocaleString('en-GB'), item: r.item, qtyAdded: parseFloat(r.qty_added)||0,
+    timestamp: toDate(r.created_at).toLocaleString('en-GB'), item: r.item, qtyAdded: parseFloat(r.qty_added)||0,
     newQty: parseFloat(r.new_qty)||0, restockedBy: r.restocked_by||''
   }));
 
@@ -737,8 +774,8 @@ function renderOrders(){
   const orders = barData.todayOrders || [];
   if(orders.length===0){ document.getElementById('ordersBody').innerHTML = '<tr><td colspan="6" class="empty">No orders logged yet today</td></tr>'; return; }
   document.getElementById('ordersBody').innerHTML = orders.map(o=>{
-    const t = new Date(o.timestamp);
-    const timeStr = isNaN(t.getTime()) ? '—' : t.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+    const t = toDate(o.timestamp);
+    const timeStr = (!t || isNaN(t.getTime())) ? '—' : t.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
     return `<tr><td style="font-family:'Space Mono',monospace;font-size:12px">${timeStr}</td><td style="font-size:15px;font-weight:600">${o.item}</td><td style="font-size:14px">${o.qty}</td><td style="color:var(--gold);font-weight:700;font-size:16px">&#8373;${o.lineTotal.toFixed(2)}</td><td style="font-size:13px">${o.staffInitials||'—'}</td><td style="font-family:'Space Mono',monospace;font-size:12px">${o.custId&&o.custId!=='—'?o.custId:'walk-in'}</td></tr>`;
   }).join('');
 }
@@ -981,7 +1018,7 @@ async function lookupCustomer(prefillQuery){
       if(custErr) throw new Error(custErr.message);
       lastFoundCustomer = {
         custId: cust.customer_id, name: cust.name, loyaltyPoints: cust.loyalty_points,
-        totalVisits: cust.total_visits, lastVisit: cust.last_visit ? new Date(cust.last_visit).toLocaleDateString('en-GB') : ''
+        totalVisits: cust.total_visits, lastVisit: cust.last_visit ? toDate(cust.last_visit).toLocaleDateString('en-GB') : ''
       };
       const membershipLine = cust.membership_status === 'VIP' ? '<br>Membership: <b style="color:var(--gold)">VIP</b>' : '';
       resultEl.innerHTML = `<b>${lastFoundCustomer.custId}</b> — ${lastFoundCustomer.name}${membershipLine}<br>Loyalty points: ${lastFoundCustomer.loyaltyPoints}<br>Total visits: ${lastFoundCustomer.totalVisits}<br>Last visit: ${lastFoundCustomer.lastVisit||'—'}<button class="btn" style="margin-top:10px" onclick="generateCustomerQR()">&#127915; GENERATE QR ID CARD</button>`;
@@ -1596,7 +1633,8 @@ async function renderOpenTabs(){
     el.innerHTML = tabs.map(t => {
       const itemsStr = (t.items_json||[]).map(i=>`${i.qty} &times; ${i.item}`).join(', ');
       const isProcessing = processingTabIds.has(t.id);
-      const mins = Math.max(0, Math.floor((Date.now() - new Date(t.created_at).getTime())/60000));
+      const tCreated = toDate(t.created_at);
+      const mins = Math.max(0, Math.floor((Date.now() - (tCreated ? tCreated.getTime() : Date.now()))/60000));
       return `<div class="tab-card">
   <button class="tab-card-x" onclick="cancelTab('${t.id}')" title="Cancel tab">&times;</button>
   <div class="tab-card-top">
@@ -1752,7 +1790,7 @@ async function renderTodaysShifts(){
         <div class="shift-summary-row"><span>Revenue</span><span style="color:var(--gold);font-family:'Space Mono',monospace">&#8373;${(parseFloat(s.total_revenue)||0).toFixed(2)}</span></div>
         <div class="shift-summary-row"><span>Items sold</span><span style="font-family:'Space Mono',monospace">${s.items_sold||0}</span></div>
         <div class="shift-summary-row"><span>Orders</span><span style="font-family:'Space Mono',monospace">${s.orders_count||0}</span></div>
-        <div style="font-size:10px;color:var(--muted);margin-top:8px;font-family:'Space Mono',monospace">closed ${new Date(s.created_at).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:8px;font-family:'Space Mono',monospace">closed ${toDate(s.created_at).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</div>
       </div>`).join('');
 
     area.innerHTML = `
@@ -1893,8 +1931,8 @@ function statusPillClass(status){
   return '';
 }
 function orderAge(timestamp){
-  const t = new Date(timestamp);
-  if(isNaN(t.getTime())) return '';
+  const t = toDate(timestamp);
+  if(!t || isNaN(t.getTime())) return '';
   const mins = Math.floor((Date.now() - t.getTime()) / 60000);
   if(mins < 1) return 'just now';
   if(mins === 1) return '1 min ago';
@@ -1914,7 +1952,7 @@ function renderTableOrders(){
   const el = document.getElementById('tableOrdersBody');
   const active = (tableOrdersData.active || []).slice().sort((a,b) => {
     const order = {'Placed':0, 'Preparing':1, 'Delivered - Awaiting Payment':2};
-    return (order[a.status]??3) - (order[b.status]??3) || new Date(a.timestamp) - new Date(b.timestamp);
+    return (order[a.status]??3) - (order[b.status]??3) || (toDate(a.timestamp)?.getTime()||0) - (toDate(b.timestamp)?.getTime()||0);
   });
 
   const signature = activeOrdersSignature(active) + '|proc:' + Array.from(processingOrderIds).sort().join(',');
@@ -2087,7 +2125,7 @@ function renderFoodOrders(){
   const el = document.getElementById('foodOrdersBody');
   const active = (foodOrdersData.active || []).slice().sort((a,b) => {
     const order = {'Placed':0, 'Preparing':1, 'Delivered - Awaiting Payment':2};
-    return (order[a.status]??3) - (order[b.status]??3) || new Date(a.timestamp) - new Date(b.timestamp);
+    return (order[a.status]??3) - (order[b.status]??3) || (toDate(a.timestamp)?.getTime()||0) - (toDate(b.timestamp)?.getTime()||0);
   });
 
   const signature = activeOrdersSignature(active) + '|proc:' + Array.from(processingFoodOrderIds).sort().join(',');
