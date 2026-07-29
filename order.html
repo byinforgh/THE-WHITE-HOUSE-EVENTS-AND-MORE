@@ -1,9 +1,17 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE EVENTS & MORE — TABLE ORDER PAGE (v4.7, Supabase-only)
+  THE WHITE HOUSE EVENTS & MORE — TABLE ORDER PAGE (v4.8, Supabase-only)
 
-  v4.7 CHANGES (this session — compact menu cards):
+  v4.8 CHANGES (this session — security):
+  - Orders no longer .insert() directly into table_orders/canteen_orders.
+    trySendOrder() now calls the place_table_order/place_canteen_order
+    SECURITY DEFINER functions via supabaseClient.rpc(). This is required
+    before the public INSERT/UPDATE policies on those two tables can be
+    closed. Confirm this file is live on GitHub Pages, then test a real
+    order end-to-end, before closing those policies.
+
+  v4.7 CHANGES (previous session — compact menu cards):
   - MENU CARDS SHRUNK. Cards were full-height with generous padding,
     so only 2 fit on screen at a time on a phone. Padding, font sizes,
     and the grid column count are all reduced so roughly 6-8 items are
@@ -751,11 +759,16 @@ async function submitOrder(){
   }
 }
 
-const ORDER_TABLE_BY_ACTION = { placeTableOrder: 'table_orders', placeCanteenOrder: 'canteen_orders' };
+const ORDER_RPC_BY_ACTION = { placeTableOrder: 'place_table_order', placeCanteenOrder: 'place_canteen_order' };
 
+// v4.8: SECURITY — orders now go through the place_table_order /
+// place_canteen_order SECURITY DEFINER functions instead of a raw
+// .insert() straight into table_orders/canteen_orders. This is what
+// lets the public write policies on those two tables be closed
+// without breaking ordering. Do not revert to .from(table).insert()
 async function trySendOrder(payload){
-  const table = ORDER_TABLE_BY_ACTION[payload.action];
-  if(!table) return { ok: false, error: 'Unknown order type: ' + payload.action };
+  const rpcName = ORDER_RPC_BY_ACTION[payload.action];
+  if(!rpcName) return { ok: false, error: 'Unknown order type: ' + payload.action };
   if(menu.length === 0) return { ok: false, queued: true, error: 'Menu not loaded yet — will retry' };
 
   const orderId = payload.orderId || ((payload.action === 'placeCanteenOrder' ? 'CAN' : 'TBL') + Date.now());
@@ -767,29 +780,27 @@ async function trySendOrder(payload){
   }, 0);
 
   try{
-    const { data, error } = await supabaseClient
-      .from(table)
-      .insert([{
-        order_id: orderId,
-        location_type: payload.locationType,
-        location_detail: payload.locationDetail || null,
-        items_json: items,
-        total_ghs: total,
-        payment_method: payload.payment,
-        status: 'Placed',
-        customer_name: payload.customerName,
-        customer_phone: payload.phone,
-        client_request_id: payload.clientId,
-        notes: payload.notes || null
-      }])
-      .select()
-      .single();
+    const { data, error } = await supabaseClient.rpc(rpcName, {
+      p_order_id: orderId,
+      p_location_type: payload.locationType,
+      p_location_detail: payload.locationDetail || null,
+      p_items_json: items,
+      p_total_ghs: total,
+      p_payment_method: payload.payment,
+      p_customer_name: payload.customerName,
+      p_customer_phone: payload.phone,
+      p_client_request_id: payload.clientId,
+      p_notes: payload.notes || null,
+      p_handled_by: payload.handledBy || null
+    });
 
     if(error){
       if(error.code === '23505') return { ok: true, data: { orderId: orderId, total: total, replayed: true } };
       throw new Error(error.message);
     }
-    return { ok: true, data: { orderId: data.order_id, total: data.total_ghs } };
+    const row = Array.isArray(data) ? data[0] : data;
+    if(!row) throw new Error('Order did not return a row');
+    return { ok: true, data: { orderId: row.order_id, total: row.total_ghs } };
   }catch(e){
     return { ok: false, queued: true, error: 'No connection' };
   }
