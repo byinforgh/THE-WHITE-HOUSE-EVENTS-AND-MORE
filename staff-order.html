@@ -1,7 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE EVENTS & MORE — STAFF ORDER (v1.1, Supabase-only)
+  THE WHITE HOUSE EVENTS & MORE — STAFF ORDER (v1.2, Supabase-only)
+
+  v1.2 CHANGES: staff select now always lists every active staff member,
+  full stop — dropped the on-duty fallback logic entirely. Staff never
+  check in to use this page, so filtering by on-duty was hiding people
+  who should always be selectable here. On-duty filtering is now only
+  a bar-dashboard.html rule (its own order dropdowns require someone to
+  be checked in at the bar first).
 
   v1.1 CHANGES: numbered table picker generalized to match order.html —
   any location listed in venue_settings.location_table_ranges (e.g.
@@ -258,11 +265,11 @@ function init(){
   loadVenueData();
 }
 
-// STAFF SELECT — on-duty staff first, falling back to every active
-// staff member if nobody's checked in anywhere yet. Same fallback
-// pattern as bar-dashboard.html's Quick Sell "Served by" list, so an
-// empty check-in board never blocks someone from actually taking an
-// order.
+// STAFF SELECT — v2: staff-order.html has nobody check in, so every
+// active staff member is always listed here regardless of on-duty
+// status. On-duty filtering belongs only to bar-dashboard.html, which
+// requires someone to be checked in at the bar before they can appear
+// in its order dropdowns.
 async function loadStaff(){
   const sel = document.getElementById('staffSelect');
   try{
@@ -270,9 +277,7 @@ async function loadStaff(){
       .select('initials, full_name, active, on_duty')
       .order('slot');
     if(error) throw new Error(error.message);
-    const active = (data||[]).filter(s => s.active && s.initials && s.initials.trim());
-    const onDuty = active.filter(s => s.on_duty);
-    const list = onDuty.length ? onDuty : active;
+    const list = (data||[]).filter(s => s.active && s.initials && s.initials.trim());
     if(list.length === 0){
       sel.innerHTML = '<option value="">No active staff found — add staff in Supabase first</option>';
       return;
