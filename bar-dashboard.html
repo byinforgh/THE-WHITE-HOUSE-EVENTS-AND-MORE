@@ -1,7 +1,21 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE EVENTS & MORE — BAR DASHBOARD (v6.7)
+  THE WHITE HOUSE EVENTS & MORE — BAR DASHBOARD (v6.8)
+
+  v6.8 CHANGES (this session):
+  - STAFF DROPDOWNS: CHECKED-IN ONLY, NO FALLBACK. Every staff-select
+    dropdown on this page (Quick Sell "Served by", table order cards,
+    food order cards, and Restocked By) used to fall back to showing
+    EVERY active staff member whenever nobody was checked in — which
+    is what caused the reported inconsistency (see everyone with nobody
+    checked in, see only the checked-in few the moment someone checks
+    in). That fallback is gone. These dropdowns now only ever show
+    staff who are actually checked in at the bar; if nobody's checked
+    in, the dropdown is empty until someone checks in under Staff On
+    Duty. This is specific to bar-dashboard.html — staff-order.html
+    (v1.2) goes the other way and always lists everyone, since nobody
+    checks in to use that page.
 
   v6.7 CHANGES (this session):
   - COCKTAIL POUR INGREDIENTS REMOVED FROM RESTOCK. bar_stock items
@@ -972,9 +986,9 @@ async function toggleOnDuty(initials, newState){
 }
 
 function populateStaffDropdowns(){
-  const allActive = (barData.staff||[]).filter(s=>s.active && s.initials && s.initials.trim());
-  const onDuty = allActive.filter(s=>s.onDuty);
-  const staff = onDuty.length ? onDuty : allActive;
+  // v6.8: same rule as getServingStaff() — only checked-in staff, no
+  // fallback to everyone when nobody's checked in.
+  const staff = (barData.staff||[]).filter(s=>s.active && s.onDuty && s.initials && s.initials.trim());
   const sel = document.getElementById('restockBy');
   const current = sel.value;
   sel.innerHTML = '<option value="">Restocked by... (required)</option>' +
@@ -1349,9 +1363,14 @@ function cartSubtotal(){
 }
 
 function getServingStaff(){
-  const allActive = (barData.staff||[]).filter(s=>s.active && s.initials && s.initials.trim());
-  const onDuty = allActive.filter(s=>s.onDuty);
-  return onDuty.length ? onDuty : allActive;
+  // v6.8: bar-dashboard.html only lets checked-in staff appear in any
+  // staff-select dropdown (Quick Sell, table orders, food orders).
+  // Previously this fell back to ALL active staff whenever nobody was
+  // checked in, which is exactly what caused the reported mismatch —
+  // showing everyone one moment and only checked-in staff the next.
+  // No fallback anymore: if nobody's checked in, this returns empty and
+  // the dashboard should prompt someone to check in first.
+  return (barData.staff||[]).filter(s=>s.active && s.onDuty && s.initials && s.initials.trim());
 }
 
 // v6.5: toggles the Bar Tab flow on/off within the Quick Sell panel.
@@ -1601,7 +1620,7 @@ async function submitQuickSellCart(){
 
   const staff = getServingStaff();
   if(staff.length === 0){
-    resultEl.innerHTML = '<span style="color:var(--red)">No active staff are set up yet — add rows in the Supabase staff table, then Refresh before selling.</span>';
+    resultEl.innerHTML = '<span style="color:var(--red)">No staff are checked in yet — check someone in under Staff On Duty first, then Refresh before selling.</span>';
     return;
   }
   if(!staffInitials){ resultEl.innerHTML = '<span style="color:var(--red)">Pick who is serving.</span>'; return; }
