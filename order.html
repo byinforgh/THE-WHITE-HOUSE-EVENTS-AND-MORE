@@ -681,7 +681,7 @@ async function submitOrder(){
   let submittedCustPoints = null;
   let submittedCustVisits = null;
   try{
-    const { data: memberData, error: memberErr } = await supabaseClient.rpc('find_or_create_bar_customer', { p_phone: phone, p_name: custName });
+    const { data: memberData, error: memberErr } = await supabaseClient.rpc('find_or_create_bar_customer', { p_query: phone, p_name: custName });
     if(memberErr){
       console.log('find_or_create_bar_customer error:', memberErr.message);
     }
