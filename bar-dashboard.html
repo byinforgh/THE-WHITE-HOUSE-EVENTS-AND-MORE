@@ -1,7 +1,23 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE EVENTS & MORE — BAR DASHBOARD (v6.6)
+  THE WHITE HOUSE EVENTS & MORE — BAR DASHBOARD (v6.7)
+
+  v6.7 CHANGES (this session):
+  - COCKTAIL POUR INGREDIENTS REMOVED FROM RESTOCK. bar_stock items
+    measured in oz (Rum, Vodka, Gin, Tequila, Lime, Lemon, Soda, all the
+    juices/syrups/mixers — anything poured by the oz for a cocktail) no
+    longer appear in the RESTOCK AN ITEM picker, in either the single-item
+    combo box or the "restock several at once" list. Typing one in by
+    hand is also blocked with a message, since the field takes free text.
+    These items still exist in bar_stock and still get decremented
+    normally when a cocktail is sold — they just can't be manually
+    restocked from this screen anymore, since oz remaining in an open
+    bottle can't be reliably counted. Items measured in whole units (cans,
+    bottles, shots — Guinness, Heineken Can, Coke Can, Baileys Bottle,
+    Wet Pussy Shot, etc.) are unaffected and still restock normally,
+    including ones that also happen to be used inside a cocktail recipe,
+    since those ARE countable one at a time.
 
   v6.6 CHANGES (this session):
   - OLD SAFARI DATE-PARSING FIX. Supabase/Postgres returns timestamps like
@@ -394,7 +410,7 @@ tr.low-row{background:#1a0a0a;}
         </div>
       </div>
       <div class="card">
-        <div class="card-title">&#128230; RESTOCK AN ITEM <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(covers everything, including cocktail pour ingredients — Rum, Lime, Soda, etc. — each item's unit is fixed here so oz/unit can't get mixed up)</span></div>
+        <div class="card-title">&#128230; RESTOCK AN ITEM <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(pour ingredients measured in oz — Rum, Lime, Soda, etc. — are not restocked here; they only move when a cocktail is sold)</span></div>
         <div class="combo-wrap" id="restockItemComboWrap">
           <input class="search-input" id="restockItem" placeholder="Item name (must match Bar Stock exactly)" autocomplete="off" style="margin-bottom:0">
           <div class="combo-list" id="restockItemComboList"></div>
@@ -969,7 +985,13 @@ function populateStaffDropdowns(){
 
 let restockStockItems = [];
 function populateStockDatalist(){
-  restockStockItems = (barData.stock||[]).map(s=>s.item);
+  // v6.7: pour ingredients (unit === 'oz') can't be reliably counted as oz
+  // remaining in a bottle, so they're excluded from the restock picker
+  // entirely — they only move via cocktail sales decrementing bar_stock
+  // server-side. Items measured in whole units (cans, bottles, shots —
+  // including ones also used inside a cocktail recipe, like Guinness or
+  // Coke Can) stay, since those ARE reliably countable.
+  restockStockItems = (barData.stock||[]).filter(s => s.unit !== 'oz').map(s=>s.item);
   renderRestockCombo(document.getElementById('restockItem').value || '');
   renderRestockMultiList();
 }
@@ -1089,6 +1111,8 @@ async function submitRestock(){
   const resultEl = document.getElementById('restockResult');
   if(!item || (!qtyAdded && !document.getElementById('restockPacks').value)){ resultEl.innerHTML = '<span style="color:var(--red)">Item name and a quantity (singles or packs) are required.</span>'; return; }
   if(!restockedBy){ resultEl.innerHTML = '<span style="color:var(--red)">Pick who is restocking from the dropdown.</span>'; return; }
+  const existingStockItem = (barData.stock||[]).find(s => s.item.toLowerCase() === item.toLowerCase());
+  if(existingStockItem && existingStockItem.unit === 'oz'){ resultEl.innerHTML = '<span style="color:var(--red)">' + item + ' is a pour ingredient (oz) — it can\'t be restocked here, only sold through the cocktail itself.</span>'; return; }
   resultEl.innerHTML = 'Saving...';
 
   const clientId = genClientId();
