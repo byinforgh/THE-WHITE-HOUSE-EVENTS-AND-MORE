@@ -19,6 +19,27 @@
     every Supabase-sourced timestamp parse in the file now goes through it.
     No backend or data change — this is a read-side parsing fix only.
 
+  v6.6.1 CHANGES (this session — follow-up fix):
+  - toDate() OFFSET-DETECTION BUG FIXED. The v6.6 fix appended "Z" to any
+    string whose *end* didn't match a 4-digit offset like "+00:00" or
+    "+0000". But Postgres often returns only a 2-digit offset, "+00" (as
+    seen live from get_bar_orders_recent()), which that check didn't
+    recognize as an offset at all — so it got a "Z" appended on top of the
+    existing "+00", producing a malformed string like
+    "...+00Z". Chrome's parser shrugs and figures it out anyway; older
+    Safari returns Invalid Date for it, silently zeroing out Today's
+    Orders / Orders Today / Shift Summary on those machines even though
+    the same rows render fine elsewhere (e.g. Revenue & Reports, and
+    table_orders — which happens to come back with a full 4-digit offset
+    already). table_orders/canteen_orders/most other timestamps were
+    unaffected because their offset happened to already be 4 digits, so
+    this only ever broke bar_orders-derived numbers. toDate() now looks
+    for an offset (of any length) specifically right after the time
+    portion of the string, instead of testing the tail of the whole
+    string, so it can't be fooled by dashes in the date part and correctly
+    recognizes 2-digit offsets. No backend or data change — read-side
+    parsing fix only, same as v6.6.
+
   v6.5 CHANGES:
   - OPEN BAR TABS. Quick Sell now has a third payment option, OPEN BAR
     TAB (bright yellow, distinct from Cash/MoMo), for customers who
@@ -477,12 +498,24 @@ let expandedMetric = null;
 // restock dates, etc.) with no visible error. Chrome is lenient and parses
 // it fine, which is why this only shows up on older Macs/Safari. Route every
 // Supabase-timestamp parse through this instead of raw `new Date(...)`.
+//
+// v6.6.1: fixed offset-detection. This used to test whether the *end of
+// the whole string* looked like a 4-digit offset ("+00:00"/"+0000") before
+// deciding whether to append "Z". Postgres frequently returns a 2-digit
+// offset instead ("+00"), which that test didn't recognize — so "Z" got
+// appended on top of the existing "+00", producing a malformed
+// "...12.123456+00Z" that Chrome tolerates but old Safari rejects as
+// Invalid Date. Now it looks specifically at the offset position right
+// after the time portion (after "T"), so it can't be confused by the
+// dashes in the date part, and it correctly matches 2-digit offsets too.
 function toDate(v){
   if(v === null || v === undefined || v === '') return null;
   if(v instanceof Date) return v;
   let s = String(v).trim();
   if(s.indexOf('T') === -1) s = s.replace(' ', 'T');
-  if(!/[Zz]$|[+-]\d{2}:?\d{2}$/.test(s)) s += 'Z';
+  const m = s.match(/T\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[+-]\d{2}(:?\d{2})?)?$/);
+  const hasOffset = !!(m && m[2]);
+  if(!hasOffset) s += 'Z';
   const d = new Date(s);
   return isNaN(d.getTime()) ? new Date(v) : d;
 }
