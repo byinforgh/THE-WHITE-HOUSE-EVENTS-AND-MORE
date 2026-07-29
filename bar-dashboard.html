@@ -623,6 +623,7 @@ async function loadSupabaseBarData(){
   return { stock, menu, todayOrders: todayOrders.reverse(), todayRevenue, todayItemCount, revenueByPayment: revenueByPaymentList,
     topSellers, staleStock, restockLog, staff, lowStockCount: stock.filter(s=>s.lowStock).length,
     shiftStartedAt: shiftStartedAtRaw || null, locationTypes,
+    locationTableRanges: (() => { try { return JSON.parse(venueSettings.location_table_ranges||'{}'); } catch(e){ return {}; } })(),
     momoNumber: venueSettings.momo_number || '', momoName: venueSettings.momo_name || '' };
 }
 
@@ -1156,6 +1157,7 @@ function scanLoop(){
 let quickSellCategory = 'All';
 let cart = {};
 let qsBarTabMode = false;
+let addToTabId = null, addToTabName = '';
 
 function renderQuickSellTabs(){
   const menu = barData.menu || [];
@@ -1268,12 +1270,22 @@ function toggleBarTabMode(){
   renderQuickSellPanel();
 }
 
+// v6.6: opens the Quick Sell panel in "add items to an existing open
+// tab" mode instead of the normal cart flow. Triggered from the
+// + ADD ITEMS button on a tab card in the Open Bar Tabs section.
+function startAddItemsToTab(tabId, name){
+  addToTabId = tabId; addToTabName = name;
+  cart = {}; qsBarTabMode = false;
+  document.getElementById('quickSellCard').scrollIntoView({behavior:'smooth'});
+  renderQuickSellPanel();
+}
+
 function renderQuickSellPanel(){
   const panel = document.getElementById('quickSellPanel');
   const menu = barData.menu || [];
   const itemNames = Object.keys(cart).filter(k => cart[k] > 0);
 
-  if(itemNames.length === 0){
+  if(itemNames.length === 0 && !addToTabId){
     panel.classList.remove('show');
     panel.innerHTML = '';
     qsBarTabMode = false;
@@ -1282,15 +1294,7 @@ function renderQuickSellPanel(){
 
   panel.classList.add('show');
 
-  const prevStaff = document.getElementById('qsStaff') ? document.getElementById('qsStaff').value : '';
-  const prevCustomer = document.getElementById('qsCustomer') ? document.getElementById('qsCustomer').value : '';
-  const prevNewName = document.getElementById('qsNewName') ? document.getElementById('qsNewName').value : '';
-  const prevPayment = document.getElementById('qsPayment') ? document.getElementById('qsPayment').value : '';
-  const prevArea = document.getElementById('qsTabArea') ? document.getElementById('qsTabArea').value : '';
-
-  const staff = getServingStaff();
   const subtotal = cartSubtotal();
-
   const cartRowsHtml = itemNames.map(name => {
     const m = menu.find(mm => mm.item === name);
     const price = m ? m.price : 0;
@@ -1308,12 +1312,44 @@ function renderQuickSellPanel(){
     </div>`;
   }).join('');
 
+  function wireCartRows(){
+    const list = document.getElementById('cartList');
+    if(!list) return;
+    list.querySelectorAll('.cart-row').forEach(row => {
+      const name = decodeURIComponent(row.dataset.cartItem);
+      row.querySelector('.cart-item-name').textContent = name;
+      row.querySelector('.cart-qty-inc').addEventListener('click', () => setCartQty(name, (cart[name]||0)+1));
+      row.querySelector('.cart-qty-dec').addEventListener('click', () => setCartQty(name, (cart[name]||0)-1));
+      row.querySelector('.cart-remove').addEventListener('click', () => setCartQty(name, 0));
+    });
+  }
+
+  // v6.6: ADD-TO-EXISTING-TAB MODE — short-circuits the normal panel.
+  if(addToTabId){
+    panel.innerHTML = `<div class="qs-title"><span>&#43; Adding to ${addToTabName}'s tab</span><button type="button" id="qsCancelAddToTab" style="font-size:11px;color:var(--muted);background:none;border:none">CANCEL</button></div>` +
+      (itemNames.length ? `<div class="cart-list" id="cartList">${cartRowsHtml}</div>` : '<div class="cart-empty-hint">Tap menu items to add them to this tab.</div>') +
+      (itemNames.length ? `<div class="cart-subtotal-row"><span>Adding</span><span class="cart-subtotal-value">&#8373;${subtotal.toFixed(2)}</span></div><button class="btn" id="qsConfirmBtn" style="background:var(--purple);color:#fff">&#43; ADD ${itemNames.length} ITEM${itemNames.length>1?'S':''} TO TAB</button>` : '');
+    wireCartRows();
+    document.getElementById('qsCancelAddToTab')?.addEventListener('click', () => { addToTabId = null; addToTabName = ''; clearCart(); });
+    document.getElementById('qsConfirmBtn')?.addEventListener('click', submitAddItemsToTab);
+    return;
+  }
+
+  const prevStaff = document.getElementById('qsStaff') ? document.getElementById('qsStaff').value : '';
+  const prevCustomer = document.getElementById('qsCustomer') ? document.getElementById('qsCustomer').value : '';
+  const prevNewName = document.getElementById('qsNewName') ? document.getElementById('qsNewName').value : '';
+  const prevPayment = document.getElementById('qsPayment') ? document.getElementById('qsPayment').value : '';
+  const prevArea = document.getElementById('qsTabArea') ? document.getElementById('qsTabArea').value : '';
+  const prevTabNumber = document.getElementById('qsTabNumber') ? document.getElementById('qsTabNumber').value : '';
+
+  const staff = getServingStaff();
+
   const areaOptionsHtml = '<option value="">Select area...</option>' +
     (barData.locationTypes||[]).map(l => `<option value="${l}">${l}</option>`).join('');
 
   panel.innerHTML = `
     <div class="qs-title"><span>&#128722; CART (${itemNames.length} item${itemNames.length>1?'s':''})</span><button type="button" class="cart-remove" id="qsClearCart" title="Clear cart" style="font-size:12px;color:var(--muted)">CLEAR</button></div>
-    <div class="cart-list" id="cartList"></div>
+    <div class="cart-list" id="cartList">${cartRowsHtml}</div>
     <div class="cart-subtotal-row"><span>Subtotal</span><span class="cart-subtotal-value">&#8373;${subtotal.toFixed(2)}</span></div>
     ${staff.length===0 ? '<div class="qs-warning">&#9888; No active staff with initials found in Supabase — the "Served by" list below will be empty. Add staff rows in the Supabase Table Editor, then hit Refresh.</div>' : ''}
     <div class="qs-field-grid" style="margin-top:10px">
@@ -1336,7 +1372,13 @@ function renderQuickSellPanel(){
     <div class="qs-bartab-row"><button type="button" class="qs-bartab-btn${qsBarTabMode?' active':''}" id="qsBarTabToggle">${qsBarTabMode ? 'CANCEL TAB' : 'BAR TAB'}</button></div>
     ${qsBarTabMode ? `
     <div class="qs-label" style="margin-top:10px">Area (required)</div>
-    <select class="select-input" id="qsTabArea" style="margin:0 0 10px;border-color:var(--gold)">${areaOptionsHtml}</select>
+    <select class="select-input" id="qsTabArea" style="margin:0 0 10px;border-color:var(--gold)" onchange="renderQuickSellPanel()">${areaOptionsHtml}</select>
+    ${(barData.locationTableRanges||{})[document.getElementById('qsTabArea')?.value] ? `
+    <div class="qs-label">Table number (required)</div>
+    <select class="select-input" id="qsTabNumber" style="margin:0 0 10px">
+      <option value="">Select table...</option>
+      ${Array.from({length: barData.locationTableRanges[document.getElementById('qsTabArea').value]}, (_,i)=>i+1).map(n=>`<option value="${n}">${n}</option>`).join('')}
+    </select>` : ''}
     ` : ''}
     <div class="restock-grid">
       <button class="btn" id="qsConfirmBtn" style="margin:0${qsBarTabMode?';background:var(--gold);border:2px solid var(--gold-dim)':''}">${qsBarTabMode ? '&#10003; OPEN TAB — &#8373;'+subtotal.toFixed(2) : '&#10003; CONFIRM SALE — &#8373;'+subtotal.toFixed(2)}</button>
@@ -1344,14 +1386,7 @@ function renderQuickSellPanel(){
     </div>
     <div id="qsResult" style="margin-top:8px;font-size:12px"></div>`;
 
-  document.getElementById('cartList').innerHTML = cartRowsHtml;
-  document.getElementById('cartList').querySelectorAll('.cart-row').forEach(row => {
-    const name = decodeURIComponent(row.dataset.cartItem);
-    row.querySelector('.cart-item-name').textContent = name;
-    row.querySelector('.cart-qty-inc').addEventListener('click', () => setCartQty(name, (cart[name]||0)+1));
-    row.querySelector('.cart-qty-dec').addEventListener('click', () => setCartQty(name, (cart[name]||0)-1));
-    row.querySelector('.cart-remove').addEventListener('click', () => setCartQty(name, 0));
-  });
+  wireCartRows();
 
   const staffSel = document.getElementById('qsStaff');
   staffSel.innerHTML = '<option value="">Select staff...</option>' +
@@ -1364,6 +1399,8 @@ function renderQuickSellPanel(){
   if(prevPayment) paySel.value = prevPayment;
   const areaSel = document.getElementById('qsTabArea');
   if(areaSel && prevArea) areaSel.value = prevArea;
+  const tabNumberSel = document.getElementById('qsTabNumber');
+  if(tabNumberSel && prevTabNumber) tabNumberSel.value = prevTabNumber;
 
   document.getElementById('qsBarTabToggle').addEventListener('click', toggleBarTabMode);
   document.getElementById('qsConfirmBtn').addEventListener('click', qsBarTabMode ? submitBarTab : submitQuickSellCart);
@@ -1374,6 +1411,8 @@ function renderQuickSellPanel(){
 function clearCart(){
   cart = {};
   qsBarTabMode = false;
+  addToTabId = null;
+  addToTabName = '';
   const searchEl = document.getElementById('quickSellSearch');
   if(searchEl) searchEl.value = '';
   renderQuickSellMenu();
@@ -1390,11 +1429,14 @@ function cancelQuickSellCart(){
 // record immediately server-side (open_bar_tab calls
 // find_or_create_bar_customer), so their ID and points are live right
 // away rather than waiting until they pay.
+// v6.6: also requires a table number whenever the chosen area has a
+// numbered picker configured in venue_settings.location_table_ranges.
 async function submitBarTab(){
   const staffInitials = document.getElementById('qsStaff').value;
   const custPhone = document.getElementById('qsCustomer').value.trim();
   const custName = document.getElementById('qsNewName').value.trim();
   const area = document.getElementById('qsTabArea').value;
+  const tableNumber = document.getElementById('qsTabNumber')?.value || null;
   const resultEl = document.getElementById('qsResult');
   const confirmBtn = document.getElementById('qsConfirmBtn');
 
@@ -1402,6 +1444,7 @@ async function submitBarTab(){
   if(!custName){ resultEl.innerHTML = '<span style="color:var(--red)">Customer name is required to open a tab.</span>'; return; }
   if(!custPhone){ resultEl.innerHTML = '<span style="color:var(--red)">Customer phone or ID is required to open a tab.</span>'; return; }
   if(!area){ resultEl.innerHTML = '<span style="color:var(--red)">Pick an area for the tab.</span>'; return; }
+  if(barData.locationTableRanges[area] && !tableNumber){ resultEl.innerHTML = '<span style="color:var(--red)">Pick a table number.</span>'; return; }
 
   const itemNames = Object.keys(cart).filter(k => cart[k] > 0);
   if(itemNames.length === 0){ resultEl.innerHTML = '<span style="color:var(--red)">Cart is empty.</span>'; return; }
@@ -1420,15 +1463,37 @@ async function submitBarTab(){
   try{
     const { error } = await supabaseClient.rpc('open_bar_tab', {
       p_items: items, p_total: total, p_staff: staffInitials,
-      p_customer_name: custName, p_customer_phone: custPhone, p_area: area
+      p_customer_name: custName, p_customer_phone: custPhone, p_area: area,
+      p_table_number: tableNumber
     });
     if(error) throw new Error(error.message);
-    resultEl.innerHTML = `<span class="flash">&#10003; Tab opened for ${custName} — ${area}. It's now showing at the top of the dashboard until paid.</span>`;
+    resultEl.innerHTML = `<span class="flash">&#10003; Tab opened for ${custName} — ${area}${tableNumber?' '+tableNumber:''}. It's now showing at the top of the dashboard until paid.</span>`;
     setTimeout(() => { clearCart(); loadData(); }, 1500);
   }catch(e){
     resultEl.innerHTML = '<span style="color:var(--red)">' + e.message + '</span>';
     confirmBtn.disabled = false;
     confirmBtn.textContent = '\u2713 OPEN TAB — \u20b5' + total.toFixed(2);
+  }
+}
+
+// v6.6: adds the current cart's items onto an already-open tab
+// (rather than finalizing a sale or opening a new tab). Triggered via
+// the + ADD ITEMS button on a tab card / startAddItemsToTab().
+async function submitAddItemsToTab(){
+  const itemNames = Object.keys(cart).filter(k => cart[k] > 0);
+  if(itemNames.length === 0) return;
+  const menu = barData.menu || [];
+  const items = itemNames.map(name => { const m = menu.find(mm=>mm.item===name); return {item:name, qty:cart[name], price: m?m.price:0}; });
+  const additionalTotal = cartSubtotal();
+  const confirmBtn = document.getElementById('qsConfirmBtn');
+  if(confirmBtn){ confirmBtn.disabled = true; confirmBtn.textContent = 'Adding items...'; }
+  try{
+    const { error } = await supabaseClient.rpc('add_items_to_open_tab', { p_tab_id: addToTabId, p_items: items, p_additional_total: additionalTotal });
+    if(error) throw new Error(error.message);
+    addToTabId = null; clearCart(); loadData();
+  }catch(e){
+    alert('Could not add items: ' + e.message);
+    if(confirmBtn){ confirmBtn.disabled = false; confirmBtn.textContent = '\u002B ADD ' + itemNames.length + ' ITEM' + (itemNames.length>1?'S':'') + ' TO TAB'; }
   }
 }
 
@@ -1536,7 +1601,7 @@ async function renderOpenTabs(){
   <button class="tab-card-x" onclick="cancelTab('${t.id}')" title="Cancel tab">&times;</button>
   <div class="tab-card-top">
     <div><div class="tab-card-name">${t.customer_name}${t.customer_id?' &middot; '+t.customer_id:''}</div><div class="tab-card-phone">${t.customer_phone}</div></div>
-    <span class="tab-area-badge">${t.area||'—'}</span>
+    <span class="tab-area-badge">${t.area||'—'}${t.table_number?' '+t.table_number:''}</span>
   </div>
   <div class="tab-card-items">${itemsStr}</div>
   <div class="tab-card-footer">
@@ -1546,7 +1611,8 @@ async function renderOpenTabs(){
   <div class="tab-actions">
     ${isProcessing ? '<button disabled>PROCESSING...</button>' : `
       <button class="tab-pay-cash" onclick="payTab('${t.id}','Cash')">CASH</button>
-      <button class="tab-pay-momo" onclick="payTab('${t.id}','MoMo')">MOMO</button>`}
+      <button class="tab-pay-momo" onclick="payTab('${t.id}','MoMo')">MOMO</button>
+      <button class="tab-add-items" style="background:var(--purple);color:#fff;flex:1 1 100%" onclick="startAddItemsToTab('${t.id}','${(t.customer_name||'').replace(/'/g,"\\'")}')">&#43; ADD ITEMS</button>`}
   </div>
 </div>`;
     }).join('');
