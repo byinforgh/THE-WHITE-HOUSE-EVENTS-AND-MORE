@@ -1,7 +1,25 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE EVENTS & MORE — BAR DASHBOARD (v6.8)
+  THE WHITE HOUSE EVENTS & MORE — BAR DASHBOARD (v6.9)
+
+  v6.9 CHANGES (this session):
+  - FIXED "CAN'T SELECT MULTIPLE" RESTOCK ERROR. There were two versions
+    of the restock_item database function — an old one (7 parameters, no
+    pack support) left over from before packs/crates existed, and the
+    current one (10 parameters, with pack support). The multi-item restock
+    call only ever sent the first 7 parameters, which matched BOTH
+    versions at once, so Postgres couldn't tell them apart and rejected
+    every item with "Could not choose the best candidate function..."
+    The old, no-longer-used version has been dropped from the database,
+    and the multi-item restock call now explicitly sends all 10
+    parameters (matching the single-item form) so this can't recur.
+  - FIXED THE ITEM-NAME DROPDOWN POPPING OPEN ON ITS OWN. Any loadData()
+    call anywhere on the page — placing an order, marking one paid, the
+    quiet-hour reload, anything — used to force the RESTOCK item-name
+    dropdown open, even while someone was elsewhere on the page. It now
+    only refreshes its contents quietly in the background if it's
+    already open; it no longer opens itself.
 
   v6.8 CHANGES (this session):
   - STAFF DROPDOWNS: CHECKED-IN ONLY, NO FALLBACK. Every staff-select
@@ -999,14 +1017,23 @@ function populateStaffDropdowns(){
 
 let restockStockItems = [];
 function populateStockDatalist(){
-  // v6.7: pour ingredients (unit === 'oz') can't be reliably counted as oz
+  // v6.9: pour ingredients (unit === 'oz') can't be reliably counted as oz
   // remaining in a bottle, so they're excluded from the restock picker
   // entirely — they only move via cocktail sales decrementing bar_stock
   // server-side. Items measured in whole units (cans, bottles, shots —
   // including ones also used inside a cocktail recipe, like Guinness or
   // Coke Can) stay, since those ARE reliably countable.
   restockStockItems = (barData.stock||[]).filter(s => s.unit !== 'oz').map(s=>s.item);
-  renderRestockCombo(document.getElementById('restockItem').value || '');
+  // Only refresh the dropdown's contents if it's already open. loadData()
+  // runs after all sorts of unrelated actions across the page (placing an
+  // order, marking one paid, the periodic quiet-hour reload, etc.) — this
+  // used to force the item-name dropdown open every single time, even
+  // while someone was elsewhere on the page. Now it just quietly keeps
+  // the item list current in the background.
+  const listEl = document.getElementById('restockItemComboList');
+  if(listEl && listEl.classList.contains('show')){
+    renderRestockCombo(document.getElementById('restockItem').value || '');
+  }
   renderRestockMultiList();
 }
 let restockMultiSelected = new Set();
@@ -1185,7 +1212,8 @@ async function submitRestockMulti(){
       const { data, error } = await supabaseClient.rpc('restock_item', {
         p_item: item, p_unit: null, p_qty_added: parseFloat(qtyAdded),
         p_par_level: parLevel ? parseFloat(parLevel) : null, p_cost_per_unit: costPerUnit ? parseFloat(costPerUnit) : null,
-        p_restocked_by: restockedBy, p_client_id: genClientId()
+        p_restocked_by: restockedBy, p_client_id: genClientId(),
+        p_packs: null, p_units_per_pack: null, p_pack_label: null
       });
       if(error) throw new Error(error.message);
       outcomes.push({ item, ok: true });
