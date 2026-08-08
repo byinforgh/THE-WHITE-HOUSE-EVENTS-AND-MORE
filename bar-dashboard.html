@@ -1,7 +1,17 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE EVENTS & MORE — BAR DASHBOARD (v6.9)
+  THE WHITE HOUSE EVENTS & MORE — BAR DASHBOARD (v7.0)
+
+  v7.0 CHANGES (this session):
+  - FIXED "CAN'T ASSIGN STAFF TO AN ORDER THAT ARRIVED BEFORE CHECK-IN".
+    Table/food order cards were cached and skipped re-rendering as long
+    as the order itself hadn't changed, so an order that landed while
+    nobody was checked in kept its empty staff dropdown even after
+    someone checked in — the dropdown never refreshed until the order's
+    own data changed. The render signature for both panels now includes
+    the on-duty staff list, so checking in immediately refreshes any
+    already-visible order card's dropdown with the newly checked-in name.
 
   v6.9 CHANGES (this session):
   - FIXED "CAN'T SELECT MULTIPLE" RESTOCK ERROR. There were two versions
@@ -2059,7 +2069,9 @@ function renderTableOrders(){
     return (order[a.status]??3) - (order[b.status]??3) || (toDate(a.timestamp)?.getTime()||0) - (toDate(b.timestamp)?.getTime()||0);
   });
 
-  const signature = activeOrdersSignature(active) + '|proc:' + Array.from(processingOrderIds).sort().join(',');
+  const staffList = getServingStaff();
+  const staffSig = staffList.map(s=>s.initials).sort().join(',');
+  const signature = activeOrdersSignature(active) + '|proc:' + Array.from(processingOrderIds).sort().join(',') + '|staff:' + staffSig;
   if(signature === lastActiveSignature){
     updateOrderAges();
     return;
@@ -2068,7 +2080,6 @@ function renderTableOrders(){
 
   if(active.length === 0){ el.innerHTML = '<div class="empty">No active table orders right now.</div>'; return; }
 
-  const staffList = getServingStaff();
   const staffOptionsHtml = (selected) => '<option value="">Select staff...</option>' +
     staffList.map(s => `<option value="${s.initials}" ${selected===s.initials?'selected':''}>${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
 
@@ -2232,7 +2243,9 @@ function renderFoodOrders(){
     return (order[a.status]??3) - (order[b.status]??3) || (toDate(a.timestamp)?.getTime()||0) - (toDate(b.timestamp)?.getTime()||0);
   });
 
-  const signature = activeOrdersSignature(active) + '|proc:' + Array.from(processingFoodOrderIds).sort().join(',');
+  const staffList = getServingStaff();
+  const staffSig = staffList.map(s=>s.initials).sort().join(',');
+  const signature = activeOrdersSignature(active) + '|proc:' + Array.from(processingFoodOrderIds).sort().join(',') + '|staff:' + staffSig;
   if(signature === lastFoodActiveSignature){
     document.querySelectorAll('#foodOrdersBody .order-card').forEach(card => {
       const ts = card.dataset.timestamp;
@@ -2245,7 +2258,6 @@ function renderFoodOrders(){
 
   if(active.length === 0){ el.innerHTML = '<div class="empty">No active food orders right now.</div>'; return; }
 
-  const staffList = getServingStaff();
   const staffOptionsHtml = (selected) => '<option value="">Select staff...</option>' +
     staffList.map(s => `<option value="${s.initials}" ${selected===s.initials?'selected':''}>${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
 
