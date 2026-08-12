@@ -1,28 +1,28 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE EVENTS & MORE — RECEPTION DASHBOARD (v2.0)
+  THE WHITE HOUSE EVENTS & MORE: RECEPTION DASHBOARD (v2.0)
 
   DATA SOURCES
   ------------
-  Supabase (project crvuzkyfrqbfmamegxjx) — same project as bar/members/order:
+  Supabase (project crvuzkyfrqbfmamegxjx): same project as bar/members/order:
     Live already:  bookings, bar_customers
-    New (this file, seeded by reception_schema.sql — run it once first):
+    New (this file, seeded by reception_schema.sql: run it once first):
                    rooms, reception_tasks, cleaning_logs, staff_members, staff_shifts
                    + bookings.status / bookings.deposit_paid columns
 
-  Facilities Google Sheet (Apps Script) — same backend as facilities-dashboard.html
+  Facilities Google Sheet (Apps Script): same backend as facilities-dashboard.html
   and facilities-report.html. Breakdowns/maintenance tickets live there, not in
   Supabase, so this dashboard talks to the same API_URL rather than a second,
   disconnected "facilities_tickets" table.
 
   No login system yet (same accepted trade-off as every other dashboard in
-  this project) — anyone with this URL can use it. Don't link it publicly.
+  this project): anyone with this URL can use it. Don't link it publicly.
 -->
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>The White House Events &amp; More — Reception</title>
+<title>The White House Events &amp; More: Reception</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -77,7 +77,7 @@ body::after{
 .live-dot{ display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--green); box-shadow:0 0 0 0 rgba(31,157,92,0.6); animation:pulse 2s infinite; flex:none; }
 @keyframes pulse{ 0%{box-shadow:0 0 0 0 rgba(31,157,92,0.55);} 70%{box-shadow:0 0 0 7px rgba(31,157,92,0);} 100%{box-shadow:0 0 0 0 rgba(31,157,92,0);} }
 
-/* kente accent strip — used as a decorative band under hero/topbar */
+/* kente accent strip: used as a decorative band under hero/topbar */
 .kente-strip{
   height:5px; width:100%; border-radius:6px; flex:none;
   background:repeating-linear-gradient(90deg,
@@ -344,6 +344,9 @@ label.f{ display:block; font-size:10px; color:var(--muted); font-weight:700; let
     <button class="nav-item" data-tab="facilities"><span class="ic">&#128295;</span> Breakdowns <span class="nav-badge zero" id="badgeTickets">0</span></button>
     <button class="nav-item" data-tab="cleaning"><span class="ic">&#10003;</span> Cleaning</button>
     <button class="nav-item" data-tab="tasks"><span class="ic">&#128203;</span> Tasks <span class="nav-badge zero" id="badgeTasks">0</span></button>
+    <button class="nav-item" data-tab="notes"><span class="ic">&#128221;</span> Notes</button>
+    <div class="nav-group-label">Guest Experience</div>
+    <button class="nav-item" data-tab="recognition"><span class="ic">&#127942;</span> Recognition Board</button>
     <div class="nav-group-label">Reference</div>
     <button class="nav-item" data-tab="guide"><span class="ic">&#128214;</span> Staff Guide</button>
   </nav>
@@ -372,29 +375,33 @@ label.f{ display:block; font-size:10px; color:var(--muted); font-weight:700; let
         <div class="hero-corner tl"></div><div class="hero-corner br"></div>
         <div class="hero-eyebrow"><span class="live-dot"></span> Live Operations Overview</div>
         <div class="hero-title">Here's where the property stands right now.</div>
-        <div class="hero-sub">Rooms, bookings, breakdowns, tasks, cleaning and staff on shift — one screen, updated live. Refreshes automatically every minute.</div>
+        <div class="hero-sub">Rooms, bookings, breakdowns, tasks, cleaning and staff on shift: one screen, updated live. Refreshes automatically every minute.</div>
         <div class="hero-kente kente-strip"></div>
       </div>
       <div class="metrics-grid" id="todayMetrics"><div class="loading">Loading…</div></div>
       <div class="two-col">
         <div class="card">
-          <div class="card-title">&#128204; Open Tasks</div>
+          <div class="card-title clickable" onclick="switchTab('tasks')">&#128204; Open Tasks <span class="go-arrow">View all &rarr;</span></div>
           <div id="todayTasks"></div>
         </div>
         <div class="card">
-          <div class="card-title">&#128295; Open Breakdowns</div>
+          <div class="card-title clickable" onclick="switchTab('facilities')">&#128295; Open Breakdowns <span class="go-arrow">View all &rarr;</span></div>
           <div id="todayTickets"></div>
         </div>
       </div>
       <div class="two-col">
         <div class="card">
-          <div class="card-title">&#128197; Today's Bookings</div>
+          <div class="card-title clickable" onclick="switchTab('bookings')">&#128197; Today's Bookings <span class="go-arrow">View all &rarr;</span></div>
           <div id="todayBookings"></div>
         </div>
         <div class="card">
-          <div class="card-title">&#128081; VIP Follow-Up Queue</div>
+          <div class="card-title clickable" onclick="switchTab('guests')">&#128081; VIP Follow-Up Queue <span class="go-arrow">View all &rarr;</span></div>
           <div id="todayVip"></div>
         </div>
+      </div>
+      <div class="card">
+        <div class="card-title clickable" onclick="switchTab('rooms')">&#128101; Guests In Today &mdash; In-House &amp; Walk-In <span class="go-arrow">View rooms &rarr;</span></div>
+        <div id="todayGuests"></div>
       </div>
     </div>
 
@@ -416,7 +423,7 @@ label.f{ display:block; font-size:10px; color:var(--muted); font-weight:700; let
         </div>
         <div class="card">
           <div class="card-title">&#10133; Add a Booking</div>
-          <div class="note-box teal" style="margin-bottom:14px">Matches by phone — updates an existing member instead of creating a duplicate. Use for phone/walk-in bookings; the website plugin feeds bookings in automatically too.</div>
+          <div class="note-box teal" style="margin-bottom:14px">Matches by phone: updates an existing member instead of creating a duplicate. Use for phone/walk-in bookings; the website plugin feeds bookings in automatically too.</div>
           <label class="f">Guest name*</label><input type="text" id="bkName">
           <label class="f">Phone*</label><input type="tel" id="bkPhone" placeholder="024 123 4567">
           <label class="f">Service</label>
@@ -442,7 +449,7 @@ label.f{ display:block; font-size:10px; color:var(--muted); font-weight:700; let
         <div>
           <div class="card">
             <div class="card-title">&#10133; Register a New Member</div>
-            <div class="note-box teal">Free to join. Every order/visit earns points automatically. Same member base as the QR ordering system — one ID works everywhere.</div>
+            <div class="note-box teal">Free to join. Every order/visit earns points automatically. Same member base as the QR ordering system: one ID works everywhere.</div>
             <label class="f">Full name*</label><input type="text" id="regName">
             <label class="f">Phone*</label><input type="tel" id="regPhone" placeholder="024 123 4567">
             <label class="f">Email</label><input type="email" id="regEmail">
@@ -453,7 +460,7 @@ label.f{ display:block; font-size:10px; color:var(--muted); font-weight:700; let
           </div>
           <div class="card">
             <div class="card-title">&#128081; Log a VIP Interest</div>
-            <div class="note-box gold">VIP is a paid subscription — <b>never granted on the spot</b>. This logs the request as a follow-up task for management to contact the guest and arrange payment.</div>
+            <div class="note-box gold">VIP is a paid subscription: <b>never granted on the spot</b>. This logs the request as a follow-up task for management to contact the guest and arrange payment.</div>
             <label class="f">Member ID or phone*</label><input type="text" id="vipQuery" placeholder="e.g. THWGH12 or 024…">
             <label class="f">Guest name (if not yet a member)</label><input type="text" id="vipName">
             <button class="btn ghost" onclick="submitVipInterest()">Log VIP Request</button>
@@ -465,7 +472,7 @@ label.f{ display:block; font-size:10px; color:var(--muted); font-weight:700; let
 
     <!-- ============ STAFF ON SHIFT ============ -->
     <div class="tab-content" id="tab-staff">
-      <div class="note-box teal">Front-desk shift log — every clock-in and clock-out is timestamped here. This is the same roster and log a future <b>Manager Dashboard</b> will read from, so keep names consistent (pick from the list where possible instead of retyping).</div>
+      <div class="note-box teal">Front-desk shift log: every clock-in and clock-out is timestamped here. This is the same roster and log a future <b>Manager Dashboard</b> will read from, so keep names consistent (pick from the list where possible instead of retyping).</div>
       <div class="two-col">
         <div class="card">
           <div class="card-title"><span class="live-dot"></span> On Shift Now</div>
@@ -474,7 +481,7 @@ label.f{ display:block; font-size:10px; color:var(--muted); font-weight:700; let
         <div class="card">
           <div class="card-title">&#8901; Clock In</div>
           <label class="f">Staff member</label>
-          <select id="ciExisting" onchange="onCiExistingChange()"><option value="">— Select from roster —</option></select>
+          <select id="ciExisting" onchange="onCiExistingChange()"><option value="">Select from roster</option></select>
           <label class="f">Or type a name (adds them to the roster)</label>
           <input type="text" id="ciName" placeholder="Full name">
           <label class="f">Role</label>
@@ -507,10 +514,10 @@ label.f{ display:block; font-size:10px; color:var(--muted); font-weight:700; let
           <textarea id="tkDescription" placeholder="e.g. AC not cooling in Room 6, main gate light out…"></textarea>
           <label class="f">Urgency*</label>
           <select id="tkUrgency">
-            <option value="Low">Low — whenever</option>
-            <option value="Medium" selected>Medium — soon</option>
-            <option value="High">High — today</option>
-            <option value="Urgent">Urgent — safety issue</option>
+            <option value="Low">Low: whenever</option>
+            <option value="Medium" selected>Medium: soon</option>
+            <option value="High">High: today</option>
+            <option value="Urgent">Urgent: safety issue</option>
           </select>
           <label class="f">Reported by</label><input type="text" id="tkReportedBy" placeholder="Your name">
           <button class="btn danger" onclick="submitTicket()">+ Report Issue</button>
@@ -521,7 +528,7 @@ label.f{ display:block; font-size:10px; color:var(--muted); font-weight:700; let
 
     <!-- ============ CLEANING ============ -->
     <div class="tab-content" id="tab-cleaning">
-      <div class="note-box teal">Based on the Housekeeping, Cleaning &amp; General Area Standards guide — the standard is not "I cleaned it," it's <b>"my area is completely ready for a guest, and I have checked everything."</b> Log a zone check below; today's log shows what's already signed off.</div>
+      <div class="note-box teal">Based on the Housekeeping, Cleaning &amp; General Area Standards guide: the standard is not "I cleaned it," it's <b>"my area is completely ready for a guest, and I have checked everything."</b> Log a zone check below; today's log shows what's already signed off.</div>
       <div class="two-col">
         <div class="card">
           <div class="card-title">&#10003; Log a Zone Check</div>
@@ -586,39 +593,39 @@ label.f{ display:block; font-size:10px; color:var(--muted); font-weight:700; let
       <div class="card">
         <div class="guide-section">
           <h3>The Five-Star Greeting</h3>
-          <div class="guide-tier">Every guest greeted within seconds, eye contact, a smile, and their name if it's known ("Good afternoon, welcome back"). The same warmth for every guest regardless of how they arrive or what they're wearing — some of the most important guests won't look like it at first glance.</div>
-          <div class="guide-tier">If you don't know an answer: <b>"Let me get you the right person right now"</b> — and walk them there yourself, don't just point.</div>
+          <div class="guide-tier">Every guest greeted within seconds, eye contact, a smile, and their name if it's known ("Good afternoon, welcome back"). The same warmth for every guest regardless of how they arrive or what they're wearing: some of the most important guests won't look like it at first glance.</div>
+          <div class="guide-tier">If you don't know an answer: <b>"Let me get you the right person right now"</b>: and walk them there yourself, don't just point.</div>
         </div>
         <div class="guide-section">
-          <h3>Membership — Regular vs VIP</h3>
-          <div class="guide-tier"><b>Regular</b> — free, automatic, earns points from every order/visit. Offer it, never push it.</div>
-          <div class="guide-tier"><b>VIP</b> — a <u>paid subscription</u>, never granted on the spot. If a guest is interested, log it (Guests &amp; Members → Log VIP Interest) and management follows up to arrange payment. Never tell a guest they're "now VIP" unless a manager has actually confirmed it.</div>
+          <h3>Membership: Regular vs VIP</h3>
+          <div class="guide-tier"><b>Regular</b>: free, automatic, earns points from every order/visit. Offer it, never push it.</div>
+          <div class="guide-tier"><b>VIP</b>: a <u>paid subscription</u>, never granted on the spot. If a guest is interested, log it (Guests &amp; Members → Log VIP Interest) and management follows up to arrange payment. Never tell a guest they're "now VIP" unless a manager has actually confirmed it.</div>
         </div>
         <div class="guide-section">
           <h3>Refund / Comp / Escalation Authority</h3>
-          <div class="guide-tier"><b>Tier 1 — Any staff:</b> small goodwill gestures (a complimentary drink, a sincere apology, priority attention). No cash value threshold.</div>
-          <div class="guide-tier"><b>Tier 2 — Shift lead/supervisor:</b> gate fee refund or re-entry pass, replacing a spoiled order, a service-failure comp up to the owner-set threshold, rebooking a missed slot.</div>
-          <div class="guide-tier"><b>Tier 3 — Management only:</b> full refunds, event-related comps, anything involving a VIP/public figure or a safety incident, anything likely to be discussed publicly.</div>
+          <div class="guide-tier"><b>Tier 1: Any staff:</b> small goodwill gestures (a complimentary drink, a sincere apology, priority attention). No cash value threshold.</div>
+          <div class="guide-tier"><b>Tier 2: Shift lead/supervisor:</b> gate fee refund or re-entry pass, replacing a spoiled order, a service-failure comp up to the owner-set threshold, rebooking a missed slot.</div>
+          <div class="guide-tier"><b>Tier 3: Management only:</b> full refunds, event-related comps, anything involving a VIP/public figure or a safety incident, anything likely to be discussed publicly.</div>
           <div class="guide-tier" style="border-color:var(--gold-deep)">Golden rule: if it's unclear which tier applies, <b>escalate up</b> rather than guess down.</div>
         </div>
         <div class="guide-section">
           <h3>VIP / Traditional &amp; Dignitary Guests</h3>
-          <div class="guide-tier">Stay composed and professional — no staring, no phones out. Recognition goes through the correct channel quietly, never a visible reaction on the floor. No staff member initiates a photo/interaction unless the guest offers it first.</div>
+          <div class="guide-tier">Stay composed and professional: no staring, no phones out. Recognition goes through the correct channel quietly, never a visible reaction on the floor. No staff member initiates a photo/interaction unless the guest offers it first.</div>
           <div class="guide-tier">For chiefs, queen mothers, or traditional delegations: a senior staff member (not junior front-of-house) does the formal greeting. "Nana" is a safe default form of address while confirming specifics with the delegation's coordinator. No photography of regalia without explicit permission.</div>
         </div>
         <div class="guide-section">
-          <h3>Emergency Basics — Know Cold</h3>
+          <h3>Emergency Basics: Know Cold</h3>
           <div class="guide-tier"><b>Pool distress:</b> non-lifeguard staff clear the area, alert the nearest lifeguard and on-call manager immediately. Do not attempt a rescue without training.</div>
           <div class="guide-tier"><b>Fire:</b> know your nearest extinguisher, evacuation route, and assembly point.</div>
-          <div class="guide-tier"><b>Security incident:</b> alert security/on-call manager first, stay composed — guests take their cue from staff behaviour.</div>
+          <div class="guide-tier"><b>Security incident:</b> alert security/on-call manager first, stay composed: guests take their cue from staff behaviour.</div>
         </div>
         <div class="guide-section">
-          <h3>Housekeeping — "Ready" Means</h3>
+          <h3>Housekeeping: "Ready" Means</h3>
           <div class="guide-tier">Clean · dust-free · smells fresh · everything in its place · supplies stocked · nothing broken · lights/equipment checked · rubbish removed · nothing left by a previous guest · any problem reported. If one is missing, it's <b>not ready</b>. Full checklists live under the Cleaning tab.</div>
         </div>
         <div class="guide-section">
           <h3>Media / Press On-Site</h3>
-          <div class="guide-tier">If a journalist, blogger, or influencer approaches: <b>"I'd love to help — let me connect you with our team for that,"</b> then notify management immediately. No staff member confirms who is on property, or gives a quote, without management sign-off.</div>
+          <div class="guide-tier">If a journalist, blogger, or influencer approaches: <b>"I'd love to help: let me connect you with our team for that,"</b> then notify management immediately. No staff member confirms who is on property, or gives a quote, without management sign-off.</div>
         </div>
       </div>
     </div>
@@ -644,13 +651,13 @@ label.f{ display:block; font-size:10px; color:var(--muted); font-weight:700; let
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 // ---------------------------------------------------------------------------
-// CONFIG — same live project the rest of the dashboards use
+// CONFIG: same live project the rest of the dashboards use
 // ---------------------------------------------------------------------------
 const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNydnV6a3lmcnFiZm1hbWVneGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MzI5NjQsImV4cCI6MjEwMDAwODk2NH0.gMsv3yvw6plDCherA2YdU4UgWRMXUc9H1Hr_IdR9GxA';
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// Facilities Google Sheet / Apps Script — same deployment as
+// Facilities Google Sheet / Apps Script: same deployment as
 // facilities-dashboard.html and facilities-report.html. Breakdown tickets
 // live here, not in Supabase.
 const FACILITIES_API_URL = 'https://script.google.com/macros/s/AKfycbxdXWHqohz78kNcgtFrI_dVO6k5s6SqFL4wd-c00OB4xCfbFg4TrFyPwd2VGYz4j3Ry/exec';
@@ -659,7 +666,7 @@ const FACILITIES_API_URL = 'https://script.google.com/macros/s/AKfycbxdXWHqohz78
 // Rooms come from the live "rooms" table, not this static list.
 const COMPOUND_AREAS = [
   'Front Gate / Reception','Main Pool','Family/Kids Pool','Pool Deck & Seating','Pool Changing Rooms',
-  'Restaurant — Dining Area','Restaurant — Kitchen','Canteen Pass','Main Bar','Bar Storage','SIP UP Cocktail Bar',
+  'Restaurant: Dining Area','Restaurant: Kitchen','Canteen Pass','Main Bar','Bar Storage','SIP UP Cocktail Bar',
   'Main Open-Air Event Grounds','Stage & AV Area','Corridors / Hallways','Compound / Grounds','Parking Lot',
   'Main Entrance / Gate','Perimeter Wall / Fencing','Garden / Landscaping','Gym','Laundry Room',
   'Generator / Backup Power','CCTV / Security Room','Staff Quarters','Storage / Warehouse','Other / Not Listed'
@@ -704,7 +711,7 @@ function switchTab(name){
   document.getElementById('tab-'+name).classList.add('active');
   const titles = { today:['Front Desk','Today'], rooms:['Property','Rooms'], bookings:['Property','Bookings'],
     guests:['Guests','Guests & Members'], staff:['Team','Staff On Shift'], facilities:['Operations','Breakdowns'], cleaning:['Operations','Cleaning'],
-    tasks:['Operations','Tasks'], guide:['Reference','Staff Guide'] };
+    tasks:['Operations','Tasks'], notes:['Operations','Notes'], recognition:['Guest Experience','Recognition Board'], guide:['Reference','Staff Guide'] };
   const t = titles[name] || ['',''];
   document.getElementById('topEyebrow').textContent = t[0];
   document.getElementById('topTitle').textContent = t[1];
@@ -774,7 +781,7 @@ async function loadAll(){
     renderToday();
     updateNavBadges();
   }catch(e){
-    document.getElementById('lastRefresh').textContent = 'Offline — check connection';
+    document.getElementById('lastRefresh').textContent = 'Offline: check connection';
     console.log('loadAll error:', e.message);
   }
 }
@@ -789,7 +796,7 @@ function updateNavBadges(){
 }
 
 // ---------------------------------------------------------------------------
-// FACILITIES (Google Sheet / Apps Script — separate backend, same as
+// FACILITIES (Google Sheet / Apps Script: separate backend, same as
 // facilities-dashboard.html)
 // ---------------------------------------------------------------------------
 async function loadFacilities(){
@@ -801,12 +808,12 @@ async function loadFacilities(){
     state.tickets = data.tickets || data.openSorted || [];
     state.facilitiesOnline = true;
     note.className = 'note-box teal';
-    note.innerHTML = 'Connected to the Facilities system — the same Google Sheet used by the Facilities Dashboard. Tickets reported here appear there instantly, and vice versa.';
+    note.innerHTML = 'Connected to the Facilities system: the same Google Sheet used by the Facilities Dashboard. Tickets reported here appear there instantly, and vice versa.';
   }catch(e){
     state.tickets = [];
     state.facilitiesOnline = false;
     note.className = 'note-box red';
-    note.innerHTML = '<b>Can\'t reach the Facilities system right now.</b> Reports made here will still be attempted, but the ticket list below may be out of date — check with the Facilities Dashboard directly if this persists.';
+    note.innerHTML = '<b>Can\'t reach the Facilities system right now.</b> Reports made here will still be attempted, but the ticket list below may be out of date: check with the Facilities Dashboard directly if this persists.';
     console.log('facilities load error:', e.message);
   }
   renderTicketFilters(); renderTickets();
@@ -835,7 +842,7 @@ function renderToday(){
   document.getElementById('todayTasks').innerHTML = openTasks.length ? openTasks.slice(0,6).map(t=>`
     <div style="padding:8px 0;border-bottom:1px solid var(--border-soft);font-size:12.5px;display:flex;justify-content:space-between;gap:8px">
       <span>${esc(t.title)}</span><span class="pill ${(t.priority||'').toLowerCase()}">${esc(t.priority)}</span>
-    </div>`).join('') : '<div class="empty">Nothing outstanding — nice.</div>';
+    </div>`).join('') : '<div class="empty">Nothing outstanding: nice.</div>';
 
   document.getElementById('todayTickets').innerHTML = openTickets.length ? openTickets.slice(0,6).map(t=>`
     <div style="padding:8px 0;border-bottom:1px solid var(--border-soft);font-size:12.5px;display:flex;justify-content:space-between;gap:8px">
@@ -844,11 +851,11 @@ function renderToday(){
 
   document.getElementById('todayBookings').innerHTML = todaysBookings.length ? todaysBookings.slice(0,6).map(b=>`
     <div style="padding:8px 0;border-bottom:1px solid var(--border-soft);font-size:12.5px;display:flex;justify-content:space-between;gap:8px">
-      <span>${esc(b.guest_name)} — ${esc(b.room_type)||'—'}</span><span class="pill ${(b.status||'pending').toLowerCase()}">${esc(b.status||'pending')}</span>
+      <span>${esc(b.guest_name)}: ${esc(b.room_type)||'—'}</span><span class="pill ${(b.status||'pending').toLowerCase()}">${esc(b.status||'pending')}</span>
     </div>`).join('') : '<div class="empty">No bookings dated for today.</div>';
 
   document.getElementById('todayVip').innerHTML = vipQueue.length ? vipQueue.slice(0,6).map(g=>`
-    <div style="padding:8px 0;border-bottom:1px solid var(--border-soft);font-size:12.5px">${esc(g.name)} — ${esc(g.customer_id)}${g.phone_number?' · '+esc(g.phone_number):''}</div>`).join('') : '<div class="empty">No pending VIP requests.</div>';
+    <div style="padding:8px 0;border-bottom:1px solid var(--border-soft);font-size:12.5px">${esc(g.name)}: ${esc(g.customer_id)}${g.phone_number?' · '+esc(g.phone_number):''}</div>`).join('') : '<div class="empty">No pending VIP requests.</div>';
 }
 
 // ---------------------------------------------------------------------------
@@ -867,7 +874,7 @@ function renderRooms(){
   let rooms = state.rooms;
   if(state.roomFilter!=='All') rooms = rooms.filter(r=>r.status===state.roomFilter);
   const grid = document.getElementById('roomGrid');
-  if(!state.rooms.length){ grid.innerHTML = '<div class="empty">No rooms found yet — run reception_schema.sql in Supabase to seed Room 1–25.</div>'; return; }
+  if(!state.rooms.length){ grid.innerHTML = '<div class="empty">No rooms found yet: run reception_schema.sql in Supabase to seed Room 1–25.</div>'; return; }
   if(!rooms.length){ grid.innerHTML = '<div class="empty">No rooms match this filter.</div>'; return; }
   grid.innerHTML = rooms.map(r => `
     <div class="room-card ${statusStripe(r.status)}" onclick="openRoomModal('${esc(r.room_number)}')">
@@ -908,7 +915,7 @@ async function submitRoomUpdate(){
     result.innerHTML = '<span style="color:var(--green);font-weight:700">&#10003; Saved</span>';
     showToast(activeRoom.room_number + ' updated');
     setTimeout(()=>{ closeRoomModal(); loadAll(); }, 500);
-  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not save — has reception_schema.sql been run yet?')+'</span>'; }
+  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not save: has reception_schema.sql been run yet?')+'</span>'; }
 }
 
 // ---------------------------------------------------------------------------
@@ -949,7 +956,7 @@ async function setBookingStatus(id, status){
     if(error) throw new Error(error.message);
     showToast('Booking marked ' + status);
     loadAll();
-  }catch(e){ showToast('Could not update — ' + (e.message||'error')); }
+  }catch(e){ showToast('Could not update: ' + (e.message||'error')); }
 }
 
 async function submitBooking(){
@@ -969,7 +976,7 @@ async function submitBooking(){
       p_source: 'Reception Dashboard'
     });
     if(error) throw new Error(error.message);
-    result.innerHTML = '<span style="color:var(--green);font-weight:700">&#10003; Booking added'+(data&&data.custId?' — '+data.custId:'')+'</span>';
+    result.innerHTML = '<span style="color:var(--green);font-weight:700">&#10003; Booking added'+(data&&data.custId?': '+data.custId:'')+'</span>';
     showToast('Booking added for ' + name);
     ['bkName','bkPhone','bkParty','bkNotes'].forEach(id=>document.getElementById(id).value='');
     loadAll();
@@ -984,7 +991,7 @@ function renderGuests(){
   let rows = state.guests;
   if(q) rows = rows.filter(g => (g.name||'').toLowerCase().includes(q) || (g.customer_id||'').toLowerCase().includes(q) || (g.phone_number||'').includes(q) || (g.business_name||'').toLowerCase().includes(q));
   const body = document.getElementById('guestsBody');
-  if(!rows.length){ body.innerHTML = '<tr><td colspan="7" class="empty">No members match — try Register a New Member.</td></tr>'; return; }
+  if(!rows.length){ body.innerHTML = '<tr><td colspan="7" class="empty">No members match: try Register a New Member.</td></tr>'; return; }
   body.innerHTML = rows.slice(0,150).map(g => `
     <tr>
       <td style="font-family:'IBM Plex Mono',monospace;color:var(--gold-deep);font-size:11px">${esc(g.customer_id)}</td>
@@ -1049,11 +1056,11 @@ async function submitVipInterest(){
       p_created_by: 'Reception'
     });
     if(error) throw new Error(error.message);
-    result.innerHTML = '<span style="color:var(--green);font-weight:700">&#10003; Logged — management will follow up</span>';
+    result.innerHTML = '<span style="color:var(--green);font-weight:700">&#10003; Logged: management will follow up</span>';
     showToast('VIP interest logged');
     document.getElementById('vipQuery').value=''; document.getElementById('vipName').value='';
     loadAll();
-  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not log — has reception_schema.sql been run yet?')+'</span>'; }
+  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not log: has reception_schema.sql been run yet?')+'</span>'; }
 }
 
 // ---------------------------------------------------------------------------
@@ -1064,7 +1071,7 @@ function renderStaffRosterOptions(){
   const prev = sel.value;
   const onShiftIds = new Set(state.shifts.filter(s=>!s.check_out_at).map(s=>s.staff_id));
   const roster = state.staffRoster.slice().sort((a,b)=>(a.full_name||'').localeCompare(b.full_name||''));
-  sel.innerHTML = '<option value="">— Select from roster —</option>' +
+  sel.innerHTML = '<option value="">Select from roster</option>' +
     roster.map(s => `<option value="${esc(s.id)}" data-role="${esc(s.role)}" ${onShiftIds.has(s.id)?'disabled':''}>${esc(s.full_name)}${onShiftIds.has(s.id)?' (on shift)':''}</option>`).join('');
   if(prev) sel.value = prev;
 }
@@ -1130,7 +1137,7 @@ async function submitClockIn(){
     document.getElementById('ciName').value=''; document.getElementById('ciBy').value='';
     document.getElementById('ciExisting').value='';
     loadAll();
-  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not clock in — has reception_schema.sql been run yet?')+'</span>'; }
+  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not clock in: has reception_schema.sql been run yet?')+'</span>'; }
 }
 
 async function submitClockOut(shiftId){
@@ -1139,7 +1146,7 @@ async function submitClockOut(shiftId){
     if(error) throw new Error(error.message);
     showToast('Clocked out');
     loadAll();
-  }catch(e){ showToast('Could not clock out — ' + (e.message||'error')); }
+  }catch(e){ showToast('Could not clock out: ' + (e.message||'error')); }
 }
 
 // ---------------------------------------------------------------------------
@@ -1156,7 +1163,7 @@ function renderTickets(){
   let rows = state.tickets;
   if(state.ticketFilter!=='All') rows = rows.filter(t=>t.status===state.ticketFilter);
   const el = document.getElementById('ticketsList');
-  if(!state.facilitiesOnline && !rows.length){ el.innerHTML = '<div class="empty">Facilities system unreachable — try Refresh, or check the Facilities Dashboard directly.</div>'; return; }
+  if(!state.facilitiesOnline && !rows.length){ el.innerHTML = '<div class="empty">Facilities system unreachable: try Refresh, or check the Facilities Dashboard directly.</div>'; return; }
   if(!rows.length){ el.innerHTML = '<div class="empty">Nothing here.</div>'; return; }
   el.innerHTML = rows.map(t => `
     <div class="task-row p-${(t.priority||'').toLowerCase()}">
@@ -1178,7 +1185,7 @@ async function setTicketStatus(ticketId, status){
     if(!data.success) throw new Error(data.error || 'Unknown error');
     showToast('Ticket updated');
     loadFacilities();
-  }catch(e){ showToast('Could not update — ' + (e.message||'error')); }
+  }catch(e){ showToast('Could not update: ' + (e.message||'error')); }
 }
 
 async function submitTicket(){
@@ -1199,11 +1206,11 @@ async function submitTicket(){
     const res = await fetch(FACILITIES_API_URL + '?' + qs);
     const data = await res.json();
     if(!data.success) throw new Error(data.error || 'Unknown error');
-    result.innerHTML = '<span style="color:var(--green);font-weight:700">&#10003; Reported'+(data.ticketId?' — '+data.ticketId:'')+'</span>';
+    result.innerHTML = '<span style="color:var(--green);font-weight:700">&#10003; Reported'+(data.ticketId?': '+data.ticketId:'')+'</span>';
     showToast('Breakdown reported');
     document.getElementById('tkDescription').value = '';
     loadFacilities();
-  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not report — check the connection and try again')+'</span>'; }
+  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not report: check the connection and try again')+'</span>'; }
 }
 
 // ---------------------------------------------------------------------------
@@ -1219,7 +1226,7 @@ function renderCleaning(){
   const el = document.getElementById('cleaningToday');
   el.innerHTML = todays.length ? todays.map(c => `
     <div style="padding:9px 0;border-bottom:1px solid var(--border-soft);font-size:12.5px;display:flex;justify-content:space-between;gap:8px">
-      <span>${esc(c.zone)}${c.location?' — '+esc(c.location):''} <span style="color:var(--text-dim)">(${esc(c.staff_name)||'—'})</span></span>
+      <span>${esc(c.zone)}${c.location?': '+esc(c.location):''} <span style="color:var(--text-dim)">(${esc(c.staff_name)||'—'})</span></span>
       <span class="pill ${c.result==='Pass'?'done':'urgent'}">${esc(c.result)}${c.score?' · '+c.score+'/5':''}</span>
     </div>`).join('') : '<div class="empty">No checks logged yet today.</div>';
 
@@ -1251,7 +1258,7 @@ async function submitCleaningLog(){
     showToast(zone + ' checked');
     ['clLocation','clStaff','clScore','clIssues','clManager'].forEach(id=>document.getElementById(id).value='');
     loadAll();
-  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not save — has reception_schema.sql been run yet?')+'</span>'; }
+  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not save: has reception_schema.sql been run yet?')+'</span>'; }
 }
 
 // ---------------------------------------------------------------------------
@@ -1287,7 +1294,7 @@ async function setTaskStatus(id, status){
     const { error } = await supabaseClient.rpc('update_task_status', { p_id: id, p_status: status, p_completed_by: null });
     if(error) throw new Error(error.message);
     loadAll();
-  }catch(e){ showToast('Could not update — ' + (e.message||'error')); }
+  }catch(e){ showToast('Could not update: ' + (e.message||'error')); }
 }
 
 async function submitTask(){
@@ -1312,7 +1319,7 @@ async function submitTask(){
     showToast('Task added');
     ['tsTitle','tsDescription','tsAssignedTo','tsDue','tsCreatedBy'].forEach(id=>document.getElementById(id).value='');
     loadAll();
-  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not add — has reception_schema.sql been run yet?')+'</span>'; }
+  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not add: has reception_schema.sql been run yet?')+'</span>'; }
 }
 
 loadAll();
