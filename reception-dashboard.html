@@ -1,0 +1,1322 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+  THE WHITE HOUSE EVENTS & MORE — RECEPTION DASHBOARD (v2.0)
+
+  DATA SOURCES
+  ------------
+  Supabase (project crvuzkyfrqbfmamegxjx) — same project as bar/members/order:
+    Live already:  bookings, bar_customers
+    New (this file, seeded by reception_schema.sql — run it once first):
+                   rooms, reception_tasks, cleaning_logs, staff_members, staff_shifts
+                   + bookings.status / bookings.deposit_paid columns
+
+  Facilities Google Sheet (Apps Script) — same backend as facilities-dashboard.html
+  and facilities-report.html. Breakdowns/maintenance tickets live there, not in
+  Supabase, so this dashboard talks to the same API_URL rather than a second,
+  disconnected "facilities_tickets" table.
+
+  No login system yet (same accepted trade-off as every other dashboard in
+  this project) — anyone with this URL can use it. Don't link it publicly.
+-->
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The White House Events &amp; More — Reception</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#f7f4ec; --panel:#ffffff; --card:#ffffff; --card-hi:#fbf8f0; --border:#e6ddc7; --border-soft:#eee7d4;
+  --gold:#b8862e; --gold-soft:#f0daa4; --gold-deep:#8f7128;
+  --cyan:#0e8f97; --cyan-soft:#cdeff0;
+  --teal:#2f8f83; --red:#c93f3f; --green:#1f9d5c; --purple:#7c5cd6; --amber:#c98a1f;
+  --cream:#191509;
+  --text:#211d12; --text-dim:#6b6350; --muted:#928a72;
+  --kente-gold:#e0a83a; --kente-red:#c1272d; --kente-green:#0f8a4b; --kente-black:#171512;
+  --sidebar-w:244px;
+  --radius:10px; --radius-sm:7px;
+  --font-display:'Space Grotesk',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  background:
+    radial-gradient(1200px 680px at 105% -12%, rgba(184,134,46,0.10), transparent 58%),
+    radial-gradient(900px 520px at -10% 108%, rgba(15,138,75,0.06), transparent 60%),
+    radial-gradient(700px 420px at 60% 40%, rgba(193,39,45,0.04), transparent 62%),
+    linear-gradient(var(--ink),var(--ink)),
+    var(--ink);
+  background-attachment:fixed;
+  color:var(--text); font-family:'Inter',sans-serif; min-height:100vh;
+  -webkit-font-smoothing:antialiased;
+  position:relative;
+}
+body::before{
+  content:''; position:fixed; inset:0; pointer-events:none; z-index:0; opacity:.5;
+  background-image:
+    linear-gradient(rgba(184,134,46,0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(184,134,46,0.06) 1px, transparent 1px);
+  background-size:42px 42px;
+  mask-image:radial-gradient(1000px 600px at 80% 0%, black, transparent 75%);
+}
+/* subtle kente weave texture, very low opacity, sits behind content */
+body::after{
+  content:''; position:fixed; inset:0; pointer-events:none; z-index:0; opacity:.05;
+  background-image:
+    repeating-linear-gradient(45deg, var(--kente-gold) 0 6px, transparent 6px 12px),
+    repeating-linear-gradient(-45deg, var(--kente-red) 0 6px, transparent 6px 12px),
+    repeating-linear-gradient(45deg, var(--kente-green) 0 3px, transparent 3px 30px);
+  mask-image:radial-gradient(900px 500px at 15% 100%, black, transparent 70%);
+}
+::selection{background:var(--gold);color:#181307;}
+::-webkit-scrollbar{width:9px;height:9px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:#ddd2b0;border-radius:8px;}
+::-webkit-scrollbar-thumb:hover{background:var(--gold-deep);}
+.live-dot{ display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--green); box-shadow:0 0 0 0 rgba(31,157,92,0.6); animation:pulse 2s infinite; flex:none; }
+@keyframes pulse{ 0%{box-shadow:0 0 0 0 rgba(31,157,92,0.55);} 70%{box-shadow:0 0 0 7px rgba(31,157,92,0);} 100%{box-shadow:0 0 0 0 rgba(31,157,92,0);} }
+
+/* kente accent strip — used as a decorative band under hero/topbar */
+.kente-strip{
+  height:5px; width:100%; border-radius:6px; flex:none;
+  background:repeating-linear-gradient(90deg,
+    var(--kente-gold) 0 16px, var(--kente-black) 16px 20px,
+    var(--kente-red) 20px 36px, var(--kente-black) 36px 40px,
+    var(--kente-green) 40px 56px, var(--kente-black) 56px 60px,
+    var(--gold) 60px 76px, var(--kente-black) 76px 80px);
+  background-size:80px 100%;
+}
+
+/* ============ SIDEBAR (kept dark for premium contrast against the light app) ============ */
+.sidebar{
+  position:fixed; top:0; left:0; bottom:0; width:var(--sidebar-w);
+  background:linear-gradient(180deg,#141314,#0f0e10 70%);
+  border-right:1px solid #232022; z-index:150; transition:transform .25s ease;
+  display:flex; flex-direction:column;
+}
+.brand{ padding:24px 22px 18px; border-bottom:1px solid #232022; position:relative; }
+.brand-mark{ display:flex; align-items:center; gap:12px; }
+.brand-glyph{
+  width:40px; height:40px; border-radius:9px; flex:none; padding:6px;
+  background:linear-gradient(150deg,#242024,#171517 65%); border:1px solid #2c282a;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 6px 18px -8px rgba(224,168,58,0.35), inset 0 0 0 1px rgba(224,168,58,0.08);
+}
+.brand-glyph img{ width:100%; height:100%; object-fit:contain; filter:drop-shadow(0 0 6px rgba(224,168,58,0.3)); }
+.brand-text{ font-family:var(--font-display); font-weight:600; font-size:14.5px; line-height:1.18; color:#f6f0e2; letter-spacing:.1px;}
+.brand-text small{ display:block; font-family:'IBM Plex Mono',monospace; font-size:9.5px; font-weight:500; letter-spacing:2.4px; color:var(--kente-gold); margin-top:6px; }
+.brand-status{ margin-top:16px; display:flex; align-items:center; gap:7px; font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:1.6px; color:var(--green); text-transform:uppercase; }
+.brand-tag{ margin-top:8px; font-size:10px; color:#8a8480; font-family:'IBM Plex Mono',monospace; letter-spacing:.4px; }
+.brand-kente{ margin-top:14px; }
+
+.nav{ flex:1; padding:16px 12px; overflow-y:auto; }
+.nav-group-label{ font-size:9.5px; font-weight:700; letter-spacing:1.8px; color:#726c68; padding:14px 12px 8px; text-transform:uppercase; }
+.nav-item{
+  display:flex; align-items:center; gap:11px; width:100%; text-align:left;
+  padding:10px 12px; border-radius:9px; border:none; background:none; cursor:pointer;
+  color:#b8b2ac; font-family:'Inter',sans-serif; font-size:13px; font-weight:600;
+  margin-bottom:2px; position:relative; transition:background .12s, color .12s;
+}
+.nav-item .ic{ width:17px; text-align:center; font-size:14px; opacity:.85; }
+.nav-item:hover{ background:#1f1c1e; color:#f6f0e2; }
+.nav-item.active{ background:linear-gradient(90deg,rgba(224,168,58,0.16),rgba(224,168,58,0.03)); color:var(--kente-gold); }
+.nav-item.active::before{ content:''; position:absolute; left:0; top:8px; bottom:8px; width:3px; border-radius:3px; background:var(--kente-gold); }
+.nav-badge{ margin-left:auto; background:var(--kente-red); color:#fff; font-size:9.5px; font-weight:800; padding:2px 6px; border-radius:20px; font-family:'IBM Plex Mono',monospace; }
+.nav-badge.zero{ display:none; }
+
+.sidebar-foot{ padding:16px 22px 20px; border-top:1px solid #232022; }
+.clock{ font-family:'IBM Plex Mono',monospace; }
+.clock .time{ font-size:19px; font-weight:600; color:#f6f0e2; letter-spacing:.5px; }
+.clock .date{ font-size:10.5px; color:#8a8480; margin-top:3px; letter-spacing:.4px; }
+
+.menu-toggle{ display:none; }
+
+/* ============ TOP BAR + MAIN ============ */
+.app{ margin-left:var(--sidebar-w); min-height:100vh; }
+.topbar{
+  position:sticky; top:0; z-index:100; background:rgba(247,244,236,0.86); backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--border-soft); padding:16px 30px; display:flex; align-items:center; justify-content:space-between; gap:14px;
+}
+.topbar-title{ font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:20px; color:var(--cream); }
+.topbar-title .eyebrow{ display:block; font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:2px; color:var(--gold); text-transform:uppercase; margin-bottom:4px; font-weight:600;}
+.topbar-right{ display:flex; align-items:center; gap:12px; }
+.last-refresh{ font-size:11px; color:var(--muted); font-family:'IBM Plex Mono',monospace; }
+.refresh-btn{
+  background:var(--card-hi); border:1px solid var(--border); color:var(--text); padding:9px 16px; border-radius:9px;
+  cursor:pointer; font-size:12px; font-weight:700; letter-spacing:.3px; font-family:'Inter',sans-serif; display:flex; align-items:center; gap:7px;
+  transition:all .12s; box-shadow:0 1px 2px rgba(25,21,9,0.04);
+}
+.refresh-btn:hover{ border-color:var(--gold); color:var(--gold-deep); }
+
+.main{ padding:26px 30px 70px; max-width:1360px; }
+.tab-content{ display:none; }
+.tab-content.active{ display:block; animation:fade .25s ease; }
+@keyframes fade{ from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:translateY(0);} }
+
+.section-head{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:16px; flex-wrap:wrap; gap:8px;}
+.section-head h2{ font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:17px; color:var(--cream); }
+.section-head .hint{ font-size:11.5px; color:var(--muted); }
+
+/* ============ METRICS ============ */
+.metrics-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(178px,1fr)); gap:13px; margin-bottom:24px; }
+.metric-card{
+  background:linear-gradient(165deg,var(--card-hi),var(--card)); border:1px solid var(--border); border-radius:var(--radius);
+  padding:18px 18px 16px; position:relative; overflow:hidden; cursor:default; transition:border-color .15s, transform .15s, box-shadow .15s;
+  box-shadow:0 1px 3px rgba(25,21,9,0.04);
+}
+.metric-card:hover{ border-color:var(--accent,var(--gold)); transform:translateY(-2px); box-shadow:0 10px 24px -12px rgba(25,21,9,0.18); }
+.metric-card::after{ content:''; position:absolute; top:-30%; right:-20%; width:130px; height:130px; border-radius:50%; opacity:.14; background:var(--accent,var(--gold)); filter:blur(18px); }
+.metric-card.gold{ --accent:var(--gold); } .metric-card.teal{ --accent:var(--teal); } .metric-card.red{ --accent:var(--red); }
+.metric-card.green{ --accent:var(--green); } .metric-card.purple{ --accent:var(--purple); }
+.metric-label{ font-size:10px; font-weight:700; letter-spacing:1.6px; color:var(--muted); margin-bottom:10px; text-transform:uppercase; }
+.metric-value{ font-size:29px; font-weight:700; font-family:'Space Grotesk',sans-serif; line-height:1; color:var(--accent,var(--gold)); }
+.metric-sub{ font-size:11.5px; color:var(--text-dim); margin-top:7px; }
+
+/* ============ CARDS / TABLES ============ */
+.card{ background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:20px; margin-bottom:16px; box-shadow:0 1px 3px rgba(25,21,9,0.04); }
+.card-title{ font-size:10.5px; font-weight:700; letter-spacing:1.8px; color:var(--gold-deep); margin-bottom:16px; text-transform:uppercase; display:flex; align-items:center; gap:8px;}
+.two-col{ display:grid; grid-template-columns:1.25fr 1fr; gap:16px; align-items:start; }
+@media(max-width:980px){ .two-col{ grid-template-columns:1fr; } }
+.three-col{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; }
+@media(max-width:760px){ .three-col{ grid-template-columns:1fr; } }
+
+table{ width:100%; border-collapse:collapse; font-size:12.5px; }
+th{ text-align:left; padding:9px 10px; color:var(--muted); font-weight:700; letter-spacing:.8px; border-bottom:1px solid var(--border); font-size:10px; text-transform:uppercase; }
+td{ padding:10px 10px; border-bottom:1px solid var(--border-soft); vertical-align:middle; color:var(--text); }
+tr:hover td{ background:var(--card-hi); }
+.scroll-table{ max-height:460px; overflow-y:auto; }
+
+.search-input,input[type=text],input[type=tel],input[type=email],input[type=date],input[type=number],select,textarea{
+  background:#ffffff; border:1px solid var(--border); border-radius:9px; padding:11px 14px; color:var(--text);
+  font-size:16px; font-family:'Inter',sans-serif; width:100%; margin-bottom:11px; outline:none; transition:border-color .12s, box-shadow .12s;
+}
+.search-input:focus,input:focus,select:focus,textarea:focus{ border-color:var(--gold); box-shadow:0 0 0 3px rgba(184,134,46,0.12); }
+textarea{ min-height:74px; resize:vertical; }
+label.f{ display:block; font-size:10px; color:var(--muted); font-weight:700; letter-spacing:1px; margin-bottom:5px; text-transform:uppercase; }
+
+.btn{
+  background:linear-gradient(155deg,var(--gold-soft),var(--gold)); color:#1c1608; border:none; padding:12px 18px; border-radius:9px;
+  cursor:pointer; font-size:12.5px; font-weight:800; letter-spacing:.4px; font-family:'Inter',sans-serif; width:100%; transition:filter .12s, transform .1s;
+}
+.btn:hover{ filter:brightness(1.05); }
+.btn:active{ transform:scale(.99); }
+.btn.teal{ background:linear-gradient(155deg,#6fd0c4,var(--teal)); color:#06231f; }
+.btn.ghost{ background:var(--card-hi); color:var(--text); border:1px solid var(--border); }
+.btn.danger{ background:linear-gradient(155deg,#f18286,var(--red)); color:#2a0808; }
+.btn.small{ width:auto; padding:7px 13px; font-size:10.5px; }
+
+.empty{ text-align:center; padding:30px 14px; color:var(--muted); font-size:12.5px; }
+.loading{ text-align:center; padding:40px; color:var(--muted); font-size:12px; font-family:'IBM Plex Mono',monospace; }
+.result-msg{ font-size:12px; margin-top:8px; }
+.err-msg{ color:#a5312f; font-size:12px; margin-top:6px; }
+
+.pill{ display:inline-block; font-size:9px; font-weight:800; letter-spacing:.5px; padding:4px 10px; border-radius:20px; text-transform:uppercase; font-family:'IBM Plex Mono',monospace; border:1px solid; }
+.pill.vacant{ background:#e7f8ee; color:#0f7a41; border-color:#a9e3c1; }
+.pill.occupied{ background:#faf1d9; color:var(--gold-deep); border-color:var(--gold-soft); }
+.pill.cleaning{ background:#e3f6f4; color:#1f6b62; border-color:#a9e2dc; }
+.pill.maintenance{ background:#fbeed8; color:#93650f; border-color:#f0d29b; }
+.pill.out,.pill.dismissed{ background:#fbe3e3; color:#a5312f; border-color:#eeb3b3; }
+.pill.open{ background:#faf1d9; color:var(--gold-deep); border-color:var(--gold-soft); }
+.pill.in_progress,.pill.in.progress{ background:#e3f6f4; color:#1f6b62; border-color:#a9e2dc; }
+.pill.done,.pill.closed,.pill.completed,.pill.confirmed,.pill.complete{ background:#e7f8ee; color:#0f7a41; border-color:#a9e3c1; }
+.pill.pending{ background:var(--card-hi); color:var(--text-dim); border-color:var(--border); }
+.pill.cancelled{ background:#fbe3e3; color:#a5312f; border-color:#eeb3b3; }
+.pill.urgent{ background:#fbe3e3; color:#a5312f; border-color:#eeb3b3; }
+.pill.high{ background:#fbeed8; color:#93650f; border-color:#f0d29b; }
+.pill.medium{ background:var(--card-hi); color:var(--text-dim); border-color:var(--border); }
+.pill.low{ background:#e3f2fb; color:#1c6a95; border-color:#a9d4ee; }
+
+.room-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(148px,1fr)); gap:11px; }
+.room-card{
+  background:var(--card-hi); border:1px solid var(--border); border-radius:11px; padding:14px; cursor:pointer;
+  transition:border-color .15s, transform .12s, box-shadow .15s; position:relative; overflow:hidden;
+}
+.room-card::before{ content:''; position:absolute; top:0; left:0; right:0; height:3px; background:var(--stripe,var(--green)); }
+.room-card.st-vacant{ --stripe:var(--green); } .room-card.st-occupied{ --stripe:var(--gold); } .room-card.st-cleaning{ --stripe:var(--teal); }
+.room-card.st-maintenance{ --stripe:var(--amber); } .room-card.st-out{ --stripe:var(--red); }
+.room-card:hover{ border-color:var(--gold); transform:translateY(-2px); box-shadow:0 10px 22px -14px rgba(25,21,9,0.25); }
+.room-card .rc-num{ font-weight:700; font-size:14.5px; font-family:'Space Grotesk',sans-serif; color:var(--cream); }
+.room-card .rc-guest{ font-size:10.5px; color:var(--text-dim); margin-top:5px; min-height:14px; }
+.room-card .rc-pill{ margin-top:10px; }
+
+.shift-card{
+  background:var(--card-hi); border:1px solid var(--border); border-left:3px solid var(--green); border-radius:11px; padding:14px;
+  transition:border-color .15s;
+}
+.shift-card:hover{ border-color:var(--gold); }
+.shift-card .sc-name{ font-weight:700; font-size:13.5px; font-family:var(--font-display); color:var(--cream); }
+.shift-card .sc-role{ font-size:10px; color:var(--gold-deep); font-family:'IBM Plex Mono',monospace; letter-spacing:1px; text-transform:uppercase; margin-top:3px; }
+.shift-card .sc-time{ font-size:10.5px; color:var(--text-dim); margin-top:9px; font-family:'IBM Plex Mono',monospace; }
+.shift-card .sc-dur{ font-size:9.5px; color:var(--muted); margin-top:2px; font-family:'IBM Plex Mono',monospace; }
+.shift-card .btn{ margin-top:10px; }
+
+.modal-overlay{ display:none; position:fixed; inset:0; background:rgba(20,17,10,0.55); backdrop-filter:blur(2px); z-index:300; align-items:center; justify-content:center; padding:20px; }
+.modal-overlay.show{ display:flex; }
+.modal-box{ background:var(--card); border:1px solid var(--border); border-radius:16px; padding:24px; max-width:420px; width:100%; max-height:88vh; overflow-y:auto; box-shadow:0 30px 60px -20px rgba(25,21,9,0.35); }
+.modal-title{ font-family:'Space Grotesk',sans-serif; font-size:17px; font-weight:600; color:var(--gold-deep); margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; }
+.modal-title .close-x{ cursor:pointer; color:var(--muted); font-size:22px; line-height:1; }
+
+.task-row{ background:var(--card-hi); border:1px solid var(--border); border-left:3px solid var(--gold-deep); border-radius:9px; padding:13px 15px; margin-bottom:9px; }
+.task-row.p-urgent{ border-left-color:var(--red); } .task-row.p-high{ border-left-color:var(--amber); } .task-row.p-low{ border-left-color:var(--teal); }
+.task-row.done{ opacity:.55; }
+.task-row .tr-top{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
+.task-row .tr-title{ font-weight:700; font-size:13px; color:var(--text); }
+.task-row .tr-meta{ font-size:10px; color:var(--muted); margin-top:5px; font-family:'IBM Plex Mono',monospace; }
+.task-actions{ display:flex; gap:7px; margin-top:9px; }
+
+.guide-section{ margin-bottom:24px; }
+.guide-section h3{ font-family:'Space Grotesk',sans-serif; color:var(--gold-deep); font-size:14.5px; letter-spacing:.2px; margin-bottom:11px; border-bottom:1px solid var(--border); padding-bottom:9px; }
+.guide-tier{ background:var(--card-hi); border:1px solid var(--border); border-radius:10px; padding:13px 15px; margin-bottom:8px; font-size:12.5px; line-height:1.7; color:var(--text-dim); }
+.guide-tier b{ color:var(--gold-deep); }
+
+.filter-row{ display:flex; gap:7px; margin-bottom:15px; flex-wrap:wrap; }
+.filter-chip{ background:var(--card-hi); border:1px solid var(--border); color:var(--text-dim); padding:7px 14px; border-radius:20px; font-size:11px; font-weight:700; cursor:pointer; font-family:'Inter',sans-serif; transition:all .12s; }
+.filter-chip:hover{ border-color:var(--gold-deep); }
+.filter-chip.active{ background:var(--gold); color:#1c1608; border-color:var(--gold); }
+
+.toast{ position:fixed; bottom:24px; right:24px; background:var(--gold); color:#1c1608; padding:12px 20px; border-radius:10px; font-size:12.5px; font-weight:700; letter-spacing:.3px; opacity:0; transform:translateY(20px); transition:all .3s; z-index:999; pointer-events:none; box-shadow:0 12px 26px -8px rgba(25,21,9,0.35); }
+.toast.show{ opacity:1; transform:translateY(0); }
+
+.note-box{ font-size:12px; line-height:1.7; border-radius:10px; padding:13px 16px; margin-bottom:16px; }
+.note-box.teal{ background:rgba(47,143,131,0.08); border:1px solid rgba(47,143,131,0.3); color:#1c6058; }
+.note-box.gold{ background:rgba(184,134,46,0.08); border:1px solid rgba(184,134,46,0.3); color:var(--gold-deep); }
+.note-box.red{ background:rgba(201,63,63,0.08); border:1px solid rgba(201,63,63,0.3); color:#a5312f; }
+
+.hero{
+  border-radius:14px; padding:28px 30px 24px; margin-bottom:22px; position:relative; overflow:hidden;
+  background:linear-gradient(120deg,#fffdf6 0%,#fbf5e4 55%,#f3ecda 100%); border:1px solid var(--border);
+}
+.hero::after{ content:''; position:absolute; inset:0; background:radial-gradient(560px 240px at 88% -20%, rgba(184,134,46,0.16), transparent 62%); pointer-events:none; }
+.hero::before{
+  content:''; position:absolute; inset:0; pointer-events:none; opacity:.6;
+  background-image:linear-gradient(rgba(184,134,46,0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(184,134,46,0.07) 1px, transparent 1px);
+  background-size:28px 28px; mask-image:linear-gradient(115deg, black, transparent 55%);
+}
+.hero-corner{ position:absolute; width:22px; height:22px; border-color:var(--gold-deep); opacity:.6; }
+.hero-corner.tl{ top:12px; left:12px; border-top:1.5px solid; border-left:1.5px solid; border-radius:6px 0 0 0; }
+.hero-corner.br{ bottom:12px; right:12px; border-bottom:1.5px solid; border-right:1.5px solid; border-radius:0 0 6px 0; }
+.hero-eyebrow{ font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:2.8px; color:var(--gold-deep); text-transform:uppercase; margin-bottom:9px; display:flex; align-items:center; gap:8px; }
+.hero-title{ font-family:var(--font-display); font-weight:600; font-size:25px; color:var(--cream); max-width:640px; line-height:1.28; position:relative; }
+.hero-sub{ font-size:12.5px; color:var(--text-dim); margin-top:9px; max-width:560px; position:relative; }
+.hero-kente{ margin-top:18px; position:relative; }
+
+@media(max-width:900px){
+  .sidebar{ transform:translateX(-100%); }
+  .sidebar.open{ transform:translateX(0); }
+  .app{ margin-left:0; }
+  .menu-toggle{ display:flex; align-items:center; justify-content:center; width:38px; height:38px; border-radius:9px; background:var(--card-hi); border:1px solid var(--border); color:var(--text); cursor:pointer; font-size:16px; }
+  .topbar{ padding:14px 16px; }
+  .main{ padding:18px 16px 60px; }
+}
+</style>
+</head>
+<body>
+
+<div class="sidebar" id="sidebar">
+  <div class="brand">
+    <div class="brand-mark">
+      <div class="brand-glyph">
+        <svg viewBox="0 0 40 40" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+          <rect x="1" y="1" width="38" height="38" rx="8" fill="none" stroke="var(--kente-gold)" stroke-width="1.1" opacity="0.55"/>
+          <path d="M9 27V13l11-6 11 6v14" fill="none" stroke="var(--kente-gold)" stroke-width="2.1" stroke-linejoin="round" stroke-linecap="round"/>
+          <path d="M14 27V18h12v9" fill="none" stroke="var(--kente-gold)" stroke-width="2.1" stroke-linejoin="round" stroke-linecap="round"/>
+          <circle cx="20" cy="10.5" r="1.6" fill="var(--kente-gold)"/>
+        </svg>
+      </div>
+      <div class="brand-text">The White House<br>Events &amp; More<small>RECEPTION OPS</small></div>
+    </div>
+    <div class="brand-status"><span class="live-dot"></span> System Online</div>
+    <div class="brand-tag">Front desk &amp; guest services</div>
+    <div class="brand-kente kente-strip"></div>
+  </div>
+  <nav class="nav" id="navList">
+    <div class="nav-group-label">Overview</div>
+    <button class="nav-item active" data-tab="today"><span class="ic">&#9737;</span> Today</button>
+    <div class="nav-group-label">Property</div>
+    <button class="nav-item" data-tab="rooms"><span class="ic">&#8862;</span> Rooms</button>
+    <button class="nav-item" data-tab="bookings"><span class="ic">&#128197;</span> Bookings</button>
+    <div class="nav-group-label">Guests</div>
+    <button class="nav-item" data-tab="guests"><span class="ic">&#128100;</span> Guests &amp; Members</button>
+    <div class="nav-group-label">Team</div>
+    <button class="nav-item" data-tab="staff"><span class="ic">&#8901;</span> Staff On Shift <span class="nav-badge zero" id="badgeStaff">0</span></button>
+    <div class="nav-group-label">Operations</div>
+    <button class="nav-item" data-tab="facilities"><span class="ic">&#128295;</span> Breakdowns <span class="nav-badge zero" id="badgeTickets">0</span></button>
+    <button class="nav-item" data-tab="cleaning"><span class="ic">&#10003;</span> Cleaning</button>
+    <button class="nav-item" data-tab="tasks"><span class="ic">&#128203;</span> Tasks <span class="nav-badge zero" id="badgeTasks">0</span></button>
+    <div class="nav-group-label">Reference</div>
+    <button class="nav-item" data-tab="guide"><span class="ic">&#128214;</span> Staff Guide</button>
+  </nav>
+  <div class="sidebar-foot">
+    <div class="clock"><div class="time" id="clockTime">--:--</div><div class="date" id="clockDate">Loading…</div></div>
+  </div>
+</div>
+
+<div class="app">
+  <div class="topbar">
+    <div style="display:flex;align-items:center;gap:12px">
+      <button class="menu-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">&#9776;</button>
+      <div class="topbar-title"><span class="eyebrow" id="topEyebrow">Front Desk</span><span id="topTitle">Today</span></div>
+    </div>
+    <div class="topbar-right">
+      <span class="last-refresh" id="lastRefresh">Loading…</span>
+      <button class="refresh-btn" onclick="loadAll()">&#8635; Refresh</button>
+    </div>
+  </div>
+
+  <div class="main">
+
+    <!-- ============ TODAY ============ -->
+    <div class="tab-content active" id="tab-today">
+      <div class="hero">
+        <div class="hero-corner tl"></div><div class="hero-corner br"></div>
+        <div class="hero-eyebrow"><span class="live-dot"></span> Live Operations Overview</div>
+        <div class="hero-title">Here's where the property stands right now.</div>
+        <div class="hero-sub">Rooms, bookings, breakdowns, tasks, cleaning and staff on shift — one screen, updated live. Refreshes automatically every minute.</div>
+        <div class="hero-kente kente-strip"></div>
+      </div>
+      <div class="metrics-grid" id="todayMetrics"><div class="loading">Loading…</div></div>
+      <div class="two-col">
+        <div class="card">
+          <div class="card-title">&#128204; Open Tasks</div>
+          <div id="todayTasks"></div>
+        </div>
+        <div class="card">
+          <div class="card-title">&#128295; Open Breakdowns</div>
+          <div id="todayTickets"></div>
+        </div>
+      </div>
+      <div class="two-col">
+        <div class="card">
+          <div class="card-title">&#128197; Today's Bookings</div>
+          <div id="todayBookings"></div>
+        </div>
+        <div class="card">
+          <div class="card-title">&#128081; VIP Follow-Up Queue</div>
+          <div id="todayVip"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ ROOMS ============ -->
+    <div class="tab-content" id="tab-rooms">
+      <div class="note-box teal">Room 1–25 are seeded once <b>reception_schema.sql</b> is run in Supabase. Tap a room to change its status, log the guest, or add a note. Compound areas (Pool, Bar, Event Grounds, etc.) live under <b>Breakdowns</b> and <b>Cleaning</b>, not here.</div>
+      <div class="filter-row" id="roomFilters"></div>
+      <div class="room-grid" id="roomGrid"><div class="loading">Loading rooms…</div></div>
+    </div>
+
+    <!-- ============ BOOKINGS ============ -->
+    <div class="tab-content" id="tab-bookings">
+      <div class="two-col">
+        <div class="card">
+          <div class="card-title">&#128197; All Bookings</div>
+          <input class="search-input" id="bookingSearch" placeholder="Search by name, phone, room type…" oninput="renderBookings()">
+          <div class="filter-row" id="bookingFilters"></div>
+          <div class="scroll-table"><table><thead><tr><th>Guest</th><th>What</th><th>Dates</th><th>Party</th><th>Deposit</th><th>Status</th><th></th></tr></thead><tbody id="bookingsBody"></tbody></table></div>
+        </div>
+        <div class="card">
+          <div class="card-title">&#10133; Add a Booking</div>
+          <div class="note-box teal" style="margin-bottom:14px">Matches by phone — updates an existing member instead of creating a duplicate. Use for phone/walk-in bookings; the website plugin feeds bookings in automatically too.</div>
+          <label class="f">Guest name*</label><input type="text" id="bkName">
+          <label class="f">Phone*</label><input type="tel" id="bkPhone" placeholder="024 123 4567">
+          <label class="f">Service</label>
+          <select id="bkService"><option>Pool</option><option>Bar</option><option>Canteen</option><option>Events</option><option>Family Occasions</option><option>Couples</option><option>Room / Accommodation</option><option>Other</option></select>
+          <label class="f">Date</label><input type="date" id="bkDate">
+          <label class="f">Party size</label><input type="number" id="bkParty">
+          <label class="f">Notes</label><textarea id="bkNotes"></textarea>
+          <label class="f">Your name</label><input type="text" id="bkAddedBy" placeholder="Who's adding this">
+          <button class="btn teal" onclick="submitBooking()">+ Add Booking</button>
+          <div id="bkResult" class="result-msg"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ GUESTS & MEMBERS ============ -->
+    <div class="tab-content" id="tab-guests">
+      <div class="two-col">
+        <div class="card">
+          <div class="card-title">&#128100; Look Up a Guest</div>
+          <input class="search-input" id="guestSearch" placeholder="Search by name, ID, phone, business…" oninput="renderGuests()">
+          <div class="scroll-table"><table><thead><tr><th>ID</th><th>Name</th><th>Phone</th><th>Membership</th><th>Visits</th><th>Points</th><th></th></tr></thead><tbody id="guestsBody"></tbody></table></div>
+        </div>
+        <div>
+          <div class="card">
+            <div class="card-title">&#10133; Register a New Member</div>
+            <div class="note-box teal">Free to join. Every order/visit earns points automatically. Same member base as the QR ordering system — one ID works everywhere.</div>
+            <label class="f">Full name*</label><input type="text" id="regName">
+            <label class="f">Phone*</label><input type="tel" id="regPhone" placeholder="024 123 4567">
+            <label class="f">Email</label><input type="email" id="regEmail">
+            <label class="f">How did they hear about us?</label>
+            <select id="regHeard"><option>Word of Mouth</option><option>Social Media</option><option>Referral</option><option>Radio</option><option>TV</option><option>Sign</option><option>Walk-In</option><option>Other</option></select>
+            <button class="btn" onclick="submitRegister()">+ Register Member</button>
+            <div id="regResult" class="result-msg"></div>
+          </div>
+          <div class="card">
+            <div class="card-title">&#128081; Log a VIP Interest</div>
+            <div class="note-box gold">VIP is a paid subscription — <b>never granted on the spot</b>. This logs the request as a follow-up task for management to contact the guest and arrange payment.</div>
+            <label class="f">Member ID or phone*</label><input type="text" id="vipQuery" placeholder="e.g. THWGH12 or 024…">
+            <label class="f">Guest name (if not yet a member)</label><input type="text" id="vipName">
+            <button class="btn ghost" onclick="submitVipInterest()">Log VIP Request</button>
+            <div id="vipResult" class="result-msg"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ STAFF ON SHIFT ============ -->
+    <div class="tab-content" id="tab-staff">
+      <div class="note-box teal">Front-desk shift log — every clock-in and clock-out is timestamped here. This is the same roster and log a future <b>Manager Dashboard</b> will read from, so keep names consistent (pick from the list where possible instead of retyping).</div>
+      <div class="two-col">
+        <div class="card">
+          <div class="card-title"><span class="live-dot"></span> On Shift Now</div>
+          <div class="room-grid" id="onShiftGrid"><div class="loading">Loading…</div></div>
+        </div>
+        <div class="card">
+          <div class="card-title">&#8901; Clock In</div>
+          <label class="f">Staff member</label>
+          <select id="ciExisting" onchange="onCiExistingChange()"><option value="">— Select from roster —</option></select>
+          <label class="f">Or type a name (adds them to the roster)</label>
+          <input type="text" id="ciName" placeholder="Full name">
+          <label class="f">Role</label>
+          <select id="ciRole"><option>Reception</option><option>Housekeeping</option><option>Bar</option><option>Kitchen/Canteen</option><option>Security</option><option>Maintenance</option><option>Management</option><option>Other</option></select>
+          <label class="f">Checked in by (optional)</label><input type="text" id="ciBy" placeholder="Supervisor name">
+          <button class="btn teal" onclick="submitClockIn()">&#8901; Clock In</button>
+          <div id="ciResult" class="result-msg"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">&#128203; Today's Shift Log</div>
+        <div class="scroll-table"><table><thead><tr><th>Staff</th><th>Role</th><th>In</th><th>Out</th><th>Duration</th><th>Status</th><th></th></tr></thead><tbody id="shiftLogBody"></tbody></table></div>
+      </div>
+    </div>
+
+    <!-- ============ BREAKDOWNS ============ -->
+    <div class="tab-content" id="tab-facilities">
+      <div class="note-box teal" id="facStatusNote">Connecting to the Facilities system…</div>
+      <div class="two-col">
+        <div class="card">
+          <div class="card-title">&#128295; Breakdowns &amp; Maintenance Tickets</div>
+          <div class="filter-row" id="ticketFilters"></div>
+          <div id="ticketsList"><div class="loading">Loading…</div></div>
+        </div>
+        <div class="card">
+          <div class="card-title">&#10133; Report a Breakdown</div>
+          <label class="f">Where*</label>
+          <select id="tkLocation"></select>
+          <label class="f">What's wrong*</label>
+          <textarea id="tkDescription" placeholder="e.g. AC not cooling in Room 6, main gate light out…"></textarea>
+          <label class="f">Urgency*</label>
+          <select id="tkUrgency">
+            <option value="Low">Low — whenever</option>
+            <option value="Medium" selected>Medium — soon</option>
+            <option value="High">High — today</option>
+            <option value="Urgent">Urgent — safety issue</option>
+          </select>
+          <label class="f">Reported by</label><input type="text" id="tkReportedBy" placeholder="Your name">
+          <button class="btn danger" onclick="submitTicket()">+ Report Issue</button>
+          <div id="tkResult" class="result-msg"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ CLEANING ============ -->
+    <div class="tab-content" id="tab-cleaning">
+      <div class="note-box teal">Based on the Housekeeping, Cleaning &amp; General Area Standards guide — the standard is not "I cleaned it," it's <b>"my area is completely ready for a guest, and I have checked everything."</b> Log a zone check below; today's log shows what's already signed off.</div>
+      <div class="two-col">
+        <div class="card">
+          <div class="card-title">&#10003; Log a Zone Check</div>
+          <label class="f">Zone*</label>
+          <select id="clZone" onchange="renderZoneReminder()">
+            <option>Bedrooms</option><option>Bathrooms</option><option>Corridors / Hallways</option>
+            <option>Balconies</option><option>Compound</option><option>Bar Area</option>
+            <option>Public / General Bathrooms</option><option>Staff / Service Areas</option>
+          </select>
+          <div id="zoneReminder" class="note-box gold"></div>
+          <label class="f">Specific location (room/area)</label><input type="text" id="clLocation" placeholder="e.g. Room 4, or leave blank for whole zone">
+          <label class="f">Staff who did the check</label><input type="text" id="clStaff">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div><label class="f">Result*</label><select id="clResult"><option>Pass</option><option>Fail</option></select></div>
+            <div><label class="f">Score (1–5)</label><input type="number" id="clScore" min="1" max="5"></div>
+          </div>
+          <label class="f">Issues found</label><textarea id="clIssues" placeholder="Leave blank if none"></textarea>
+          <label class="f">Manager (if inspected)</label><input type="text" id="clManager">
+          <button class="btn teal" onclick="submitCleaningLog()">+ Log Check</button>
+          <div id="clResultMsg" class="result-msg"></div>
+        </div>
+        <div class="card">
+          <div class="card-title">&#128203; Today's Checks</div>
+          <div id="cleaningToday"></div>
+          <div class="card-title" style="margin-top:18px">Zones Not Yet Checked Today</div>
+          <div id="cleaningMissing"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ TASKS ============ -->
+    <div class="tab-content" id="tab-tasks">
+      <div class="two-col">
+        <div class="card">
+          <div class="card-title">&#128203; To-Do List</div>
+          <div class="filter-row" id="taskFilters"></div>
+          <div id="tasksList"><div class="loading">Loading…</div></div>
+        </div>
+        <div class="card">
+          <div class="card-title">&#10133; Add a Task</div>
+          <label class="f">Title*</label><input type="text" id="tsTitle" placeholder="e.g. Call back Ama re: Saturday booking">
+          <label class="f">Details</label><textarea id="tsDescription"></textarea>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div><label class="f">Category</label>
+              <select id="tsCategory"><option>Guest Request</option><option>Booking</option><option>Cleaning</option><option>Maintenance</option><option>Admin</option><option>General</option></select>
+            </div>
+            <div><label class="f">Priority</label>
+              <select id="tsPriority"><option>Low</option><option selected>Medium</option><option>High</option><option>Urgent</option></select>
+            </div>
+          </div>
+          <label class="f">Assign to</label><input type="text" id="tsAssignedTo" placeholder="Leave blank for unassigned">
+          <label class="f">Due</label><input type="date" id="tsDue">
+          <label class="f">Your name</label><input type="text" id="tsCreatedBy">
+          <button class="btn" onclick="submitTask()">+ Add Task</button>
+          <div id="tsResult" class="result-msg"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ GUIDE ============ -->
+    <div class="tab-content" id="tab-guide">
+      <div class="card">
+        <div class="guide-section">
+          <h3>The Five-Star Greeting</h3>
+          <div class="guide-tier">Every guest greeted within seconds, eye contact, a smile, and their name if it's known ("Good afternoon, welcome back"). The same warmth for every guest regardless of how they arrive or what they're wearing — some of the most important guests won't look like it at first glance.</div>
+          <div class="guide-tier">If you don't know an answer: <b>"Let me get you the right person right now"</b> — and walk them there yourself, don't just point.</div>
+        </div>
+        <div class="guide-section">
+          <h3>Membership — Regular vs VIP</h3>
+          <div class="guide-tier"><b>Regular</b> — free, automatic, earns points from every order/visit. Offer it, never push it.</div>
+          <div class="guide-tier"><b>VIP</b> — a <u>paid subscription</u>, never granted on the spot. If a guest is interested, log it (Guests &amp; Members → Log VIP Interest) and management follows up to arrange payment. Never tell a guest they're "now VIP" unless a manager has actually confirmed it.</div>
+        </div>
+        <div class="guide-section">
+          <h3>Refund / Comp / Escalation Authority</h3>
+          <div class="guide-tier"><b>Tier 1 — Any staff:</b> small goodwill gestures (a complimentary drink, a sincere apology, priority attention). No cash value threshold.</div>
+          <div class="guide-tier"><b>Tier 2 — Shift lead/supervisor:</b> gate fee refund or re-entry pass, replacing a spoiled order, a service-failure comp up to the owner-set threshold, rebooking a missed slot.</div>
+          <div class="guide-tier"><b>Tier 3 — Management only:</b> full refunds, event-related comps, anything involving a VIP/public figure or a safety incident, anything likely to be discussed publicly.</div>
+          <div class="guide-tier" style="border-color:var(--gold-deep)">Golden rule: if it's unclear which tier applies, <b>escalate up</b> rather than guess down.</div>
+        </div>
+        <div class="guide-section">
+          <h3>VIP / Traditional &amp; Dignitary Guests</h3>
+          <div class="guide-tier">Stay composed and professional — no staring, no phones out. Recognition goes through the correct channel quietly, never a visible reaction on the floor. No staff member initiates a photo/interaction unless the guest offers it first.</div>
+          <div class="guide-tier">For chiefs, queen mothers, or traditional delegations: a senior staff member (not junior front-of-house) does the formal greeting. "Nana" is a safe default form of address while confirming specifics with the delegation's coordinator. No photography of regalia without explicit permission.</div>
+        </div>
+        <div class="guide-section">
+          <h3>Emergency Basics — Know Cold</h3>
+          <div class="guide-tier"><b>Pool distress:</b> non-lifeguard staff clear the area, alert the nearest lifeguard and on-call manager immediately. Do not attempt a rescue without training.</div>
+          <div class="guide-tier"><b>Fire:</b> know your nearest extinguisher, evacuation route, and assembly point.</div>
+          <div class="guide-tier"><b>Security incident:</b> alert security/on-call manager first, stay composed — guests take their cue from staff behaviour.</div>
+        </div>
+        <div class="guide-section">
+          <h3>Housekeeping — "Ready" Means</h3>
+          <div class="guide-tier">Clean · dust-free · smells fresh · everything in its place · supplies stocked · nothing broken · lights/equipment checked · rubbish removed · nothing left by a previous guest · any problem reported. If one is missing, it's <b>not ready</b>. Full checklists live under the Cleaning tab.</div>
+        </div>
+        <div class="guide-section">
+          <h3>Media / Press On-Site</h3>
+          <div class="guide-tier">If a journalist, blogger, or influencer approaches: <b>"I'd love to help — let me connect you with our team for that,"</b> then notify management immediately. No staff member confirms who is on property, or gives a quote, without management sign-off.</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /.main -->
+</div><!-- /.app -->
+
+<div class="modal-overlay" id="roomModal">
+  <div class="modal-box">
+    <div class="modal-title"><span id="roomModalTitle">Room</span><span class="close-x" onclick="closeRoomModal()">&times;</span></div>
+    <label class="f">Status</label>
+    <select id="rmStatus"><option>Vacant</option><option>Occupied</option><option>Cleaning</option><option>Maintenance</option><option>Out of Service</option></select>
+    <label class="f">Guest name (if occupied)</label><input type="text" id="rmGuest">
+    <label class="f">Notes</label><textarea id="rmNotes"></textarea>
+    <label class="f">Your name</label><input type="text" id="rmUpdatedBy">
+    <button class="btn teal" onclick="submitRoomUpdate()">Save</button>
+    <div id="rmResult" class="result-msg"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+// ---------------------------------------------------------------------------
+// CONFIG — same live project the rest of the dashboards use
+// ---------------------------------------------------------------------------
+const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNydnV6a3lmcnFiZm1hbWVneGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MzI5NjQsImV4cCI6MjEwMDAwODk2NH0.gMsv3yvw6plDCherA2YdU4UgWRMXUc9H1Hr_IdR9GxA';
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Facilities Google Sheet / Apps Script — same deployment as
+// facilities-dashboard.html and facilities-report.html. Breakdown tickets
+// live here, not in Supabase.
+const FACILITIES_API_URL = 'https://script.google.com/macros/s/AKfycbxdXWHqohz78kNcgtFrI_dVO6k5s6SqFL4wd-c00OB4xCfbFg4TrFyPwd2VGYz4j3Ry/exec';
+
+// Compound / facility locations for the breakdown report dropdown.
+// Rooms come from the live "rooms" table, not this static list.
+const COMPOUND_AREAS = [
+  'Front Gate / Reception','Main Pool','Family/Kids Pool','Pool Deck & Seating','Pool Changing Rooms',
+  'Restaurant — Dining Area','Restaurant — Kitchen','Canteen Pass','Main Bar','Bar Storage','SIP UP Cocktail Bar',
+  'Main Open-Air Event Grounds','Stage & AV Area','Corridors / Hallways','Compound / Grounds','Parking Lot',
+  'Main Entrance / Gate','Perimeter Wall / Fencing','Garden / Landscaping','Gym','Laundry Room',
+  'Generator / Backup Power','CCTV / Security Room','Staff Quarters','Storage / Warehouse','Other / Not Listed'
+];
+
+const ZONE_REMINDERS = {
+  'Bedrooms': 'Floor, bedding, drawers checked, mirror, lights/AC/TV work, no damage.',
+  'Bathrooms': 'Toilet flushes, taps/shower/jacuzzi work, tissue/soap/towels stocked, smells fresh.',
+  'Corridors / Hallways': 'Swept, mopped, no clutter blocking walkways, lights working.',
+  'Balconies': 'Swept, furniture clean and in position, railings/glass clean, nothing dangerous.',
+  'Compound': 'Debris cleared, tables/chairs in designated spots, games/equipment returned home.',
+  'Bar Area': 'Counter/floor clean, stock checked and replenished, everything has a home.',
+  'Public / General Bathrooms': 'Clean, stocked, bin emptied, no unpleasant smell.',
+  'Staff / Service Areas': 'Cleaning equipment washed and stored, chemicals stored safely, no exposed food.'
+};
+
+let state = {
+  rooms: [], bookings: [], guests: [], tickets: [], tasks: [], cleaningLogs: [],
+  staffRoster: [], shifts: [],
+  roomFilter: 'All', bookingFilter: 'All', ticketFilter: 'Open', taskFilter: 'open',
+  facilitiesOnline: false
+};
+
+function showToast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2500); }
+function genClientId(){ return (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : ('cid-'+Date.now()+'-'+Math.random().toString(36).slice(2)); }
+function fmtDate(d){ return d ? new Date(d).toLocaleDateString('en-GB') : '—'; }
+function fmtDateTime(d){ return d ? new Date(d).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '—'; }
+function fmtTime(d){ return d ? new Date(d).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) : '—'; }
+function fmtDuration(startIso, endIso){
+  if(!startIso) return '—';
+  const start = new Date(startIso).getTime();
+  const end = endIso ? new Date(endIso).getTime() : Date.now();
+  const mins = Math.max(0, Math.round((end - start) / 60000));
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return h > 0 ? (h + 'h ' + m + 'm') : (m + 'm');
+}
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function switchTab(name){
+  document.querySelectorAll('.nav-item').forEach(t=>t.classList.toggle('active', t.dataset.tab===name));
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  const titles = { today:['Front Desk','Today'], rooms:['Property','Rooms'], bookings:['Property','Bookings'],
+    guests:['Guests','Guests & Members'], staff:['Team','Staff On Shift'], facilities:['Operations','Breakdowns'], cleaning:['Operations','Cleaning'],
+    tasks:['Operations','Tasks'], guide:['Reference','Staff Guide'] };
+  const t = titles[name] || ['',''];
+  document.getElementById('topEyebrow').textContent = t[0];
+  document.getElementById('topTitle').textContent = t[1];
+  document.getElementById('sidebar').classList.remove('open');
+}
+document.querySelectorAll('.nav-item').forEach(btn=>btn.addEventListener('click', ()=>switchTab(btn.dataset.tab)));
+
+function tickClock(){
+  const now = new Date();
+  document.getElementById('clockTime').textContent = now.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+  document.getElementById('clockDate').textContent = now.toLocaleDateString('en-GB',{weekday:'long', day:'numeric', month:'long'});
+}
+tickClock(); setInterval(tickClock, 15000);
+
+function populateTicketLocationDropdown(){
+  const sel = document.getElementById('tkLocation');
+  const roomOptions = (state.rooms||[]).map(r=>r.room_number);
+  sel.innerHTML = '<option value="">Select…</option>' +
+    (roomOptions.length ? '<optgroup label="Rooms">' + roomOptions.map(r=>`<option>${esc(r)}</option>`).join('') + '</optgroup>' : '') +
+    '<optgroup label="Compound / Areas">' + COMPOUND_AREAS.map(a=>`<option>${esc(a)}</option>`).join('') + '</optgroup>';
+}
+
+// ---------------------------------------------------------------------------
+// LOAD
+// ---------------------------------------------------------------------------
+async function loadAll(){
+  document.getElementById('lastRefresh').textContent = 'Refreshing…';
+  try{
+    const [roomsRes, bookingsRes, guestsRes, tasksRes, cleaningRes, staffRes, shiftsRes] = await Promise.all([
+      supabaseClient.from('rooms').select('*').order('room_number'),
+      supabaseClient.from('bookings').select('*').order('created_at', { ascending: false }).limit(150),
+      supabaseClient.from('bar_customers').select('*').order('first_visit', { ascending: false }).limit(400),
+      supabaseClient.from('reception_tasks').select('*').order('created_at', { ascending: false }).limit(150),
+      supabaseClient.from('cleaning_logs').select('*').order('created_at', { ascending: false }).limit(200),
+      supabaseClient.from('staff_members').select('*').eq('active', true).order('full_name'),
+      supabaseClient.from('staff_shifts').select('*').order('check_in_at', { ascending: false }).limit(200)
+    ]);
+
+    if(roomsRes.error) console.log('rooms:', roomsRes.error.message);
+    if(bookingsRes.error) console.log('bookings:', bookingsRes.error.message);
+    if(guestsRes.error) console.log('bar_customers:', guestsRes.error.message);
+    if(tasksRes.error) console.log('reception_tasks:', tasksRes.error.message);
+    if(cleaningRes.error) console.log('cleaning_logs:', cleaningRes.error.message);
+    if(staffRes.error) console.log('staff_members:', staffRes.error.message);
+    if(shiftsRes.error) console.log('staff_shifts:', shiftsRes.error.message);
+
+    state.rooms = roomsRes.data || [];
+    state.bookings = bookingsRes.data || [];
+    state.guests = guestsRes.data || [];
+    state.tasks = tasksRes.data || [];
+    state.cleaningLogs = cleaningRes.data || [];
+    state.staffRoster = staffRes.data || [];
+    state.shifts = shiftsRes.data || [];
+
+    document.getElementById('lastRefresh').textContent = 'Updated ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+
+    populateTicketLocationDropdown();
+    renderRoomFilters(); renderRooms();
+    renderBookingFilters(); renderBookings();
+    renderGuests();
+    renderTaskFilters(); renderTasks();
+    renderZoneReminder();
+    renderCleaning();
+    renderStaffRosterOptions(); renderOnShift(); renderShiftLog();
+
+    await loadFacilities();
+    renderToday();
+    updateNavBadges();
+  }catch(e){
+    document.getElementById('lastRefresh').textContent = 'Offline — check connection';
+    console.log('loadAll error:', e.message);
+  }
+}
+
+function updateNavBadges(){
+  const openTasks = state.tasks.filter(t=>t.status!=='done').length;
+  const openTickets = state.tickets.filter(t=>t.status!=='Complete').length;
+  const onShift = state.shifts.filter(s=>!s.check_out_at).length;
+  const tb = document.getElementById('badgeTasks'); tb.textContent = openTasks; tb.classList.toggle('zero', openTasks===0);
+  const kb = document.getElementById('badgeTickets'); kb.textContent = openTickets; kb.classList.toggle('zero', openTickets===0);
+  const sb = document.getElementById('badgeStaff'); sb.textContent = onShift; sb.classList.toggle('zero', onShift===0);
+}
+
+// ---------------------------------------------------------------------------
+// FACILITIES (Google Sheet / Apps Script — separate backend, same as
+// facilities-dashboard.html)
+// ---------------------------------------------------------------------------
+async function loadFacilities(){
+  const note = document.getElementById('facStatusNote');
+  try{
+    const res = await fetch(FACILITIES_API_URL + '?action=getFacilitiesData&t=' + Date.now());
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error || 'Unknown error');
+    state.tickets = data.tickets || data.openSorted || [];
+    state.facilitiesOnline = true;
+    note.className = 'note-box teal';
+    note.innerHTML = 'Connected to the Facilities system — the same Google Sheet used by the Facilities Dashboard. Tickets reported here appear there instantly, and vice versa.';
+  }catch(e){
+    state.tickets = [];
+    state.facilitiesOnline = false;
+    note.className = 'note-box red';
+    note.innerHTML = '<b>Can\'t reach the Facilities system right now.</b> Reports made here will still be attempted, but the ticket list below may be out of date — check with the Facilities Dashboard directly if this persists.';
+    console.log('facilities load error:', e.message);
+  }
+  renderTicketFilters(); renderTickets();
+}
+
+// ---------------------------------------------------------------------------
+// TODAY
+// ---------------------------------------------------------------------------
+function renderToday(){
+  const todayStr = new Date().toLocaleDateString('en-GB');
+  const occupied = state.rooms.filter(r=>r.status==='Occupied').length;
+  const vacant = state.rooms.filter(r=>r.status==='Vacant').length;
+  const openTasks = state.tasks.filter(t=>t.status!=='done');
+  const openTickets = state.tickets.filter(t=>t.status!=='Complete');
+  const urgentTickets = openTickets.filter(t=>t.priority==='Urgent');
+  const todaysBookings = state.bookings.filter(b => b.check_in && fmtDate(b.check_in)===todayStr);
+  const vipQueue = state.guests.filter(g => (g.notes||'').toUpperCase().indexOf('VIP REQUESTED')!==-1 && g.membership_status!=='VIP');
+
+  document.getElementById('todayMetrics').innerHTML = `
+    <div class="metric-card gold"><div class="metric-label">Rooms Occupied</div><div class="metric-value">${occupied}/${state.rooms.length||25}</div><div class="metric-sub">${vacant} vacant right now</div></div>
+    <div class="metric-card teal"><div class="metric-label">Open Tasks</div><div class="metric-value">${openTasks.length}</div><div class="metric-sub">on the to-do list</div></div>
+    <div class="metric-card red"><div class="metric-label">Open Breakdowns</div><div class="metric-value">${openTickets.length}</div><div class="metric-sub">${urgentTickets.length} marked urgent</div></div>
+    <div class="metric-card green"><div class="metric-label">Today's Bookings</div><div class="metric-value">${todaysBookings.length}</div><div class="metric-sub">check-ins/events today</div></div>
+    <div class="metric-card purple"><div class="metric-label">VIP Follow-Ups</div><div class="metric-value">${vipQueue.length}</div><div class="metric-sub">awaiting management contact</div></div>`;
+
+  document.getElementById('todayTasks').innerHTML = openTasks.length ? openTasks.slice(0,6).map(t=>`
+    <div style="padding:8px 0;border-bottom:1px solid var(--border-soft);font-size:12.5px;display:flex;justify-content:space-between;gap:8px">
+      <span>${esc(t.title)}</span><span class="pill ${(t.priority||'').toLowerCase()}">${esc(t.priority)}</span>
+    </div>`).join('') : '<div class="empty">Nothing outstanding — nice.</div>';
+
+  document.getElementById('todayTickets').innerHTML = openTickets.length ? openTickets.slice(0,6).map(t=>`
+    <div style="padding:8px 0;border-bottom:1px solid var(--border-soft);font-size:12.5px;display:flex;justify-content:space-between;gap:8px">
+      <span>${esc(t.location)||'—'}: ${esc((t.description||'').slice(0,40))}${(t.description||'').length>40?'…':''}</span><span class="pill ${(t.priority||'').toLowerCase()}">${esc(t.priority)}</span>
+    </div>`).join('') : (state.facilitiesOnline ? '<div class="empty">No open breakdowns.</div>' : '<div class="empty">Facilities system unreachable right now.</div>');
+
+  document.getElementById('todayBookings').innerHTML = todaysBookings.length ? todaysBookings.slice(0,6).map(b=>`
+    <div style="padding:8px 0;border-bottom:1px solid var(--border-soft);font-size:12.5px;display:flex;justify-content:space-between;gap:8px">
+      <span>${esc(b.guest_name)} — ${esc(b.room_type)||'—'}</span><span class="pill ${(b.status||'pending').toLowerCase()}">${esc(b.status||'pending')}</span>
+    </div>`).join('') : '<div class="empty">No bookings dated for today.</div>';
+
+  document.getElementById('todayVip').innerHTML = vipQueue.length ? vipQueue.slice(0,6).map(g=>`
+    <div style="padding:8px 0;border-bottom:1px solid var(--border-soft);font-size:12.5px">${esc(g.name)} — ${esc(g.customer_id)}${g.phone_number?' · '+esc(g.phone_number):''}</div>`).join('') : '<div class="empty">No pending VIP requests.</div>';
+}
+
+// ---------------------------------------------------------------------------
+// ROOMS
+// ---------------------------------------------------------------------------
+function renderRoomFilters(){
+  const statuses = ['All','Vacant','Occupied','Cleaning','Maintenance','Out of Service'];
+  document.getElementById('roomFilters').innerHTML = statuses.map(s=>
+    `<button class="filter-chip ${state.roomFilter===s?'active':''}" onclick="setRoomFilter('${s}')">${s}</button>`).join('');
+}
+function setRoomFilter(s){ state.roomFilter=s; renderRoomFilters(); renderRooms(); }
+function statusClass(s){ return { 'Vacant':'vacant','Occupied':'occupied','Cleaning':'cleaning','Maintenance':'maintenance','Out of Service':'out' }[s] || 'vacant'; }
+function statusStripe(s){ return { 'Vacant':'st-vacant','Occupied':'st-occupied','Cleaning':'st-cleaning','Maintenance':'st-maintenance','Out of Service':'st-out' }[s] || 'st-vacant'; }
+
+function renderRooms(){
+  let rooms = state.rooms;
+  if(state.roomFilter!=='All') rooms = rooms.filter(r=>r.status===state.roomFilter);
+  const grid = document.getElementById('roomGrid');
+  if(!state.rooms.length){ grid.innerHTML = '<div class="empty">No rooms found yet — run reception_schema.sql in Supabase to seed Room 1–25.</div>'; return; }
+  if(!rooms.length){ grid.innerHTML = '<div class="empty">No rooms match this filter.</div>'; return; }
+  grid.innerHTML = rooms.map(r => `
+    <div class="room-card ${statusStripe(r.status)}" onclick="openRoomModal('${esc(r.room_number)}')">
+      <div class="rc-num">${esc(r.room_number)}</div>
+      <div class="rc-guest">${esc(r.current_guest_name) || '&nbsp;'}</div>
+      <div class="rc-pill"><span class="pill ${statusClass(r.status)}">${esc(r.status)}</span></div>
+    </div>`).join('');
+}
+
+let activeRoom = null;
+function openRoomModal(roomNumber){
+  activeRoom = state.rooms.find(r=>r.room_number===roomNumber);
+  if(!activeRoom) return;
+  document.getElementById('roomModalTitle').textContent = activeRoom.room_number;
+  document.getElementById('rmStatus').value = activeRoom.status;
+  document.getElementById('rmGuest').value = activeRoom.current_guest_name || '';
+  document.getElementById('rmNotes').value = activeRoom.notes || '';
+  document.getElementById('rmUpdatedBy').value = '';
+  document.getElementById('rmResult').innerHTML = '';
+  document.getElementById('roomModal').classList.add('show');
+}
+function closeRoomModal(){ document.getElementById('roomModal').classList.remove('show'); }
+
+async function submitRoomUpdate(){
+  if(!activeRoom) return;
+  const result = document.getElementById('rmResult');
+  result.innerHTML = '<span style="color:var(--muted)">Saving…</span>';
+  try{
+    const { error } = await supabaseClient.rpc('set_room_status', {
+      p_room_number: activeRoom.room_number,
+      p_status: document.getElementById('rmStatus').value,
+      p_guest_name: document.getElementById('rmGuest').value.trim() || null,
+      p_booking_id: null,
+      p_notes: document.getElementById('rmNotes').value.trim() || null,
+      p_updated_by: document.getElementById('rmUpdatedBy').value.trim() || null
+    });
+    if(error) throw new Error(error.message);
+    result.innerHTML = '<span style="color:var(--green);font-weight:700">&#10003; Saved</span>';
+    showToast(activeRoom.room_number + ' updated');
+    setTimeout(()=>{ closeRoomModal(); loadAll(); }, 500);
+  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not save — has reception_schema.sql been run yet?')+'</span>'; }
+}
+
+// ---------------------------------------------------------------------------
+// BOOKINGS
+// ---------------------------------------------------------------------------
+function renderBookingFilters(){
+  const statuses = ['All','pending','confirmed','completed','cancelled'];
+  document.getElementById('bookingFilters').innerHTML = statuses.map(s=>
+    `<button class="filter-chip ${state.bookingFilter===s?'active':''}" onclick="setBookingFilter('${s}')">${s}</button>`).join('');
+}
+function setBookingFilter(s){ state.bookingFilter=s; renderBookingFilters(); renderBookings(); }
+
+function renderBookings(){
+  const q = (document.getElementById('bookingSearch').value||'').toLowerCase();
+  let rows = state.bookings;
+  if(state.bookingFilter!=='All') rows = rows.filter(b=>(b.status||'pending')===state.bookingFilter);
+  if(q) rows = rows.filter(b => (b.guest_name||'').toLowerCase().includes(q) || (b.guest_phone||'').includes(q) || (b.room_type||'').toLowerCase().includes(q));
+  const body = document.getElementById('bookingsBody');
+  if(!rows.length){ body.innerHTML = '<tr><td colspan="7" class="empty">No bookings match</td></tr>'; return; }
+  body.innerHTML = rows.map(b => `
+    <tr>
+      <td><strong>${esc(b.guest_name)}</strong><br><span style="font-size:10px;color:var(--text-dim)">${esc(b.guest_phone)||'—'}</span></td>
+      <td style="font-size:11px">${esc(b.room_type)||'—'}</td>
+      <td style="font-size:10px;color:var(--text-dim)">${b.check_in?fmtDate(b.check_in):fmtDate(b.created_at)}</td>
+      <td style="text-align:center">${b.party_size||'—'}</td>
+      <td style="text-align:center">${b.deposit_paid ? '<span class="pill done">Paid</span>' : '<span class="pill pending">—</span>'}</td>
+      <td><span class="pill ${(b.status||'pending').toLowerCase()}">${esc(b.status||'pending')}</span></td>
+      <td style="white-space:nowrap">
+        ${(b.status||'pending')==='pending' ? `<button class="btn small teal" onclick="setBookingStatus('${b.id}','confirmed')">Confirm</button>` : ''}
+        ${b.status!=='completed' && b.status!=='cancelled' ? `<button class="btn small ghost" onclick="setBookingStatus('${b.id}','cancelled')">Cancel</button>` : ''}
+      </td>
+    </tr>`).join('');
+}
+
+async function setBookingStatus(id, status){
+  try{
+    const { error } = await supabaseClient.rpc('update_booking_status', { p_id: id, p_status: status });
+    if(error) throw new Error(error.message);
+    showToast('Booking marked ' + status);
+    loadAll();
+  }catch(e){ showToast('Could not update — ' + (e.message||'error')); }
+}
+
+async function submitBooking(){
+  const name = document.getElementById('bkName').value.trim();
+  const phone = document.getElementById('bkPhone').value.trim();
+  const result = document.getElementById('bkResult');
+  if(!name || !phone){ result.innerHTML = '<span class="err-msg">Name and phone are required.</span>'; return; }
+  result.innerHTML = '<span style="color:var(--muted)">Saving…</span>';
+  try{
+    const { data, error } = await supabaseClient.rpc('add_customer_booking', {
+      p_name: name, p_phone: phone,
+      p_service: document.getElementById('bkService').value,
+      p_booking_date: document.getElementById('bkDate').value || null,
+      p_party_size: document.getElementById('bkParty').value || '',
+      p_notes: document.getElementById('bkNotes').value.trim() || null,
+      p_added_by: document.getElementById('bkAddedBy').value.trim() || 'Reception',
+      p_source: 'Reception Dashboard'
+    });
+    if(error) throw new Error(error.message);
+    result.innerHTML = '<span style="color:var(--green);font-weight:700">&#10003; Booking added'+(data&&data.custId?' — '+data.custId:'')+'</span>';
+    showToast('Booking added for ' + name);
+    ['bkName','bkPhone','bkParty','bkNotes'].forEach(id=>document.getElementById(id).value='');
+    loadAll();
+  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not add')+'</span>'; }
+}
+
+// ---------------------------------------------------------------------------
+// GUESTS & MEMBERS
+// ---------------------------------------------------------------------------
+function renderGuests(){
+  const q = (document.getElementById('guestSearch').value||'').toLowerCase();
+  let rows = state.guests;
+  if(q) rows = rows.filter(g => (g.name||'').toLowerCase().includes(q) || (g.customer_id||'').toLowerCase().includes(q) || (g.phone_number||'').includes(q) || (g.business_name||'').toLowerCase().includes(q));
+  const body = document.getElementById('guestsBody');
+  if(!rows.length){ body.innerHTML = '<tr><td colspan="7" class="empty">No members match — try Register a New Member.</td></tr>'; return; }
+  body.innerHTML = rows.slice(0,150).map(g => `
+    <tr>
+      <td style="font-family:'IBM Plex Mono',monospace;color:var(--gold-deep);font-size:11px">${esc(g.customer_id)}</td>
+      <td><strong>${esc(g.name)}</strong></td>
+      <td style="font-size:11px">${esc(g.phone_number)||'—'}</td>
+      <td>${g.membership_status==='VIP' ? '<span class="pill occupied">&#128081; VIP</span>' : '<span class="pill pending">Regular</span>'}</td>
+      <td style="text-align:center">${g.total_visits||0}</td>
+      <td style="text-align:center;color:var(--gold-deep);font-family:'IBM Plex Mono',monospace">${g.loyalty_points||0}</td>
+      <td><button class="btn small ghost" onclick="prefillVip('${esc(g.customer_id)}','${esc((g.name||'').replace(/'/g,"\\'"))}')">VIP interest</button></td>
+    </tr>`).join('');
+}
+function prefillVip(custId, name){
+  document.getElementById('vipQuery').value = custId;
+  document.getElementById('vipName').value = name;
+  switchTab('guests');
+  document.getElementById('vipQuery').scrollIntoView({behavior:'smooth', block:'center'});
+}
+
+async function submitRegister(){
+  const name = document.getElementById('regName').value.trim();
+  const phone = document.getElementById('regPhone').value.trim();
+  const result = document.getElementById('regResult');
+  if(!name || !phone){ result.innerHTML = '<span class="err-msg">Name and phone are required.</span>'; return; }
+  result.innerHTML = '<span style="color:var(--muted)">Registering…</span>';
+  try{
+    const { data, error } = await supabaseClient.rpc('register_customer_full', {
+      p_full_name: name,
+      p_business_name: null,
+      p_phone: phone,
+      p_whatsapp: null,
+      p_email: document.getElementById('regEmail').value.trim() || null,
+      p_address: null,
+      p_service_interest: null,
+      p_how_heard: document.getElementById('regHeard').value,
+      p_suggestions: null,
+      p_followed_socials: null,
+      p_source: 'Reception Dashboard'
+    });
+    if(error) throw new Error(error.message);
+    result.innerHTML = '<span style="color:var(--green);font-weight:700">&#10003; '+(data.returning?'Found existing member: ':'Registered: ')+data.custId+'</span>';
+    showToast(name + ' registered');
+    ['regName','regPhone','regEmail'].forEach(id=>document.getElementById(id).value='');
+    loadAll();
+  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not register')+'</span>'; }
+}
+
+async function submitVipInterest(){
+  const query = document.getElementById('vipQuery').value.trim();
+  const name = document.getElementById('vipName').value.trim();
+  const result = document.getElementById('vipResult');
+  if(!query){ result.innerHTML = '<span class="err-msg">Enter a member ID or phone.</span>'; return; }
+  result.innerHTML = '<span style="color:var(--muted)">Logging…</span>';
+  try{
+    const { error } = await supabaseClient.rpc('create_reception_task', {
+      p_client_id: genClientId(),
+      p_title: 'VIP interest: ' + (name || query),
+      p_description: 'Guest ' + (name?name+' ':'') + '(' + query + ') asked about VIP membership. Management to contact and arrange payment before setting VIP status.',
+      p_category: 'Guest Request',
+      p_priority: 'Medium',
+      p_assigned_to: 'Management',
+      p_due_at: null,
+      p_created_by: 'Reception'
+    });
+    if(error) throw new Error(error.message);
+    result.innerHTML = '<span style="color:var(--green);font-weight:700">&#10003; Logged — management will follow up</span>';
+    showToast('VIP interest logged');
+    document.getElementById('vipQuery').value=''; document.getElementById('vipName').value='';
+    loadAll();
+  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not log — has reception_schema.sql been run yet?')+'</span>'; }
+}
+
+// ---------------------------------------------------------------------------
+// STAFF ON SHIFT
+// ---------------------------------------------------------------------------
+function renderStaffRosterOptions(){
+  const sel = document.getElementById('ciExisting');
+  const prev = sel.value;
+  const onShiftIds = new Set(state.shifts.filter(s=>!s.check_out_at).map(s=>s.staff_id));
+  const roster = state.staffRoster.slice().sort((a,b)=>(a.full_name||'').localeCompare(b.full_name||''));
+  sel.innerHTML = '<option value="">— Select from roster —</option>' +
+    roster.map(s => `<option value="${esc(s.id)}" data-role="${esc(s.role)}" ${onShiftIds.has(s.id)?'disabled':''}>${esc(s.full_name)}${onShiftIds.has(s.id)?' (on shift)':''}</option>`).join('');
+  if(prev) sel.value = prev;
+}
+
+function onCiExistingChange(){
+  const sel = document.getElementById('ciExisting');
+  const opt = sel.selectedOptions[0];
+  if(!opt || !opt.value){ return; }
+  document.getElementById('ciName').value = opt.textContent.replace(' (on shift)','');
+  const role = opt.dataset.role;
+  if(role){ document.getElementById('ciRole').value = role; }
+}
+
+function renderOnShift(){
+  const open = state.shifts.filter(s=>!s.check_out_at);
+  const grid = document.getElementById('onShiftGrid');
+  if(!open.length){ grid.innerHTML = '<div class="empty">Nobody clocked in right now.</div>'; return; }
+  grid.innerHTML = open.map(s => `
+    <div class="shift-card">
+      <div class="sc-name">${esc(s.staff_name)}</div>
+      <div class="sc-role">${esc(s.role)||'Staff'}</div>
+      <div class="sc-time">In: ${fmtTime(s.check_in_at)}</div>
+      <div class="sc-dur">On shift ${fmtDuration(s.check_in_at, null)}</div>
+      <button class="btn small ghost" onclick="submitClockOut('${s.id}')">&#8901; Clock Out</button>
+    </div>`).join('');
+}
+
+function renderShiftLog(){
+  const todayStr = new Date().toISOString().slice(0,10);
+  const todays = state.shifts.filter(s => s.shift_date === todayStr || fmtDate(s.check_in_at) === new Date().toLocaleDateString('en-GB'));
+  const body = document.getElementById('shiftLogBody');
+  if(!todays.length){ body.innerHTML = '<tr><td colspan="7" class="empty">No shifts logged yet today.</td></tr>'; return; }
+  body.innerHTML = todays.map(s => `
+    <tr>
+      <td><strong>${esc(s.staff_name)}</strong></td>
+      <td style="font-size:11px">${esc(s.role)||'—'}</td>
+      <td style="font-size:11px">${fmtTime(s.check_in_at)}</td>
+      <td style="font-size:11px">${s.check_out_at ? fmtTime(s.check_out_at) : '—'}</td>
+      <td style="font-size:11px">${fmtDuration(s.check_in_at, s.check_out_at)}</td>
+      <td>${s.check_out_at ? '<span class="pill done">Off shift</span>' : '<span class="pill occupied">On shift</span>'}</td>
+      <td>${!s.check_out_at ? `<button class="btn small ghost" onclick="submitClockOut('${s.id}')">Clock Out</button>` : ''}</td>
+    </tr>`).join('');
+}
+
+async function submitClockIn(){
+  const existingId = document.getElementById('ciExisting').value;
+  const typedName = document.getElementById('ciName').value.trim();
+  const existingOpt = existingId ? document.getElementById('ciExisting').selectedOptions[0] : null;
+  const name = typedName || (existingOpt ? existingOpt.textContent.replace(' (on shift)','') : '');
+  const result = document.getElementById('ciResult');
+  if(!name){ result.innerHTML = '<span class="err-msg">Select or type a staff name.</span>'; return; }
+  result.innerHTML = '<span style="color:var(--muted)">Clocking in…</span>';
+  try{
+    const { error } = await supabaseClient.rpc('clock_in', {
+      p_client_id: genClientId(),
+      p_staff_name: name,
+      p_role: document.getElementById('ciRole').value,
+      p_checked_in_by: document.getElementById('ciBy').value.trim() || null
+    });
+    if(error) throw new Error(error.message);
+    result.innerHTML = '<span style="color:var(--green);font-weight:700">&#10003; Clocked in</span>';
+    showToast(name + ' clocked in');
+    document.getElementById('ciName').value=''; document.getElementById('ciBy').value='';
+    document.getElementById('ciExisting').value='';
+    loadAll();
+  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not clock in — has reception_schema.sql been run yet?')+'</span>'; }
+}
+
+async function submitClockOut(shiftId){
+  try{
+    const { error } = await supabaseClient.rpc('clock_out', { p_shift_id: shiftId, p_checked_out_by: null, p_notes: null });
+    if(error) throw new Error(error.message);
+    showToast('Clocked out');
+    loadAll();
+  }catch(e){ showToast('Could not clock out — ' + (e.message||'error')); }
+}
+
+// ---------------------------------------------------------------------------
+// BREAKDOWNS (Facilities Apps Script)
+// ---------------------------------------------------------------------------
+function renderTicketFilters(){
+  const statuses = ['Open','In Progress','Complete','All'];
+  document.getElementById('ticketFilters').innerHTML = statuses.map(s=>
+    `<button class="filter-chip ${state.ticketFilter===s?'active':''}" onclick="setTicketFilter('${s}')">${s}</button>`).join('');
+}
+function setTicketFilter(v){ state.ticketFilter=v; renderTicketFilters(); renderTickets(); }
+
+function renderTickets(){
+  let rows = state.tickets;
+  if(state.ticketFilter!=='All') rows = rows.filter(t=>t.status===state.ticketFilter);
+  const el = document.getElementById('ticketsList');
+  if(!state.facilitiesOnline && !rows.length){ el.innerHTML = '<div class="empty">Facilities system unreachable — try Refresh, or check the Facilities Dashboard directly.</div>'; return; }
+  if(!rows.length){ el.innerHTML = '<div class="empty">Nothing here.</div>'; return; }
+  el.innerHTML = rows.map(t => `
+    <div class="task-row p-${(t.priority||'').toLowerCase()}">
+      <div class="tr-top">
+        <div><div class="tr-title">${esc(t.location)||'—'}</div><div style="font-size:12px;color:var(--text-dim);margin-top:2px">${esc(t.description)||''}</div></div>
+        <span class="pill ${(t.priority||'').toLowerCase()}">${esc(t.priority)}</span>
+      </div>
+      <div class="tr-meta">${esc(t.reporterName)||esc(t.reportedByType)||'Guest'} · ${fmtDateTime(t.timestamp)} · <span class="pill ${(t.status||'').toLowerCase().replace(' ','_')}">${esc(t.status)}</span></div>
+      <div class="task-actions">
+        ${t.status==='Open' ? `<button class="btn small teal" onclick="setTicketStatus('${t.ticketId}','In Progress')">Start</button>` : ''}
+        ${t.status!=='Complete' ? `<span style="font-size:10px;color:var(--muted);align-self:center">Close with resolution notes on the Facilities Dashboard</span>` : ''}
+      </div>
+    </div>`).join('');
+}
+async function setTicketStatus(ticketId, status){
+  try{
+    const res = await fetch(FACILITIES_API_URL + '?action=updateTicketStatus&ticketId=' + encodeURIComponent(ticketId) + '&status=' + encodeURIComponent(status) + '&t=' + Date.now());
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error || 'Unknown error');
+    showToast('Ticket updated');
+    loadFacilities();
+  }catch(e){ showToast('Could not update — ' + (e.message||'error')); }
+}
+
+async function submitTicket(){
+  const location = document.getElementById('tkLocation').value;
+  const description = document.getElementById('tkDescription').value.trim();
+  const result = document.getElementById('tkResult');
+  if(!location || !description){ result.innerHTML = '<span class="err-msg">Location and description are required.</span>'; return; }
+  result.innerHTML = '<span style="color:var(--muted)">Sending…</span>';
+  try{
+    const payload = {
+      action: 'submitTicket', location, category: 'Other', description,
+      priority: document.getElementById('tkUrgency').value,
+      reportedByType: 'Staff',
+      reporterName: document.getElementById('tkReportedBy').value.trim() || 'Reception',
+      clientId: genClientId()
+    };
+    const qs = Object.entries(payload).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
+    const res = await fetch(FACILITIES_API_URL + '?' + qs);
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error || 'Unknown error');
+    result.innerHTML = '<span style="color:var(--green);font-weight:700">&#10003; Reported'+(data.ticketId?' — '+data.ticketId:'')+'</span>';
+    showToast('Breakdown reported');
+    document.getElementById('tkDescription').value = '';
+    loadFacilities();
+  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not report — check the connection and try again')+'</span>'; }
+}
+
+// ---------------------------------------------------------------------------
+// CLEANING
+// ---------------------------------------------------------------------------
+function renderZoneReminder(){
+  const zone = document.getElementById('clZone').value;
+  document.getElementById('zoneReminder').textContent = ZONE_REMINDERS[zone] || '';
+}
+function renderCleaning(){
+  const todayStr = new Date().toISOString().slice(0,10);
+  const todays = state.cleaningLogs.filter(c => c.log_date === todayStr);
+  const el = document.getElementById('cleaningToday');
+  el.innerHTML = todays.length ? todays.map(c => `
+    <div style="padding:9px 0;border-bottom:1px solid var(--border-soft);font-size:12.5px;display:flex;justify-content:space-between;gap:8px">
+      <span>${esc(c.zone)}${c.location?' — '+esc(c.location):''} <span style="color:var(--text-dim)">(${esc(c.staff_name)||'—'})</span></span>
+      <span class="pill ${c.result==='Pass'?'done':'urgent'}">${esc(c.result)}${c.score?' · '+c.score+'/5':''}</span>
+    </div>`).join('') : '<div class="empty">No checks logged yet today.</div>';
+
+  const checkedZones = new Set(todays.map(c=>c.zone));
+  const allZones = Object.keys(ZONE_REMINDERS);
+  const missing = allZones.filter(z=>!checkedZones.has(z));
+  document.getElementById('cleaningMissing').innerHTML = missing.length ? missing.map(z=>`<span class="pill medium" style="margin:0 6px 6px 0;display:inline-block">${z}</span>`).join('') : '<div class="empty" style="color:var(--green)">Every zone checked today.</div>';
+}
+
+async function submitCleaningLog(){
+  const zone = document.getElementById('clZone').value;
+  const result = document.getElementById('clResultMsg');
+  result.innerHTML = '<span style="color:var(--muted)">Saving…</span>';
+  try{
+    const { error } = await supabaseClient.rpc('submit_cleaning_log', {
+      p_client_id: genClientId(),
+      p_zone: zone,
+      p_location: document.getElementById('clLocation').value.trim() || null,
+      p_staff_name: document.getElementById('clStaff').value.trim() || null,
+      p_score: document.getElementById('clScore').value ? parseInt(document.getElementById('clScore').value) : null,
+      p_result: document.getElementById('clResult').value,
+      p_issues_found: document.getElementById('clIssues').value.trim() || null,
+      p_corrected: false,
+      p_manager_name: document.getElementById('clManager').value.trim() || null,
+      p_notes: null
+    });
+    if(error) throw new Error(error.message);
+    result.innerHTML = '<span style="color:var(--green);font-weight:700">&#10003; Logged</span>';
+    showToast(zone + ' checked');
+    ['clLocation','clStaff','clScore','clIssues','clManager'].forEach(id=>document.getElementById(id).value='');
+    loadAll();
+  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not save — has reception_schema.sql been run yet?')+'</span>'; }
+}
+
+// ---------------------------------------------------------------------------
+// TASKS
+// ---------------------------------------------------------------------------
+function renderTaskFilters(){
+  const statuses = [['open','Open'],['in_progress','In Progress'],['done','Done'],['all','All']];
+  document.getElementById('taskFilters').innerHTML = statuses.map(([v,l])=>
+    `<button class="filter-chip ${state.taskFilter===v?'active':''}" onclick="setTaskFilter('${v}')">${l}</button>`).join('');
+}
+function setTaskFilter(v){ state.taskFilter=v; renderTaskFilters(); renderTasks(); }
+
+function renderTasks(){
+  let rows = state.tasks;
+  if(state.taskFilter!=='all') rows = rows.filter(t=>t.status===state.taskFilter);
+  const el = document.getElementById('tasksList');
+  if(!rows.length){ el.innerHTML = '<div class="empty">Nothing here.</div>'; return; }
+  el.innerHTML = rows.map(t => `
+    <div class="task-row p-${(t.priority||'').toLowerCase()} ${t.status==='done'?'done':''}">
+      <div class="tr-top">
+        <div><div class="tr-title">${esc(t.title)}</div>${t.description?`<div style="font-size:12px;color:var(--text-dim);margin-top:2px">${esc(t.description)}</div>`:''}</div>
+        <span class="pill ${(t.priority||'').toLowerCase()}">${esc(t.priority)}</span>
+      </div>
+      <div class="tr-meta">${esc(t.category)||'General'}${t.assigned_to?' · '+esc(t.assigned_to):''}${t.due_at?' · due '+fmtDate(t.due_at):''} · ${fmtDateTime(t.created_at)}</div>
+      <div class="task-actions">
+        ${t.status==='open' ? `<button class="btn small teal" onclick="setTaskStatus('${t.id}','in_progress')">Start</button>` : ''}
+        ${t.status!=='done' ? `<button class="btn small" onclick="setTaskStatus('${t.id}','done')">Mark Done</button>` : `<button class="btn small ghost" onclick="setTaskStatus('${t.id}','open')">Reopen</button>`}
+      </div>
+    </div>`).join('');
+}
+async function setTaskStatus(id, status){
+  try{
+    const { error } = await supabaseClient.rpc('update_task_status', { p_id: id, p_status: status, p_completed_by: null });
+    if(error) throw new Error(error.message);
+    loadAll();
+  }catch(e){ showToast('Could not update — ' + (e.message||'error')); }
+}
+
+async function submitTask(){
+  const title = document.getElementById('tsTitle').value.trim();
+  const result = document.getElementById('tsResult');
+  if(!title){ result.innerHTML = '<span class="err-msg">Title is required.</span>'; return; }
+  result.innerHTML = '<span style="color:var(--muted)">Saving…</span>';
+  try{
+    const dueVal = document.getElementById('tsDue').value;
+    const { error } = await supabaseClient.rpc('create_reception_task', {
+      p_client_id: genClientId(),
+      p_title: title,
+      p_description: document.getElementById('tsDescription').value.trim() || null,
+      p_category: document.getElementById('tsCategory').value,
+      p_priority: document.getElementById('tsPriority').value,
+      p_assigned_to: document.getElementById('tsAssignedTo').value.trim() || null,
+      p_due_at: dueVal ? new Date(dueVal).toISOString() : null,
+      p_created_by: document.getElementById('tsCreatedBy').value.trim() || 'Reception'
+    });
+    if(error) throw new Error(error.message);
+    result.innerHTML = '<span style="color:var(--green);font-weight:700">&#10003; Added</span>';
+    showToast('Task added');
+    ['tsTitle','tsDescription','tsAssignedTo','tsDue','tsCreatedBy'].forEach(id=>document.getElementById(id).value='');
+    loadAll();
+  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not add — has reception_schema.sql been run yet?')+'</span>'; }
+}
+
+loadAll();
+setInterval(loadAll, 60000);
+</script>
+</body>
+</html>
