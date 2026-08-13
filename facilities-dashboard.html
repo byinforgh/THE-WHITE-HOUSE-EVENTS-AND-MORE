@@ -1,12 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE EVENTS & MORE — FACILITIES DASHBOARD (v1.1)
-  v1.1: rebrand + input font-size raised to 16px (iOS pinch-zoom fix,
-  same cause/fix as the bar/canteen dashboards).
-  Fill in API_URL below once the Facilities Apps Script is deployed
-  (see setup notes at the top of Code.gs). This is a SEPARATE
-  deployment from the Bar and Members dashboards.
+  THE WHITE HOUSE EVENTS & MORE — FACILITIES DASHBOARD (v2.0, Supabase)
+  v2.0: MIGRATED OFF the old Facilities Google Apps Script onto the same
+  Supabase project as every other dashboard (facilities_tickets,
+  facilities_assets, facilities_projects, staff), via fac_submit_ticket,
+  fac_update_ticket_status, fac_verify_ticket, fac_add_project,
+  fac_update_project. Tickets logged here now show up live on
+  facilities-report.html, reception-dashboard.html, and the
+  manager-dashboard.html Facilities tab — one shared source of truth.
 -->
 <head>
 <meta charset="UTF-8">
@@ -222,15 +224,17 @@ textarea.ta{min-height:64px;resize:vertical;}
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-// Fill in once the Facilities Apps Script is deployed (see Code.gs setup notes).
-const API_URL = 'https://script.google.com/macros/s/AKfycbxdXWHqohz78kNcgtFrI_dVO6k5s6SqFL4wd-c00OB4xCfbFg4TrFyPwd2VGYz4j3Ry/exec';
+const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNydnV6a3lmcnFiZm1hbWVneGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MzI5NjQsImV4cCI6MjEwMDAwODk2NH0.gMsv3yvw6plDCherA2YdU4UgWRMXUc9H1Hr_IdR9GxA';
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let facData = {tickets: [], openSorted: [], assets: [], projects: [], staff: [], counts: {}};
 
 function showApiError(msg){
   const el = document.getElementById('errorBanner');
-  el.innerHTML = "<b>&#9888; Dashboard can't reach the sheet:</b> " + msg + " — check API_URL at the top of the script, and that the Apps Script deployment is live (Deploy &gt; Manage deployments).";
+  el.innerHTML = "<b>&#9888; Dashboard can't reach Supabase:</b> " + msg + " — check your connection and try Refresh.";
   el.classList.add('active');
 }
 function clearApiError(){ document.getElementById('errorBanner').classList.remove('active'); }
@@ -242,19 +246,69 @@ function switchSection(sec, btn){
   document.getElementById('sec-'+sec).classList.add('active');
 }
 
+function cap(s){ return s ? s.charAt(0).toUpperCase()+s.slice(1) : s; }
+function statusToLabel(s){ return s==='closed' ? 'Complete' : s==='in_progress' ? 'In Progress' : 'Open'; }
+const PRIORITY_ORDER = {Urgent:0, High:1, Medium:2, Low:3};
+
+function mapTicket(t, staffMap){
+  return {
+    ticketId: t.id,
+    timestamp: t.created_at,
+    location: t.location,
+    category: t.category || 'Other',
+    description: t.description,
+    priority: cap(t.urgency || 'medium'),
+    status: statusToLabel(t.status),
+    reportedByType: cap(t.reported_via || 'staff'),
+    reporterName: t.reporter_name,
+    reporterContact: t.reporter_contact,
+    assignedTo: t.assigned_to ? (staffMap[t.assigned_to] || '') : '',
+    resolutionNotes: t.resolution_notes,
+    verified: t.verified || 'YES'
+  };
+}
+
 async function loadData(){
   document.getElementById('lastRefresh').textContent = 'Refreshing...';
-  if(API_URL.indexOf('PASTE_YOUR') === 0){
-    showApiError('API_URL has not been set yet in this file.');
-    document.getElementById('lastRefresh').textContent = 'Not configured';
-    return;
-  }
   try{
-    const res = await fetch(API_URL + '?action=getFacilitiesData&t=' + Date.now());
-    if(!res.ok) throw new Error('Server responded with status ' + res.status);
-    const data = await res.json();
-    if(!data.success) throw new Error(data.error || 'Unknown error');
-    facData = data;
+    const [ticketsRes, assetsRes, projectsRes, staffRes] = await Promise.all([
+      supabaseClient.from('facilities_tickets').select('*').order('created_at', { ascending: false }),
+      supabaseClient.from('facilities_assets').select('location, category, zone, status').order('location'),
+      supabaseClient.from('facilities_projects').select('*').order('created_at', { ascending: false }),
+      supabaseClient.from('staff').select('id, initials, full_name, role, phone').order('slot')
+    ]);
+    if(ticketsRes.error) throw new Error(ticketsRes.error.message);
+    if(assetsRes.error) throw new Error(assetsRes.error.message);
+    if(projectsRes.error) throw new Error(projectsRes.error.message);
+    if(staffRes.error) throw new Error(staffRes.error.message);
+
+    const staffMap = {};
+    (staffRes.data||[]).forEach(s => { staffMap[s.id] = s.initials; });
+
+    const tickets = (ticketsRes.data||[]).map(t => mapTicket(t, staffMap));
+    const openSorted = tickets.filter(t=>t.status!=='Complete')
+      .sort((a,b)=> (PRIORITY_ORDER[a.priority]??9) - (PRIORITY_ORDER[b.priority]??9) || new Date(b.timestamp)-new Date(a.timestamp));
+
+    facData = {
+      tickets,
+      openSorted,
+      assets: assetsRes.data || [],
+      projects: (projectsRes.data||[]).map(p => ({
+        projectId: p.project_id, title: p.title, status: p.status,
+        startDate: p.start_date, targetDate: p.target_date, owner: p.owner,
+        description: p.description, lastUpdateNote: p.last_update_note
+      })),
+      staff: (staffRes.data||[]).map(s => ({ initials: s.initials, name: s.full_name, specialty: s.role, phone: s.phone })),
+      counts: {
+        open: tickets.filter(t=>t.status==='Open').length,
+        inProgress: tickets.filter(t=>t.status==='In Progress').length,
+        complete: tickets.filter(t=>t.status==='Complete').length,
+        unverified: tickets.filter(t=>t.verified==='NO').length,
+        urgentOpen: openSorted.filter(t=>t.priority==='Urgent').length,
+        totalAssets: (assetsRes.data||[]).length
+      }
+    };
+
     clearApiError();
     document.getElementById('lastRefresh').textContent = 'Updated: ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
     renderMetrics();
@@ -388,10 +442,10 @@ function renderCompleteTickets(){
 
 async function quickUpdateStatus(ticketId, status){
   try{
-    const res = await fetch(API_URL + '?action=updateTicketStatus&ticketId=' + encodeURIComponent(ticketId) + '&status=' + encodeURIComponent(status) + '&t=' + Date.now());
-    const data = await res.json();
-    if(data.success) loadData(); else alert(data.error||'Could not update.');
-  }catch(e){ alert('Connection error — try again.'); }
+    const { error } = await supabaseClient.rpc('fac_update_ticket_status', { p_ticket_id: ticketId, p_status: status });
+    if(error) throw new Error(error.message);
+    loadData();
+  }catch(e){ alert(e.message || 'Could not update.'); }
 }
 
 function toggleCompleteForm(ticketId){
@@ -406,21 +460,20 @@ async function submitComplete(ticketId){
   if(!notes){ resultEl.innerHTML = '<span style="color:var(--red)">Add a note describing what was fixed.</span>'; return; }
   resultEl.innerHTML = 'Saving...';
   try{
-    let url = API_URL + '?action=updateTicketStatus&ticketId=' + encodeURIComponent(ticketId) + '&status=Complete&resolutionNotes=' + encodeURIComponent(notes);
-    if(assigned) url += '&assignedTo=' + encodeURIComponent(assigned);
-    url += '&t=' + Date.now();
-    const res = await fetch(url);
-    const data = await res.json();
-    if(data.success){ loadData(); } else { resultEl.innerHTML = '<span style="color:var(--red)">'+(data.error||'Failed')+'</span>'; }
-  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">Connection error — try again.</span>'; }
+    const { error } = await supabaseClient.rpc('fac_update_ticket_status', {
+      p_ticket_id: ticketId, p_status: 'Complete', p_resolution_notes: notes, p_assigned_initials: assigned || null
+    });
+    if(error) throw new Error(error.message);
+    loadData();
+  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">'+(e.message||'Failed')+'</span>'; }
 }
 
 async function verifyTicket(ticketId, verified){
   try{
-    const res = await fetch(API_URL + '?action=verifyTicket&ticketId=' + encodeURIComponent(ticketId) + '&verified=' + verified + '&t=' + Date.now());
-    const data = await res.json();
-    if(data.success) loadData(); else alert(data.error||'Could not update.');
-  }catch(e){ alert('Connection error — try again.'); }
+    const { error } = await supabaseClient.rpc('fac_verify_ticket', { p_ticket_id: ticketId, p_verified: verified });
+    if(error) throw new Error(error.message);
+    loadData();
+  }catch(e){ alert(e.message || 'Could not update.'); }
 }
 
 function populateLocationList(){
@@ -451,21 +504,20 @@ async function submitStaffTicket(){
   if(!location || !description){ resultEl.innerHTML = '<span style="color:var(--red)">Location and description are required.</span>'; return; }
   resultEl.innerHTML = 'Saving...';
   try{
-    let url = API_URL + '?action=submitTicket&location=' + encodeURIComponent(location) + '&category=' + encodeURIComponent(category) + '&priority=' + encodeURIComponent(priority) + '&description=' + encodeURIComponent(description) + '&reportedByType=Staff';
-    if(reporterName) url += '&reporterName=' + encodeURIComponent(reporterName);
-    url += '&clientId=' + (Date.now()+'-'+Math.random().toString(36).slice(2)) + '&t=' + Date.now();
-    const res = await fetch(url);
-    const data = await res.json();
-    if(data.success){
-      resultEl.innerHTML = '<span style="color:var(--green)">&#10003; Ticket '+data.ticketId+' logged.</span>';
-      document.getElementById('rptLocation').value='';
-      document.getElementById('rptDescription').value='';
-      if(assignTo){
-        await fetch(API_URL + '?action=updateTicketStatus&ticketId=' + encodeURIComponent(data.ticketId) + '&status=Open&assignedTo=' + encodeURIComponent(assignTo));
-      }
-      loadData();
-    } else { resultEl.innerHTML = '<span style="color:var(--red)">'+(data.error||'Failed')+'</span>'; }
-  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">Connection error — try again.</span>'; }
+    const clientId = (Date.now()+'-'+Math.random().toString(36).slice(2));
+    const { data, error } = await supabaseClient.rpc('fac_submit_ticket', {
+      p_client_id: clientId, p_location: location, p_category: category, p_priority: priority,
+      p_description: description, p_reported_via: 'staff', p_reporter_name: reporterName || null, p_reporter_contact: null
+    });
+    if(error) throw new Error(error.message);
+    resultEl.innerHTML = '<span style="color:var(--green)">&#10003; Ticket logged.</span>';
+    document.getElementById('rptLocation').value='';
+    document.getElementById('rptDescription').value='';
+    if(assignTo && data && data.id){
+      await supabaseClient.rpc('fac_update_ticket_status', { p_ticket_id: data.id, p_status: 'Open', p_assigned_initials: assignTo });
+    }
+    loadData();
+  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">'+(e.message||'Failed')+'</span>'; }
 }
 
 function renderProjects(){
@@ -493,10 +545,10 @@ function renderProjects(){
 async function quickProjectUpdate(projectId){
   const status = document.getElementById('prjStatusUpdate-'+projectId).value;
   try{
-    const res = await fetch(API_URL + '?action=updateProject&projectId=' + encodeURIComponent(projectId) + '&status=' + encodeURIComponent(status) + '&t=' + Date.now());
-    const data = await res.json();
-    if(data.success) loadData(); else alert(data.error||'Failed');
-  }catch(e){ alert('Connection error.'); }
+    const { error } = await supabaseClient.rpc('fac_update_project', { p_project_id: projectId, p_status: status });
+    if(error) throw new Error(error.message);
+    loadData();
+  }catch(e){ alert(e.message || 'Failed'); }
 }
 
 async function submitProject(){
@@ -510,20 +562,15 @@ async function submitProject(){
   if(!title){ resultEl.innerHTML = '<span style="color:var(--red)">Title is required.</span>'; return; }
   resultEl.innerHTML = 'Saving...';
   try{
-    let url = API_URL + '?action=addProject&title=' + encodeURIComponent(title) + '&status=' + encodeURIComponent(status);
-    if(startDate) url += '&startDate=' + encodeURIComponent(startDate);
-    if(targetDate) url += '&targetDate=' + encodeURIComponent(targetDate);
-    if(owner) url += '&owner=' + encodeURIComponent(owner);
-    if(description) url += '&description=' + encodeURIComponent(description);
-    url += '&t=' + Date.now();
-    const res = await fetch(url);
-    const data = await res.json();
-    if(data.success){
-      resultEl.innerHTML = '<span style="color:var(--green)">&#10003; Project added.</span>';
-      ['prjTitle','prjStart','prjTarget','prjOwner','prjDescription'].forEach(id=>document.getElementById(id).value='');
-      loadData();
-    } else { resultEl.innerHTML = '<span style="color:var(--red)">'+(data.error||'Failed')+'</span>'; }
-  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">Connection error.</span>'; }
+    const { error } = await supabaseClient.rpc('fac_add_project', {
+      p_title: title, p_status: status, p_start_date: startDate || null,
+      p_target_date: targetDate || null, p_owner: owner || null, p_description: description || null
+    });
+    if(error) throw new Error(error.message);
+    resultEl.innerHTML = '<span style="color:var(--green)">&#10003; Project added.</span>';
+    ['prjTitle','prjStart','prjTarget','prjOwner','prjDescription'].forEach(id=>document.getElementById(id).value='');
+    loadData();
+  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">'+(e.message||'Connection error.')+'</span>'; }
 }
 
 function renderAssets(){
