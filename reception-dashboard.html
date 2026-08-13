@@ -184,6 +184,7 @@ body::after{
 .guest-row .gname{ font-weight:700; color:var(--text); }
 .guest-row .gmeta{ font-size:10.5px; color:var(--muted); margin-top:2px; }
 .tag-inhouse{ background:#faf1d9; color:var(--gold-deep); border:1px solid var(--gold-soft); }
+.tag-booked{ background:#efe8fb; color:#5b3fa8; border:1px solid #d3c2f2; }
 .tag-walkin{ background:#e3f6f4; color:#1f6b62; border:1px solid #a9e2dc; }
 .tag{ font-size:9px; font-weight:800; letter-spacing:.5px; padding:4px 10px; border-radius:20px; text-transform:uppercase; font-family:'IBM Plex Mono',monospace; }
 .unsaved-banner{ display:none; align-items:center; justify-content:space-between; gap:12px; background:rgba(201,63,63,0.08); border:1px solid rgba(201,63,63,0.35); color:#a5312f; border-radius:10px; padding:11px 15px; margin-bottom:14px; font-size:12.5px; }
@@ -250,6 +251,7 @@ label.f{ display:block; font-size:10px; color:var(--muted); font-weight:700; let
 
 .pill{ display:inline-block; font-size:9px; font-weight:800; letter-spacing:.5px; padding:4px 10px; border-radius:20px; text-transform:uppercase; font-family:'IBM Plex Mono',monospace; border:1px solid; }
 .pill.vacant{ background:#e7f8ee; color:#0f7a41; border-color:#a9e3c1; }
+.pill.booked{ background:#efe8fb; color:#5b3fa8; border-color:#d3c2f2; }
 .pill.occupied{ background:#faf1d9; color:var(--gold-deep); border-color:var(--gold-soft); }
 .pill.cleaning{ background:#e3f6f4; color:#1f6b62; border-color:#a9e2dc; }
 .pill.maintenance{ background:#fbeed8; color:#93650f; border-color:#f0d29b; }
@@ -270,7 +272,7 @@ label.f{ display:block; font-size:10px; color:var(--muted); font-weight:700; let
   transition:border-color .15s, transform .12s, box-shadow .15s; position:relative; overflow:hidden;
 }
 .room-card::before{ content:''; position:absolute; top:0; left:0; right:0; height:3px; background:var(--stripe,var(--green)); }
-.room-card.st-vacant{ --stripe:var(--green); } .room-card.st-occupied{ --stripe:var(--gold); } .room-card.st-cleaning{ --stripe:var(--teal); }
+.room-card.st-vacant{ --stripe:var(--green); } .room-card.st-booked{ --stripe:var(--purple,#9b7fd4); } .room-card.st-occupied{ --stripe:var(--gold); } .room-card.st-cleaning{ --stripe:var(--teal); }
 .room-card.st-maintenance{ --stripe:var(--amber); } .room-card.st-out{ --stripe:var(--red); }
 .room-card:hover{ border-color:var(--gold); transform:translateY(-2px); box-shadow:0 10px 22px -14px rgba(25,21,9,0.25); }
 .room-card .rc-num{ font-weight:700; font-size:14.5px; font-family:'Space Grotesk',sans-serif; color:var(--cream); }
@@ -476,6 +478,13 @@ label.f{ display:block; font-size:10px; color:var(--muted); font-weight:700; let
           <select id="bkService" onchange="onBkServiceChange()"><option>Pool</option><option>Bar</option><option>Canteen</option><option>Events</option><option>Family Occasions</option><option>Couples</option><option>Room / Accommodation</option><option>Other</option></select>
           <div id="bkNightsWrap" style="display:none">
             <label class="f">Nights staying</label><input type="number" id="bkNights" min="1" value="1" oninput="markBookingDirty()">
+            <label class="f">Room (only shows rooms that are free)</label>
+            <select id="bkRoom"><option value="">— Assign later —</option></select>
+            <label class="f">Deposit / payment</label>
+            <div style="display:flex;align-items:center;gap:8px;margin:4px 0 8px">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-dim)"><input type="checkbox" id="bkDepositPaid" style="width:auto"> Paid</label>
+              <select id="bkPaymentMethod" style="flex:1"><option value="">Method…</option><option>Cash</option><option>MoMo</option><option>Card</option></select>
+            </div>
           </div>
           <label class="f">Date</label><input type="date" id="bkDate" oninput="markBookingDirty()">
           <label class="f">Party size</label><input type="number" id="bkParty" oninput="markBookingDirty()">
@@ -597,14 +606,15 @@ label.f{ display:block; font-size:10px; color:var(--muted); font-weight:700; let
             <option>Public / General Bathrooms</option><option>Staff / Service Areas</option>
           </select>
           <div id="zoneReminder" class="note-box gold"></div>
-          <label class="f">Specific location (room/area)</label><input type="text" id="clLocation" placeholder="e.g. Room 4, or leave blank for whole zone">
-          <label class="f">Staff who did the check</label>
+          <label class="f">Specific location (room/area)*</label>
+          <select id="clLocation"><option value="">— Select —</option></select>
+          <label class="f">Staff who did the check*</label>
           <select id="clStaff"><option value="">Select staff…</option></select>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-            <div><label class="f">Result*</label><select id="clResult"><option>Pass</option><option>Fail</option></select></div>
-            <div><label class="f">Score (1–5)</label><input type="number" id="clScore" min="1" max="5"></div>
+            <div><label class="f">Result*</label><select id="clResult" onchange="onClResultChange()"><option>Pass</option><option>Fail</option></select></div>
+            <div><label class="f">Score (1–5)*</label><input type="number" id="clScore" min="1" max="5"></div>
           </div>
-          <label class="f">Issues found</label><textarea id="clIssues" placeholder="Leave blank if none"></textarea>
+          <label class="f" id="clIssuesLabel">Issues found</label><textarea id="clIssues" placeholder="Leave blank if none"></textarea>
           <label class="f">Manager (if inspected)</label><input type="text" id="clManager">
           <button class="btn teal" onclick="submitCleaningLog()">+ Log Check</button>
           <div id="clResultMsg" class="result-msg"></div>
@@ -628,6 +638,8 @@ label.f{ display:block; font-size:10px; color:var(--muted); font-weight:700; let
         </div>
         <div class="card">
           <div class="card-title">&#10133; Add a Task</div>
+          <label class="f">Recurring task templates</label>
+          <div id="taskTemplates" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px"></div>
           <label class="f">Title*</label><input type="text" id="tsTitle" placeholder="e.g. Call back Ama re: Saturday booking">
           <label class="f">Details</label><textarea id="tsDescription"></textarea>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
@@ -702,6 +714,17 @@ label.f{ display:block; font-size:10px; color:var(--muted); font-weight:700; let
     <div class="tab-content" id="tab-guide">
       <div class="card">
         <div class="guide-section">
+          <h3>How This Dashboard Works</h3>
+          <div class="guide-tier"><b>Step 1, every shift:</b> tap "Who are you?" at the top and select your name. First time ever, you'll set a 4+ digit PIN — remember it, you'll need it every time you select your name after that. This is what credits bookings, tasks, cleaning checks and notes to you, and it's what your Staff Profile on the Manager Dashboard is built from.</div>
+          <div class="guide-tier"><b>Today</b> is your home screen: today's bookings, open tasks, open breakdowns, VIP follow-ups, and who's currently in-house/booked/walk-in, all in one place. Tap any card to jump to the full tab.</div>
+          <div class="guide-tier"><b>Rooms</b> shows every room's live status (Vacant / Booked / Occupied / Cleaning / Maintenance / Out of Service). Tap a room to change its status or add a note.</div>
+          <div class="guide-tier"><b>Bookings</b>: add a new booking here. For a Room booking, assign the room and record deposit/payment right in the form if you can — if not, use the "Room / Payment" button on any booking later. Check In moves a guest from Booked into the room; Check Out sends the room to Cleaning automatically.</div>
+          <div class="guide-tier"><b>Cleaning</b>: log a check per zone. For Bedrooms/Bathrooms you pick the actual room from a list, not free typing. A Fail needs a note on what's wrong and stays flagged red until someone taps "Clear" once it's actually fixed — don't clear it before it's really done.</div>
+          <div class="guide-tier"><b>Tasks</b>: everything active shows together up top; done and cancelled tasks sink into the Archive below so you're not hunting through tabs. "Cancel" is for a task that's no longer needed — don't mark it Done if nothing was actually done.</div>
+          <div class="guide-tier"><b>Notes</b>: a shared notebook for handovers, guest preferences, incidents, reminders. Tap "Archive" once something's been actioned so it stops cluttering the open list — it's still there under the Archived filter if you need to check it later.</div>
+          <div class="guide-tier">The dashboard refreshes itself every minute, and if it's left untouched for 5 minutes it returns to Today on its own — so nobody leaves it stuck on a half-filled form.</div>
+        </div>
+        <div class="guide-section">
           <h3>The Five-Star Greeting</h3>
           <div class="guide-tier">Every guest greeted within seconds, eye contact, a smile, and their name if it's known ("Good afternoon, welcome back"). The same warmth for every guest regardless of how they arrive or what they're wearing: some of the most important guests won't look like it at first glance.</div>
           <div class="guide-tier">If you don't know an answer: <b>"Let me get you the right person right now"</b>: and walk them there yourself, don't just point.</div>
@@ -747,12 +770,29 @@ label.f{ display:block; font-size:10px; color:var(--muted); font-weight:700; let
   <div class="modal-box">
     <div class="modal-title"><span id="roomModalTitle">Room</span><span class="close-x" onclick="closeRoomModal()">&times;</span></div>
     <label class="f">Status</label>
-    <select id="rmStatus"><option>Vacant</option><option>Occupied</option><option>Cleaning</option><option>Maintenance</option><option>Out of Service</option></select>
+    <select id="rmStatus"><option>Vacant</option><option>Booked</option><option>Occupied</option><option>Cleaning</option><option>Maintenance</option><option>Out of Service</option></select>
     <label class="f">Guest name (if occupied)</label><input type="text" id="rmGuest">
     <label class="f">Notes</label><textarea id="rmNotes"></textarea>
     <label class="f">Your name</label><input type="text" id="rmUpdatedBy">
     <button class="btn teal" onclick="submitRoomUpdate()">Save</button>
     <div id="rmResult" class="result-msg"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="bookingModal">
+  <div class="modal-box">
+    <div class="modal-title"><span id="bookingModalTitle">Booking</span><span class="close-x" onclick="closeBookingModal()">&times;</span></div>
+    <label class="f">Room</label>
+    <select id="bmRoom"><option value="">— No room assigned —</option></select>
+    <label class="f">Deposit / payment</label>
+    <div style="display:flex;align-items:center;gap:8px;margin:4px 0 8px">
+      <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-dim)"><input type="checkbox" id="bmDepositPaid" style="width:auto"> Paid</label>
+      <select id="bmPaymentMethod" style="flex:1"><option value="">Method…</option><option>Cash</option><option>MoMo</option><option>Card</option></select>
+    </div>
+    <label class="f">Your name</label><input type="text" id="bmUpdatedBy">
+    <div id="bmActions" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px"></div>
+    <button class="btn teal" onclick="submitBookingRoomAndPayment()" style="margin-top:10px">Save Room &amp; Payment</button>
+    <div id="bmResult" class="result-msg"></div>
   </div>
 </div>
 
@@ -828,7 +868,7 @@ const ZONE_REMINDERS = {
 let state = {
   rooms: [], bookings: [], guests: [], tickets: [], tasks: [], cleaningLogs: [],
   staff: [], staffRoster: [], shiftLog: [], notes: [], recognitionPosts: [],
-  roomFilter: 'All', bookingFilter: 'All', ticketFilter: 'Open', taskFilter: 'open', noteFilter: 'all',
+  roomFilter: 'All', bookingFilter: 'All', ticketFilter: 'Open', taskFilter: 'active', noteFilter: 'all',
   facilitiesOnline: false,
   actingAs: (function(){ try{ return localStorage.getItem('reception_acting_as') || ''; }catch(e){ return ''; } })()
 };
@@ -870,6 +910,25 @@ function tickClock(){
   document.getElementById('clockDate').textContent = now.toLocaleDateString('en-GB',{weekday:'long', day:'numeric', month:'long'});
 }
 tickClock(); setInterval(tickClock, 15000);
+
+// ---------------------------------------------------------------------------
+// GLOBAL IDLE RETURN — after 5 minutes with no clicks/keys, drop back to the
+// Today tab so the tablet doesn't get left sitting on a half-filled form.
+// ---------------------------------------------------------------------------
+let globalIdleTimer = null;
+function resetGlobalIdleTimer(){
+  if(globalIdleTimer) clearTimeout(globalIdleTimer);
+  globalIdleTimer = setTimeout(()=>{
+    const activeTab = document.querySelector('.tab-content.active');
+    if(activeTab && activeTab.id !== 'tab-today'){
+      const openCount = (state.tasks||[]).filter(t=>t.status==='open'||t.status==='in_progress').length;
+      switchTab('today');
+      showToast('No activity for a while: back to Today' + (openCount ? ' — ' + openCount + ' task' + (openCount===1?'':'s') + ' still outstanding' : ''));
+    }
+  }, 5*60*1000);
+}
+['click','keydown','touchstart'].forEach(evt => document.addEventListener(evt, resetGlobalIdleTimer, {passive:true}));
+resetGlobalIdleTimer();
 
 function populateTicketLocationDropdown(){
   const sel = document.getElementById('tkLocation');
@@ -923,6 +982,7 @@ async function loadAll(){
     populateTicketLocationDropdown();
     renderRoomFilters(); renderRooms();
     renderBookingFilters(); renderBookings();
+    if(document.getElementById('bkNightsWrap') && document.getElementById('bkNightsWrap').style.display!=='none') populateBkRoomDropdown();
     renderGuests();
     renderTaskFilters(); renderTasks();
     renderZoneReminder();
@@ -1023,16 +1083,18 @@ function renderGuestsToday(todaysBookings){
   const el = document.getElementById('todayGuests');
   if(!el) return;
   const inHouse = state.rooms.filter(r=>r.status==='Occupied' && r.current_guest_name);
+  const booked = state.rooms.filter(r=>r.status==='Booked' && r.current_guest_name);
   const walkIns = todaysBookings.filter(b => (b.room_type||'').toLowerCase().indexOf('room')===-1 && (b.room_type||'').toLowerCase().indexOf('accommodation')===-1);
   const rows = [];
   inHouse.forEach(r => rows.push({ name:r.current_guest_name, meta:r.room_number, type:'In-House' }));
+  booked.forEach(r => rows.push({ name:r.current_guest_name, meta:r.room_number, type:'Booked' }));
   walkIns.forEach(b => rows.push({ name:b.guest_name, meta:(b.room_type||'Visit')+(b.party_size?' · party of '+b.party_size:''), type:'Walk-In' }));
   if(!rows.length){ el.innerHTML = '<div class="empty">No guests logged in yet today.</div>'; return; }
-  el.innerHTML = `<div style="font-size:11px;color:var(--muted);margin-bottom:8px">${rows.length} guest${rows.length===1?'':'s'} today &middot; ${inHouse.length} in-house &middot; ${walkIns.length} walk-in</div>` +
+  el.innerHTML = `<div style="font-size:11px;color:var(--muted);margin-bottom:8px">${rows.length} guest${rows.length===1?'':'s'} today &middot; ${inHouse.length} in-house &middot; ${booked.length} booked &middot; ${walkIns.length} walk-in</div>` +
     rows.map(r => `
     <div class="guest-row">
       <div><div class="gname">${esc(r.name)}</div><div class="gmeta">${esc(r.meta)}</div></div>
-      <span class="tag ${r.type==='In-House'?'tag-inhouse':'tag-walkin'}">${r.type}</span>
+      <span class="tag ${r.type==='In-House'?'tag-inhouse':(r.type==='Booked'?'tag-booked':'tag-walkin')}">${r.type}</span>
     </div>`).join('');
 }
 
@@ -1040,13 +1102,13 @@ function renderGuestsToday(todaysBookings){
 // ROOMS
 // ---------------------------------------------------------------------------
 function renderRoomFilters(){
-  const statuses = ['All','Vacant','Occupied','Cleaning','Maintenance','Out of Service'];
+  const statuses = ['All','Vacant','Booked','Occupied','Cleaning','Maintenance','Out of Service'];
   document.getElementById('roomFilters').innerHTML = statuses.map(s=>
     `<button class="filter-chip ${state.roomFilter===s?'active':''}" onclick="setRoomFilter('${s}')">${s}</button>`).join('');
 }
 function setRoomFilter(s){ state.roomFilter=s; renderRoomFilters(); renderRooms(); }
-function statusClass(s){ return { 'Vacant':'vacant','Occupied':'occupied','Cleaning':'cleaning','Maintenance':'maintenance','Out of Service':'out' }[s] || 'vacant'; }
-function statusStripe(s){ return { 'Vacant':'st-vacant','Occupied':'st-occupied','Cleaning':'st-cleaning','Maintenance':'st-maintenance','Out of Service':'st-out' }[s] || 'st-vacant'; }
+function statusClass(s){ return { 'Vacant':'vacant','Booked':'booked','Occupied':'occupied','Cleaning':'cleaning','Maintenance':'maintenance','Out of Service':'out' }[s] || 'vacant'; }
+function statusStripe(s){ return { 'Vacant':'st-vacant','Booked':'st-booked','Occupied':'st-occupied','Cleaning':'st-cleaning','Maintenance':'st-maintenance','Out of Service':'st-out' }[s] || 'st-vacant'; }
 
 function renderRooms(){
   let rooms = state.rooms;
@@ -1116,14 +1178,16 @@ function renderBookings(){
   body.innerHTML = rows.map(b => `
     <tr>
       <td><strong>${esc(b.guest_name)}</strong><br><span style="font-size:10px;color:var(--text-dim)">${esc(b.guest_phone)||'—'}</span></td>
-      <td style="font-size:11px">${esc(b.room_type)||'—'}</td>
+      <td style="font-size:11px">${esc(b.room_type)||'—'}${b.room_number?'<br><span style="color:var(--gold-deep);font-weight:700">'+esc(b.room_number)+'</span>':''}</td>
       <td style="font-size:10px;color:var(--text-dim)">${b.check_in?fmtDate(b.check_in):fmtDate(b.created_at)}</td>
       <td style="text-align:center">${b.party_size||'—'}</td>
-      <td style="text-align:center">${b.deposit_paid ? '<span class="pill done">Paid</span>' : '<span class="pill pending">—</span>'}</td>
+      <td style="text-align:center">${b.deposit_paid ? '<span class="pill done">Paid'+(b.payment_method?' · '+esc(b.payment_method):'')+'</span>' : '<span class="pill pending">Unpaid</span>'}</td>
       <td><span class="pill ${(b.status||'pending').toLowerCase()}">${esc(b.status||'pending')}</span></td>
       <td style="white-space:nowrap">
-        ${(b.status||'pending')==='pending' ? `<button class="btn small teal" onclick="setBookingStatus('${b.id}','confirmed')">Confirm</button>` : ''}
-        ${b.status!=='completed' && b.status!=='cancelled' ? `<button class="btn small ghost" onclick="setBookingStatus('${b.id}','cancelled')">Cancel</button>` : ''}
+        ${(b.status||'pending')!=='cancelled' && (b.status||'pending')!=='completed' ? `<button class="btn small ghost" onclick="openBookingModal('${b.id}')">Room / Payment</button>` : ''}
+        ${b.room_number && b.status!=='completed' && b.status!=='cancelled' ? `<button class="btn small teal" onclick="checkinBookingRow('${b.id}')">Check In</button>` : ''}
+        ${b.status==='confirmed' ? `<button class="btn small teal" onclick="checkoutBookingRow('${b.id}')">Check Out</button>` : ''}
+        ${b.status!=='completed' && b.status!=='cancelled' ? `<button class="btn small ghost" onclick="cancelBookingRow('${b.id}')">Cancel</button>` : ''}
       </td>
     </tr>`).join('');
 }
@@ -1135,6 +1199,74 @@ async function setBookingStatus(id, status){
     showToast('Booking marked ' + status);
     loadAll();
   }catch(e){ showToast('Could not update: ' + (e.message||'error')); }
+}
+
+async function checkinBookingRow(id){
+  const by = getBookingAddedBy() || prompt('Your name, for the record?');
+  if(!by) return;
+  try{
+    const { error } = await supabaseClient.rpc('checkin_booking', { p_booking_id: id, p_by: by });
+    if(error) throw new Error(error.message);
+    showToast('Checked in'); loadAll();
+  }catch(e){ showToast('Could not check in: ' + (e.message||'error')); }
+}
+async function checkoutBookingRow(id){
+  const by = getBookingAddedBy() || prompt('Your name, for the record?');
+  if(!by) return;
+  try{
+    const { error } = await supabaseClient.rpc('checkout_booking', { p_booking_id: id, p_by: by });
+    if(error) throw new Error(error.message);
+    showToast('Checked out — room sent to Cleaning'); loadAll();
+  }catch(e){ showToast('Could not check out: ' + (e.message||'error')); }
+}
+async function cancelBookingRow(id){
+  if(!confirm('Cancel this booking? Any room held for it will be freed.')) return;
+  const by = getBookingAddedBy() || prompt('Your name, for the record?');
+  if(!by) return;
+  try{
+    const { error } = await supabaseClient.rpc('cancel_booking', { p_booking_id: id, p_by: by });
+    if(error) throw new Error(error.message);
+    showToast('Booking cancelled'); loadAll();
+  }catch(e){ showToast('Could not cancel: ' + (e.message||'error')); }
+}
+
+let activeBooking = null;
+function openBookingModal(id){
+  activeBooking = state.bookings.find(b=>b.id===id);
+  if(!activeBooking) return;
+  document.getElementById('bookingModalTitle').textContent = activeBooking.guest_name || 'Booking';
+  const sel = document.getElementById('bmRoom');
+  const free = (state.rooms||[]).filter(r=>r.status==='Vacant' || r.room_number===activeBooking.room_number)
+    .sort((a,b)=>(a.room_number||'').localeCompare(b.room_number||'',undefined,{numeric:true}));
+  sel.innerHTML = '<option value="">— No room assigned —</option>' + free.map(r=>`<option value="${esc(r.room_number)}">${esc(r.room_number)}</option>`).join('');
+  sel.value = activeBooking.room_number || '';
+  document.getElementById('bmDepositPaid').checked = !!activeBooking.deposit_paid;
+  document.getElementById('bmPaymentMethod').value = activeBooking.payment_method || '';
+  document.getElementById('bmUpdatedBy').value = '';
+  document.getElementById('bmResult').innerHTML = '';
+  document.getElementById('bookingModal').classList.add('show');
+}
+function closeBookingModal(){ document.getElementById('bookingModal').classList.remove('show'); activeBooking = null; }
+async function submitBookingRoomAndPayment(){
+  if(!activeBooking) return;
+  const result = document.getElementById('bmResult');
+  const by = document.getElementById('bmUpdatedBy').value.trim();
+  if(!by){ result.innerHTML = '<span class="err-msg">Your name is required.</span>'; return; }
+  const room = document.getElementById('bmRoom').value || null;
+  const depositPaid = document.getElementById('bmDepositPaid').checked;
+  const paymentMethod = document.getElementById('bmPaymentMethod').value || null;
+  result.innerHTML = '<span style="color:var(--muted)">Saving…</span>';
+  try{
+    if(room && room !== activeBooking.room_number){
+      const { error } = await supabaseClient.rpc('assign_booking_room', { p_booking_id: activeBooking.id, p_room_number: room, p_by: by });
+      if(error) throw new Error(error.message);
+    }
+    const { error: payErr } = await supabaseClient.rpc('update_booking_payment', { p_booking_id: activeBooking.id, p_deposit_paid: depositPaid, p_payment_method: paymentMethod });
+    if(payErr) throw new Error(payErr.message);
+    result.innerHTML = '<span style="color:var(--green);font-weight:700">&#10003; Saved</span>';
+    showToast('Booking updated');
+    setTimeout(()=>{ closeBookingModal(); loadAll(); }, 500);
+  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not save')+'</span>'; }
 }
 
 // -- Bookings tab helpers: staff dropdown, nights picker, returning-guest lookup, dirty tracking --
@@ -1172,7 +1304,17 @@ function onBkAddedByChange(){
 function onBkServiceChange(){
   const isRoom = document.getElementById('bkService').value === 'Room / Accommodation';
   document.getElementById('bkNightsWrap').style.display = isRoom ? 'block' : 'none';
+  if(isRoom) populateBkRoomDropdown();
   markBookingDirty();
+}
+function populateBkRoomDropdown(){
+  const sel = document.getElementById('bkRoom');
+  if(!sel) return;
+  const prev = sel.value;
+  const free = (state.rooms||[]).filter(r=>r.status==='Vacant').sort((a,b)=>(a.room_number||'').localeCompare(b.room_number||'',undefined,{numeric:true}));
+  sel.innerHTML = '<option value="">— Assign later —</option>' +
+    free.map(r=>`<option value="${esc(r.room_number)}">${esc(r.room_number)}</option>`).join('');
+  if(prev) sel.value = prev;
 }
 function getBookingAddedBy(){
   const sel = document.getElementById('bkAddedBy');
@@ -1215,10 +1357,15 @@ async function submitBooking(){
   const phone = document.getElementById('bkPhone').value.trim();
   const result = document.getElementById('bkResult');
   if(!name || !phone){ result.innerHTML = '<span class="err-msg">Name and phone are required.</span>'; return; }
+  const addedBy = getBookingAddedBy();
+  if(!addedBy){ result.innerHTML = '<span class="err-msg">Select "Your name (staff)" before saving.</span>'; return; }
   result.innerHTML = '<span style="color:var(--muted)">Saving…</span>';
   const service = document.getElementById('bkService').value;
   const isRoom = service === 'Room / Accommodation';
   const nights = isRoom ? (parseInt(document.getElementById('bkNights').value) || 1) : null;
+  const roomNumber = isRoom ? (document.getElementById('bkRoom').value || null) : null;
+  const depositPaid = isRoom ? document.getElementById('bkDepositPaid').checked : false;
+  const paymentMethod = isRoom ? (document.getElementById('bkPaymentMethod').value || null) : null;
   let notes = document.getElementById('bkNotes').value.trim();
   if(isRoom){ notes = 'Nights: ' + nights + (notes ? ' | ' + notes : ''); }
   try{
@@ -1228,17 +1375,23 @@ async function submitBooking(){
       p_booking_date: document.getElementById('bkDate').value || null,
       p_party_size: document.getElementById('bkParty').value || '',
       p_notes: notes || null,
-      p_added_by: getBookingAddedBy() || 'Reception',
-      p_source: 'Reception Dashboard'
+      p_added_by: addedBy || 'Reception',
+      p_source: 'Reception Dashboard',
+      p_room_number: roomNumber,
+      p_deposit_paid: depositPaid,
+      p_payment_method: paymentMethod,
+      p_status: 'pending'
     });
     if(error) throw new Error(error.message);
-    result.innerHTML = '<span style="color:var(--green);font-weight:700">&#10003; Booking added'+(data&&data.custId?': '+data.custId:'')+'</span>';
+    result.innerHTML = '<span style="color:var(--green);font-weight:700">&#10003; Booking added'+(data&&data.custId?': '+data.custId:'')+(roomNumber?' &middot; '+esc(roomNumber):'')+'</span>';
     showToast('Booking added for ' + name);
     ['bkName','bkPhone','bkParty','bkNotes','bkLookup','bkAddedByOther'].forEach(id=>document.getElementById(id).value='');
     document.getElementById('bkLookupResult').innerHTML = '';
     document.getElementById('bkAddedBy').value = '';
     document.getElementById('bkAddedByOtherWrap').style.display = 'none';
     document.getElementById('bkNightsWrap').style.display = 'none';
+    document.getElementById('bkDepositPaid').checked = false;
+    document.getElementById('bkPaymentMethod').value = '';
     bookingDirty = false;
     document.getElementById('bookingUnsavedBanner').classList.remove('show');
     loadAll();
@@ -1441,7 +1594,37 @@ function setActingAs(initials){
   document.getElementById('actingAsNote').style.display = state.actingAs ? 'none' : 'block';
   applyActingAsToForms();
 }
-function onActingAsChange(){ setActingAs(document.getElementById('actingAsSelect').value); }
+async function onActingAsChange(){
+  const sel = document.getElementById('actingAsSelect');
+  const chosen = sel.value;
+  if(!chosen){ setActingAs(''); return; }
+  const staffMember = (state.staff||[]).find(s=>s.initials===chosen);
+  const displayName = staffMember ? staffMember.full_name : chosen;
+  try{
+    const { data: hasPin, error: hasErr } = await supabaseClient.rpc('staff_has_pin', { p_initials: chosen });
+    if(hasErr) throw new Error(hasErr.message);
+    if(!hasPin){
+      const p1 = prompt('First time selecting your name, ' + displayName + '. Set a PIN (4+ digits) so nobody else can log activity under your name:');
+      if(!p1){ sel.value = state.actingAs || ''; return; }
+      const p2 = prompt('Confirm your PIN:');
+      if(p1 !== p2){ showToast('PINs did not match — try again'); sel.value = state.actingAs || ''; return; }
+      const { data: setOk, error: setErr } = await supabaseClient.rpc('set_staff_pin', { p_initials: chosen, p_new_pin: p1 });
+      if(setErr || !setOk){ showToast('Could not set PIN — try again'); sel.value = state.actingAs || ''; return; }
+      showToast('PIN set for ' + displayName);
+      setActingAs(chosen);
+    } else {
+      const pin = prompt('Enter your PIN, ' + displayName + ':');
+      if(pin === null){ sel.value = state.actingAs || ''; return; }
+      const { data: ok, error: verErr } = await supabaseClient.rpc('verify_staff_pin', { p_initials: chosen, p_pin: pin });
+      if(verErr){ showToast('Could not verify PIN right now'); sel.value = state.actingAs || ''; return; }
+      if(!ok){ showToast('Wrong PIN'); sel.value = state.actingAs || ''; return; }
+      setActingAs(chosen);
+    }
+  }catch(e){
+    showToast('PIN check failed: ' + (e.message||'try again'));
+    sel.value = state.actingAs || '';
+  }
+}
 function applyActingAsToForms(){
   const s = (state.staff||[]).find(x=>x.initials===state.actingAs);
   const name = s ? s.full_name : '';
@@ -1549,39 +1732,85 @@ function resetTicketForm(){
 // ---------------------------------------------------------------------------
 // CLEANING
 // ---------------------------------------------------------------------------
+const ROOM_ZONES = ['Bedrooms','Bathrooms'];
 function renderZoneReminder(){
   const zone = document.getElementById('clZone').value;
   document.getElementById('zoneReminder').textContent = ZONE_REMINDERS[zone] || '';
+  populateClLocationDropdown();
+}
+function populateClLocationDropdown(){
+  const zone = document.getElementById('clZone').value;
+  const sel = document.getElementById('clLocation');
+  if(!sel) return;
+  const prev = sel.value;
+  if(ROOM_ZONES.includes(zone)){
+    const rooms = (state.rooms||[]).slice().sort((a,b)=>(a.room_number||'').localeCompare(b.room_number||'',undefined,{numeric:true}));
+    sel.innerHTML = '<option value="">— Select room —</option>' + rooms.map(r=>`<option value="${esc(r.room_number)}">${esc(r.room_number)} (${esc(r.status)})</option>`).join('');
+  } else {
+    sel.innerHTML = '<option value="">— Whole zone —</option>' +
+      ['Main entrance','Left wing','Right wing','Ground floor','Upper floor'].map(a=>`<option>${a}</option>`).join('');
+  }
+  if(prev) sel.value = prev;
+}
+function onClResultChange(){
+  const isFail = document.getElementById('clResult').value === 'Fail';
+  document.getElementById('clIssuesLabel').textContent = isFail ? 'Issues found*' : 'Issues found';
 }
 function renderCleaning(){
+  populateClLocationDropdown();
   const todayStr = new Date().toISOString().slice(0,10);
   const todays = state.cleaningLogs.filter(c => c.log_date === todayStr);
   const el = document.getElementById('cleaningToday');
-  el.innerHTML = todays.length ? todays.map(c => `
-    <div style="padding:9px 0;border-bottom:1px solid var(--border-soft);font-size:12.5px;display:flex;justify-content:space-between;gap:8px">
-      <span>${esc(c.zone)}${c.location?': '+esc(c.location):''} <span style="color:var(--text-dim)">(${esc(c.staff_name)||'—'})</span></span>
-      <span class="pill ${c.result==='Pass'?'done':'urgent'}">${esc(c.result)}${c.score?' · '+c.score+'/5':''}</span>
-    </div>`).join('') : '<div class="empty">No checks logged yet today.</div>';
+  el.innerHTML = todays.length ? todays.map(c => {
+    const outstanding = c.result==='Fail' && !c.corrected;
+    return `
+    <div style="padding:9px 0;border-bottom:1px solid var(--border-soft);font-size:12.5px;display:flex;justify-content:space-between;gap:8px;align-items:center${outstanding?';background:rgba(201,63,63,0.06);border-radius:6px;padding-left:8px;padding-right:8px':''}">
+      <span>${esc(c.zone)}${c.location?': '+esc(c.location):''} <span style="color:var(--text-dim)">(${esc(c.staff_name)||'—'})</span>${c.issues_found?'<br><span style="color:var(--text-dim)">'+esc(c.issues_found)+'</span>':''}</span>
+      <span style="display:flex;align-items:center;gap:6px">
+        <span class="pill ${c.result==='Pass'?'done':(outstanding?'urgent':'medium')}">${esc(c.result)}${c.score?' · '+c.score+'/5':''}${outstanding?' · OPEN':' · resolved'}</span>
+        ${outstanding?`<button class="btn small teal" onclick="resolveCleaningRow('${c.id}')">Clear</button>`:''}
+      </span>
+    </div>`;
+  }).join('') : '<div class="empty">No checks logged yet today.</div>';
 
+  const openFails = state.cleaningLogs.filter(c=>c.result==='Fail' && !c.corrected).length;
   const checkedZones = new Set(todays.map(c=>c.zone));
   const allZones = Object.keys(ZONE_REMINDERS);
   const missing = allZones.filter(z=>!checkedZones.has(z));
-  document.getElementById('cleaningMissing').innerHTML = missing.length ? missing.map(z=>`<span class="pill medium" style="margin:0 6px 6px 0;display:inline-block">${z}</span>`).join('') : '<div class="empty" style="color:var(--green)">Every zone checked today.</div>';
+  document.getElementById('cleaningMissing').innerHTML =
+    (openFails ? `<div class="pill urgent" style="display:inline-block;margin-bottom:8px">${openFails} unresolved fail${openFails===1?'':'s'} — clear before end of shift</div><br>` : '') +
+    (missing.length ? missing.map(z=>`<span class="pill medium" style="margin:0 6px 6px 0;display:inline-block">${z}</span>`).join('') : '<div class="empty" style="color:var(--green)">Every zone checked today.</div>');
+}
+async function resolveCleaningRow(id){
+  if(!state.actingAs){ showToast('Select "Who are you?" at the top first.'); return; }
+  try{
+    const { error } = await supabaseClient.rpc('resolve_cleaning_issue', { p_id: id, p_resolved_by: state.actingAs });
+    if(error) throw new Error(error.message);
+    showToast('Marked resolved'); loadAll();
+  }catch(e){ showToast('Could not update: ' + (e.message||'error')); }
 }
 
 async function submitCleaningLog(){
   const zone = document.getElementById('clZone').value;
+  const location = document.getElementById('clLocation').value;
+  const staff = document.getElementById('clStaff').value.trim();
+  const scoreVal = document.getElementById('clScore').value;
+  const resultVal = document.getElementById('clResult').value;
+  const issues = document.getElementById('clIssues').value.trim();
   const result = document.getElementById('clResultMsg');
+  if(!staff){ result.innerHTML = '<span class="err-msg">Select which staff member did the check.</span>'; return; }
+  if(!scoreVal){ result.innerHTML = '<span class="err-msg">Score (1–5) is required.</span>'; return; }
+  if(resultVal==='Fail' && !issues){ result.innerHTML = '<span class="err-msg">Describe the issue before logging a Fail.</span>'; return; }
   result.innerHTML = '<span style="color:var(--muted)">Saving…</span>';
   try{
     const { error } = await supabaseClient.rpc('submit_cleaning_log', {
       p_client_id: genClientId(),
       p_zone: zone,
-      p_location: document.getElementById('clLocation').value.trim() || null,
-      p_staff_name: document.getElementById('clStaff').value.trim() || null,
-      p_score: document.getElementById('clScore').value ? parseInt(document.getElementById('clScore').value) : null,
-      p_result: document.getElementById('clResult').value,
-      p_issues_found: document.getElementById('clIssues').value.trim() || null,
+      p_location: location || null,
+      p_staff_name: staff,
+      p_score: parseInt(scoreVal),
+      p_result: resultVal,
+      p_issues_found: issues || null,
       p_corrected: false,
       p_manager_name: document.getElementById('clManager').value.trim() || null,
       p_notes: null
@@ -1589,7 +1818,7 @@ async function submitCleaningLog(){
     if(error) throw new Error(error.message);
     result.innerHTML = '<span style="color:var(--green);font-weight:700">&#10003; Logged</span>';
     showToast(zone + ' checked');
-    ['clLocation','clStaff','clScore','clIssues','clManager'].forEach(id=>document.getElementById(id).value='');
+    ['clLocation','clScore','clIssues','clManager'].forEach(id=>document.getElementById(id).value='');
     loadAll();
   }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not save: has reception_schema.sql been run yet?')+'</span>'; }
 }
@@ -1598,29 +1827,52 @@ async function submitCleaningLog(){
 // TASKS
 // ---------------------------------------------------------------------------
 function renderTaskFilters(){
-  const statuses = [['open','Open'],['in_progress','In Progress'],['done','Done'],['all','All']];
+  const statuses = [['active','Active'],['done','Done'],['cancelled','Cancelled'],['all','All']];
   document.getElementById('taskFilters').innerHTML = statuses.map(([v,l])=>
-    `<button class="filter-chip ${state.taskFilter===v?'active':''}" onclick="setTaskFilter('${v}')">${l}</button>`).join('');
+    `<button class="filter-chip ${state.taskFilter===v?'active':''}" onclick="setTaskFilter('${v}')">${l}</button>`).join('') +
+    `<span class="pill medium" style="margin-left:8px">${(state.tasks||[]).filter(t=>t.status==='open'||t.status==='in_progress').length} open</span>`;
 }
 function setTaskFilter(v){ state.taskFilter=v; renderTaskFilters(); renderTasks(); }
 
 function renderTasks(){
-  let rows = state.tasks;
-  if(state.taskFilter!=='all') rows = rows.filter(t=>t.status===state.taskFilter);
+  const all = state.tasks || [];
+  let rows;
+  if(state.taskFilter==='all') rows = all;
+  else if(state.taskFilter==='active') rows = all.filter(t=>t.status==='open'||t.status==='in_progress');
+  else rows = all.filter(t=>t.status===state.taskFilter);
   const el = document.getElementById('tasksList');
   if(!rows.length){ el.innerHTML = '<div class="empty">Nothing here.</div>'; return; }
-  el.innerHTML = rows.map(t => `
+  // Active tasks first (open/in_progress), archived (done/cancelled) sink to the bottom for reference
+  const active = rows.filter(t=>t.status==='open'||t.status==='in_progress');
+  const archived = rows.filter(t=>t.status==='done'||t.status==='cancelled')
+    .sort((a,b)=> new Date(b.completed_at||b.cancelled_at||b.created_at) - new Date(a.completed_at||a.cancelled_at||a.created_at));
+  const rowHtml = t => `
     <div class="task-row p-${(t.priority||'').toLowerCase()} ${t.status==='done'?'done':''}">
       <div class="tr-top">
         <div><div class="tr-title">${esc(t.title)}</div>${t.description?`<div style="font-size:12px;color:var(--text-dim);margin-top:2px">${esc(t.description)}</div>`:''}</div>
         <span class="pill ${(t.priority||'').toLowerCase()}">${esc(t.priority)}</span>
       </div>
-      <div class="tr-meta">${esc(t.category)||'General'}${t.assigned_to?' · '+esc(t.assigned_to):''}${t.due_at?' · due '+fmtDate(t.due_at):''} · ${fmtDateTime(t.created_at)}</div>
+      <div class="tr-meta">${esc(t.category)||'General'}${t.assigned_to?' · '+esc(t.assigned_to):''}${t.due_at?' · due '+fmtDate(t.due_at):''} · ${fmtDateTime(t.created_at)}
+        ${t.status==='done'?' · done by '+esc(t.completed_by||'—')+' '+fmtDateTime(t.completed_at):''}
+        ${t.status==='cancelled'?' · cancelled by '+esc(t.cancelled_by||'—')+' '+fmtDateTime(t.cancelled_at):''}</div>
       <div class="task-actions">
         ${t.status==='open' ? `<button class="btn small teal" onclick="setTaskStatus('${t.id}','in_progress')">Start</button>` : ''}
-        ${t.status!=='done' ? `<button class="btn small" onclick="setTaskStatus('${t.id}','done')">Mark Done</button>` : `<button class="btn small ghost" onclick="setTaskStatus('${t.id}','open')">Reopen</button>`}
+        ${t.status!=='done' && t.status!=='cancelled' ? `<button class="btn small" onclick="setTaskStatus('${t.id}','done')">Mark Done</button>` : ''}
+        ${t.status==='done' ? `<button class="btn small ghost" onclick="setTaskStatus('${t.id}','open')">Reopen</button>` : ''}
+        ${t.status!=='done' && t.status!=='cancelled' ? `<button class="btn small ghost" onclick="cancelTaskRow('${t.id}')">Cancel</button>` : ''}
       </div>
-    </div>`).join('');
+    </div>`;
+  el.innerHTML = active.map(rowHtml).join('') +
+    (archived.length ? `<div style="margin-top:18px;padding-top:10px;border-top:1px solid var(--border-soft);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Archive</div>` + archived.map(rowHtml).join('') : '');
+}
+async function cancelTaskRow(id){
+  if(!confirm('Cancel this task? It stays in the archive but is marked cancelled, not done.')) return;
+  if(!state.actingAs){ showToast('Select "Who are you?" at the top first.'); return; }
+  try{
+    const { error } = await supabaseClient.rpc('cancel_reception_task', { p_id: id, p_by: state.actingAs });
+    if(error) throw new Error(error.message);
+    loadAll();
+  }catch(e){ showToast('Could not cancel: ' + (e.message||'error')); }
 }
 async function setTaskStatus(id, status){
   if(status === 'done' && !state.actingAs){
@@ -1634,27 +1886,57 @@ async function setTaskStatus(id, status){
   }catch(e){ showToast('Could not update: ' + (e.message||'error')); }
 }
 
+let taskTemplatesCache = [];
+async function loadTaskTemplates(){
+  try{
+    const { data, error } = await supabaseClient.from('task_templates').select('*').eq('active', true).order('sort_order');
+    if(error) throw new Error(error.message);
+    taskTemplatesCache = data || [];
+    renderTaskTemplates();
+  }catch(e){ console.log('task_templates:', e.message); }
+}
+function renderTaskTemplates(){
+  const el = document.getElementById('taskTemplates');
+  if(!el) return;
+  if(!taskTemplatesCache.length){ el.innerHTML = ''; return; }
+  el.innerHTML = taskTemplatesCache.map(t => `<button class="btn small ghost" onclick="quickAddTask('${t.id}')">+ ${esc(t.title)}</button>`).join('');
+}
+async function quickAddTask(templateId){
+  const createdBy = document.getElementById('tsCreatedBy').value.trim() || state.actingAs;
+  if(!createdBy){ showToast('Select "Who are you?" at the top first.'); return; }
+  try{
+    const { error } = await supabaseClient.rpc('create_task_from_template', { p_template_id: templateId, p_created_by: createdBy });
+    if(error) throw new Error(error.message);
+    showToast('Task added');
+    loadAll();
+  }catch(e){ showToast('Could not add: ' + (e.message||'error')); }
+}
+
 async function submitTask(){
   const title = document.getElementById('tsTitle').value.trim();
+  const description = document.getElementById('tsDescription').value.trim();
+  const createdBy = document.getElementById('tsCreatedBy').value.trim();
   const result = document.getElementById('tsResult');
   if(!title){ result.innerHTML = '<span class="err-msg">Title is required.</span>'; return; }
+  if(!description){ result.innerHTML = '<span class="err-msg">Add details before saving: a title alone isn\'t enough for someone else to act on.</span>'; return; }
+  if(!createdBy){ result.innerHTML = '<span class="err-msg">Select who this task is from.</span>'; return; }
   result.innerHTML = '<span style="color:var(--muted)">Saving…</span>';
   try{
     const dueVal = document.getElementById('tsDue').value;
     const { error } = await supabaseClient.rpc('create_reception_task', {
       p_client_id: genClientId(),
       p_title: title,
-      p_description: document.getElementById('tsDescription').value.trim() || null,
+      p_description: description,
       p_category: document.getElementById('tsCategory').value,
       p_priority: document.getElementById('tsPriority').value,
       p_assigned_to: document.getElementById('tsAssignedTo').value.trim() || null,
       p_due_at: dueVal ? new Date(dueVal).toISOString() : null,
-      p_created_by: document.getElementById('tsCreatedBy').value.trim() || 'Reception'
+      p_created_by: createdBy
     });
     if(error) throw new Error(error.message);
     result.innerHTML = '<span style="color:var(--green);font-weight:700">&#10003; Added</span>';
     showToast('Task added');
-    ['tsTitle','tsDescription','tsAssignedTo','tsDue','tsCreatedBy'].forEach(id=>document.getElementById(id).value='');
+    ['tsTitle','tsDescription','tsAssignedTo','tsDue'].forEach(id=>document.getElementById(id).value='');
     loadAll();
   }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not add: has reception_schema.sql been run yet?')+'</span>'; }
 }
@@ -1674,8 +1956,11 @@ function populateNoteAuthorDropdown(){
 }
 function renderNoteFilters(){
   const cats = ['all','General','Handover','Guest Preference','Incident','Reminder','Management'];
+  const openCount = (state.notes||[]).filter(n=>!n.archived).length;
   document.getElementById('noteFilters').innerHTML = cats.map(c=>
-    `<button class="filter-chip ${state.noteFilter===c?'active':''}" onclick="setNoteFilter('${c}')">${c==='all'?'All':c}</button>`).join('');
+    `<button class="filter-chip ${state.noteFilter===c?'active':''}" onclick="setNoteFilter('${c}')">${c==='all'?'All':c}</button>`).join('') +
+    `<button class="filter-chip ${state.noteFilter==='__archived__'?'active':''}" onclick="setNoteFilter('__archived__')">Archived</button>` +
+    `<span class="pill medium" style="margin-left:8px">${openCount} open</span>`;
 }
 function setNoteFilter(c){ state.noteFilter=c; renderNoteFilters(); renderNotes(); }
 function renderNotes(){
@@ -1684,9 +1969,13 @@ function renderNotes(){
   if(!filterEl) return;
   renderNoteFilters();
   let rows = state.notes || [];
-  if(state.noteFilter!=='all') rows = rows.filter(n=>n.category===state.noteFilter);
+  if(state.noteFilter==='__archived__') rows = rows.filter(n=>n.archived);
+  else{
+    rows = rows.filter(n=>!n.archived);
+    if(state.noteFilter!=='all') rows = rows.filter(n=>n.category===state.noteFilter);
+  }
   const el = document.getElementById('notesList');
-  if(!rows.length){ el.innerHTML = '<div class="empty">No notes yet: add the first one.</div>'; return; }
+  if(!rows.length){ el.innerHTML = '<div class="empty">'+(state.noteFilter==='__archived__'?'Nothing archived yet.':'No notes yet: add the first one.')+'</div>'; return; }
   el.innerHTML = rows.map(n => `
     <div class="task-row">
       <div class="tr-top">
@@ -1694,7 +1983,18 @@ function renderNotes(){
         <span class="pill medium">${esc(n.category)||'General'}</span>
       </div>
       <div class="tr-meta">${esc(n.author)||'Reception'} · ${fmtDateTime(n.created_at)}</div>
+      <div class="task-actions">
+        ${n.archived ? `<button class="btn small ghost" onclick="archiveNoteRow('${n.id}',false)">Restore</button>` : `<button class="btn small ghost" onclick="archiveNoteRow('${n.id}',true)">Mark Closed / Archive</button>`}
+      </div>
     </div>`).join('');
+}
+async function archiveNoteRow(id, archived){
+  try{
+    const { error } = await supabaseClient.rpc('archive_staff_note', { p_id: id, p_archived: archived });
+    if(error) throw new Error(error.message);
+    showToast(archived ? 'Note archived' : 'Note restored');
+    loadAll();
+  }catch(e){ showToast('Could not update: ' + (e.message||'error')); }
 }
 async function submitNote(){
   const body = document.getElementById('ntBody').value.trim();
@@ -1802,12 +2102,8 @@ function openPresentMode(){
   document.getElementById('presentOverlay').classList.add('show');
   if(document.documentElement.requestFullscreen){ document.documentElement.requestFullscreen().catch(()=>{}); }
 }
-function closePresentMode(){
-  document.getElementById('presentOverlay').classList.remove('show');
-  if(document.exitFullscreen && document.fullscreenElement){ document.exitFullscreen().catch(()=>{}); }
-}
-
 loadAll();
+loadTaskTemplates();
 setInterval(loadAll, 60000);
 </script>
 </body>
