@@ -5,16 +5,14 @@
 
   DATA SOURCES
   ------------
-  Supabase (project crvuzkyfrqbfmamegxjx): same project as bar/members/order:
-    Live already:  bookings, bar_customers
-    New (this file, seeded by reception_schema.sql: run it once first):
-                   rooms, reception_tasks, cleaning_logs, staff_members, staff_shifts
-                   + bookings.status / bookings.deposit_paid columns
-
-  Facilities Google Sheet (Apps Script): same backend as facilities-dashboard.html
-  and facilities-report.html. Breakdowns/maintenance tickets live there, not in
-  Supabase, so this dashboard talks to the same API_URL rather than a second,
-  disconnected "facilities_tickets" table.
+  Supabase (project crvuzkyfrqbfmamegxjx): same project as every other
+  dashboard in this system (bar/members/order/facilities), one shared
+  customer/ticket/booking/staff base, nothing routes through Google Apps
+  Script anymore:
+    bookings, bar_customers, rooms, reception_tasks, cleaning_logs,
+    staff (shared with bar-dashboard.html — checking in here works exactly
+    like the Bar Dashboard, same on_duty flag, same staff_shift_log),
+    facilities_tickets, facilities_assets, facilities_projects.
 
   No login system yet (same accepted trade-off as every other dashboard in
   this project): anyone with this URL can use it. Don't link it publicly.
@@ -394,10 +392,14 @@ label.f{ display:block; font-size:10px; color:var(--muted); font-weight:700; let
       <div class="topbar-title"><span class="eyebrow" id="topEyebrow">Front Desk</span><span id="topTitle">Today</span></div>
     </div>
     <div class="topbar-right">
+      <select id="actingAsSelect" onchange="onActingAsChange()" style="background:var(--card,#181818);color:var(--text,#f2f2f2);border:1px solid var(--border,#2a2a2a);border-radius:6px;padding:6px 10px;font-size:12px;max-width:170px">
+        <option value="">Who are you?</option>
+      </select>
       <span class="last-refresh" id="lastRefresh">Loading…</span>
       <button class="refresh-btn" onclick="loadAll()">&#8635; Refresh</button>
     </div>
   </div>
+  <div class="note-box gold" id="actingAsNote" style="display:none;margin:0 20px 10px">Select your name above once — it fills in "reported by" / "taken by" / "staff" fields automatically across this dashboard, and everything you log here tallies onto your profile on the Manager Dashboard.</div>
 
   <div class="main">
 
@@ -523,22 +525,17 @@ label.f{ display:block; font-size:10px; color:var(--muted); font-weight:700; let
 
     <!-- ============ STAFF ON SHIFT ============ -->
     <div class="tab-content" id="tab-staff">
-      <div class="note-box teal">Front-desk shift log: every clock-in and clock-out is timestamped here. This is the same roster and log a future <b>Manager Dashboard</b> will read from, so keep names consistent (pick from the list where possible instead of retyping).</div>
+      <div class="note-box teal">Shared staff roster — the same one used by the Bar Dashboard and Manager Dashboard. Check in here to start a reception shift; your activity (bookings taken, tasks completed, cleaning checks) tallies onto your profile on the Manager Dashboard automatically.</div>
       <div class="two-col">
         <div class="card">
           <div class="card-title"><span class="live-dot"></span> On Shift Now</div>
           <div class="room-grid" id="onShiftGrid"><div class="loading">Loading…</div></div>
         </div>
         <div class="card">
-          <div class="card-title">&#8901; Clock In</div>
+          <div class="card-title">&#8901; Check In</div>
           <label class="f">Staff member</label>
-          <select id="ciExisting" onchange="onCiExistingChange()"><option value="">Select from roster</option></select>
-          <label class="f">Or type a name (adds them to the roster)</label>
-          <input type="text" id="ciName" placeholder="Full name">
-          <label class="f">Role</label>
-          <select id="ciRole"><option>Reception</option><option>Housekeeping</option><option>Bar</option><option>Kitchen/Canteen</option><option>Security</option><option>Maintenance</option><option>Management</option><option>Other</option></select>
-          <label class="f">Checked in by (optional)</label><input type="text" id="ciBy" placeholder="Supervisor name">
-          <button class="btn teal" onclick="submitClockIn()">&#8901; Clock In</button>
+          <select id="ciExisting"><option value="">Select your name…</option></select>
+          <button class="btn teal" onclick="submitClockIn()">&#8901; Check In</button>
           <div id="ciResult" class="result-msg"></div>
         </div>
       </div>
@@ -579,7 +576,8 @@ label.f{ display:block; font-size:10px; color:var(--muted); font-weight:700; let
             <option value="High">High: today</option>
             <option value="Urgent">Urgent: safety issue</option>
           </select>
-          <label class="f">Reported by</label><input type="text" id="tkReportedBy" placeholder="Your name">
+          <label class="f">Reported by</label>
+          <select id="tkReportedBy"><option value="">Select your name…</option></select>
           <button class="btn danger" onclick="submitTicket()">+ Report Issue</button>
           <div id="tkResult" class="result-msg"></div>
         </div>
@@ -600,7 +598,8 @@ label.f{ display:block; font-size:10px; color:var(--muted); font-weight:700; let
           </select>
           <div id="zoneReminder" class="note-box gold"></div>
           <label class="f">Specific location (room/area)</label><input type="text" id="clLocation" placeholder="e.g. Room 4, or leave blank for whole zone">
-          <label class="f">Staff who did the check</label><input type="text" id="clStaff">
+          <label class="f">Staff who did the check</label>
+          <select id="clStaff"><option value="">Select staff…</option></select>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
             <div><label class="f">Result*</label><select id="clResult"><option>Pass</option><option>Fail</option></select></div>
             <div><label class="f">Score (1–5)</label><input type="number" id="clScore" min="1" max="5"></div>
@@ -639,9 +638,11 @@ label.f{ display:block; font-size:10px; color:var(--muted); font-weight:700; let
               <select id="tsPriority"><option>Low</option><option selected>Medium</option><option>High</option><option>Urgent</option></select>
             </div>
           </div>
-          <label class="f">Assign to</label><input type="text" id="tsAssignedTo" placeholder="Leave blank for unassigned">
+          <label class="f">Assign to</label>
+          <select id="tsAssignedTo"><option value="">Leave blank for unassigned</option></select>
           <label class="f">Due</label><input type="date" id="tsDue">
-          <label class="f">Your name</label><input type="text" id="tsCreatedBy">
+          <label class="f">Your name</label>
+          <select id="tsCreatedBy"><option value="">Select staff…</option></select>
           <button class="btn" onclick="submitTask()">+ Add Task</button>
           <div id="tsResult" class="result-msg"></div>
         </div>
@@ -786,10 +787,22 @@ const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNydnV6a3lmcnFiZm1hbWVneGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MzI5NjQsImV4cCI6MjEwMDAwODk2NH0.gMsv3yvw6plDCherA2YdU4UgWRMXUc9H1Hr_IdR9GxA';
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// Facilities Google Sheet / Apps Script: same deployment as
-// facilities-dashboard.html and facilities-report.html. Breakdown tickets
-// live here, not in Supabase.
-const FACILITIES_API_URL = 'https://script.google.com/macros/s/AKfycbxdXWHqohz78kNcgtFrI_dVO6k5s6SqFL4wd-c00OB4xCfbFg4TrFyPwd2VGYz4j3Ry/exec';
+// Facilities is now on the same Supabase project as everything else
+// (facilities_tickets, via fac_submit_ticket / fac_update_ticket_status),
+// not a separate Google Sheet. Tickets reported here now show up live on
+// facilities-dashboard.html, facilities-report.html, and the
+// manager-dashboard.html Facilities tab.
+function cap_(s){ return s ? s.charAt(0).toUpperCase()+s.slice(1) : s; }
+function statusToLabel_(s){ return s==='closed' ? 'Complete' : s==='in_progress' ? 'In Progress' : 'Open'; }
+function mapTicket_(t){
+  return {
+    ticketId: t.id, timestamp: t.created_at, location: t.location,
+    category: t.category || 'Other', description: t.description,
+    priority: cap_(t.urgency || 'medium'), status: statusToLabel_(t.status),
+    reportedByType: cap_(t.reported_via || 'staff'), reporterName: t.reporter_name,
+    reporterContact: t.reporter_contact, verified: t.verified || 'YES'
+  };
+}
 
 // Compound / facility locations for the breakdown report dropdown.
 // Rooms come from the live "rooms" table, not this static list.
@@ -814,9 +827,10 @@ const ZONE_REMINDERS = {
 
 let state = {
   rooms: [], bookings: [], guests: [], tickets: [], tasks: [], cleaningLogs: [],
-  staffRoster: [], shifts: [], notes: [], recognitionPosts: [],
+  staff: [], staffRoster: [], shiftLog: [], notes: [], recognitionPosts: [],
   roomFilter: 'All', bookingFilter: 'All', ticketFilter: 'Open', taskFilter: 'open', noteFilter: 'all',
-  facilitiesOnline: false
+  facilitiesOnline: false,
+  actingAs: (function(){ try{ return localStorage.getItem('reception_acting_as') || ''; }catch(e){ return ''; } })()
 };
 
 function showToast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2500); }
@@ -877,8 +891,8 @@ async function loadAll(){
       supabaseClient.from('bar_customers').select('*').order('first_visit', { ascending: false }).limit(400),
       supabaseClient.from('reception_tasks').select('*').order('created_at', { ascending: false }).limit(150),
       supabaseClient.from('cleaning_logs').select('*').order('created_at', { ascending: false }).limit(200),
-      supabaseClient.from('staff_members').select('*').eq('active', true).order('full_name'),
-      supabaseClient.from('staff_shifts').select('*').order('check_in_at', { ascending: false }).limit(200),
+      supabaseClient.from('staff').select('id, initials, full_name, department, role, active, on_duty, on_duty_since, slot').eq('active', true).order('slot'),
+      supabaseClient.from('staff_shift_log').select('*').order('created_at', { ascending: false }).limit(200),
       supabaseClient.from('staff_notes').select('*').order('created_at', { ascending: false }).limit(200),
       supabaseClient.from('recognition_posts').select('*').eq('active', true).order('created_at', { ascending: false }).limit(100)
     ]);
@@ -888,8 +902,8 @@ async function loadAll(){
     if(guestsRes.error) console.log('bar_customers:', guestsRes.error.message);
     if(tasksRes.error) console.log('reception_tasks:', tasksRes.error.message);
     if(cleaningRes.error) console.log('cleaning_logs:', cleaningRes.error.message);
-    if(staffRes.error) console.log('staff_members:', staffRes.error.message);
-    if(shiftsRes.error) console.log('staff_shifts:', shiftsRes.error.message);
+    if(staffRes.error) console.log('staff:', staffRes.error.message);
+    if(shiftsRes.error) console.log('staff_shift_log:', shiftsRes.error.message);
     if(notesRes.error) console.log('staff_notes:', notesRes.error.message);
     if(recognitionRes.error) console.log('recognition_posts:', recognitionRes.error.message);
 
@@ -898,8 +912,9 @@ async function loadAll(){
     state.guests = guestsRes.data || [];
     state.tasks = tasksRes.data || [];
     state.cleaningLogs = cleaningRes.data || [];
-    state.staffRoster = staffRes.data || [];
-    state.shifts = shiftsRes.data || [];
+    state.staff = staffRes.data || [];
+    state.staffRoster = state.staff; // legacy alias, some render helpers still key off this name
+    state.shiftLog = shiftsRes.data || [];
     state.notes = notesRes.data || [];
     state.recognitionPosts = recognitionRes.data || [];
 
@@ -914,6 +929,10 @@ async function loadAll(){
     renderCleaning();
     renderStaffRosterOptions(); renderOnShift(); renderShiftLog();
     populateBookingStaffDropdown();
+    populateActingAsDropdown();
+    populateStaffAttributionDropdowns();
+    applyActingAsToForms();
+    document.getElementById('actingAsNote').style.display = state.actingAs ? 'none' : 'block';
     renderNotes();
     renderRecognition();
 
@@ -929,26 +948,24 @@ async function loadAll(){
 function updateNavBadges(){
   const openTasks = state.tasks.filter(t=>t.status!=='done').length;
   const openTickets = state.tickets.filter(t=>t.status!=='Complete').length;
-  const onShift = state.shifts.filter(s=>!s.check_out_at).length;
+  const onShift = (state.staff||[]).filter(s=>s.on_duty).length;
   const tb = document.getElementById('badgeTasks'); tb.textContent = openTasks; tb.classList.toggle('zero', openTasks===0);
   const kb = document.getElementById('badgeTickets'); kb.textContent = openTickets; kb.classList.toggle('zero', openTickets===0);
   const sb = document.getElementById('badgeStaff'); sb.textContent = onShift; sb.classList.toggle('zero', onShift===0);
 }
 
 // ---------------------------------------------------------------------------
-// FACILITIES (Google Sheet / Apps Script: separate backend, same as
-// facilities-dashboard.html)
+// FACILITIES (Supabase: same project/tables as facilities-dashboard.html)
 // ---------------------------------------------------------------------------
 async function loadFacilities(){
   const note = document.getElementById('facStatusNote');
   try{
-    const res = await fetch(FACILITIES_API_URL + '?action=getFacilitiesData&t=' + Date.now());
-    const data = await res.json();
-    if(!data.success) throw new Error(data.error || 'Unknown error');
-    state.tickets = data.tickets || data.openSorted || [];
+    const { data, error } = await supabaseClient.from('facilities_tickets').select('*').order('created_at', { ascending: false });
+    if(error) throw new Error(error.message);
+    state.tickets = (data||[]).map(mapTicket_);
     state.facilitiesOnline = true;
     note.className = 'note-box teal';
-    note.innerHTML = 'Connected to the Facilities system: the same Google Sheet used by the Facilities Dashboard. Tickets reported here appear there instantly, and vice versa.';
+    note.innerHTML = 'Connected to the Facilities system: the same Supabase tables used by the Facilities Dashboard. Tickets reported here appear there instantly, and vice versa.';
   }catch(e){
     state.tickets = [];
     state.facilitiesOnline = false;
@@ -1125,11 +1142,27 @@ function populateBookingStaffDropdown(){
   const sel = document.getElementById('bkAddedBy');
   if(!sel) return;
   const prev = sel.value;
-  const roster = state.staffRoster.slice().sort((a,b)=>(a.full_name||'').localeCompare(b.full_name||''));
+  const roster = (state.staff||[]).slice().sort((a,b)=>(a.full_name||'').localeCompare(b.full_name||''));
   sel.innerHTML = '<option value="">— Select staff —</option>' +
-    roster.map(s=>`<option value="${esc(s.full_name)}">${esc(s.full_name)} (${esc(s.role)})</option>`).join('') +
+    roster.map(s=>`<option value="${esc(s.initials)}">${esc(s.full_name)} (${esc(s.role||s.department)})</option>`).join('') +
     '<option value="__other__">Other / not on list…</option>';
-  if(prev) sel.value = prev;
+  sel.value = prev || state.actingAs || '';
+}
+
+// Same shared roster, same "initials" value, for every other place staff
+// get attributed to something: reporting a breakdown, logging a cleaning
+// check, and assigning/creating a task. All feed the Manager Dashboard
+// Staff Profile tally.
+function populateStaffAttributionDropdowns(){
+  const roster = (state.staff||[]).slice().sort((a,b)=>(a.full_name||'').localeCompare(b.full_name||''));
+  const opts = '<option value="">Select staff…</option>' + roster.map(s=>`<option value="${esc(s.initials)}">${esc(s.full_name)}</option>`).join('');
+  ['tkReportedBy','clStaff','tsAssignedTo','tsCreatedBy'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(!el || el.tagName !== 'SELECT') return;
+    const prev = el.value;
+    el.innerHTML = opts;
+    el.value = prev || (id==='tsCreatedBy' ? state.actingAs : '') || '';
+  });
 }
 function onBkAddedByChange(){
   const sel = document.getElementById('bkAddedBy');
@@ -1295,87 +1328,127 @@ async function submitVipInterest(){
 // ---------------------------------------------------------------------------
 // STAFF ON SHIFT
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// STAFF ON SHIFT — shared "staff" table + "staff_shift_log", same as the
+// Bar Dashboard, so anyone can check in at Reception and it shows up
+// everywhere (Manager Dashboard Staff Profile tallies it automatically).
+// ---------------------------------------------------------------------------
 function renderStaffRosterOptions(){
   const sel = document.getElementById('ciExisting');
   const prev = sel.value;
-  const onShiftIds = new Set(state.shifts.filter(s=>!s.check_out_at).map(s=>s.staff_id));
-  const roster = state.staffRoster.slice().sort((a,b)=>(a.full_name||'').localeCompare(b.full_name||''));
-  sel.innerHTML = '<option value="">Select from roster</option>' +
-    roster.map(s => `<option value="${esc(s.id)}" data-role="${esc(s.role)}" ${onShiftIds.has(s.id)?'disabled':''}>${esc(s.full_name)}${onShiftIds.has(s.id)?' (on shift)':''}</option>`).join('');
+  const roster = (state.staff||[]).filter(s=>!s.on_duty).slice().sort((a,b)=>(a.full_name||'').localeCompare(b.full_name||''));
+  sel.innerHTML = '<option value="">Select your name…</option>' +
+    roster.map(s => `<option value="${esc(s.initials)}">${esc(s.full_name)} (${esc(s.role||s.department||'Staff')})</option>`).join('');
   if(prev) sel.value = prev;
 }
 
-function onCiExistingChange(){
-  const sel = document.getElementById('ciExisting');
-  const opt = sel.selectedOptions[0];
-  if(!opt || !opt.value){ return; }
-  document.getElementById('ciName').value = opt.textContent.replace(' (on shift)','');
-  const role = opt.dataset.role;
-  if(role){ document.getElementById('ciRole').value = role; }
-}
-
 function renderOnShift(){
-  const open = state.shifts.filter(s=>!s.check_out_at);
+  const open = (state.staff||[]).filter(s=>s.on_duty);
   const grid = document.getElementById('onShiftGrid');
-  if(!open.length){ grid.innerHTML = '<div class="empty">Nobody clocked in right now.</div>'; return; }
+  if(!open.length){ grid.innerHTML = '<div class="empty">Nobody checked in right now.</div>'; return; }
   grid.innerHTML = open.map(s => `
     <div class="shift-card">
-      <div class="sc-name">${esc(s.staff_name)}</div>
-      <div class="sc-role">${esc(s.role)||'Staff'}</div>
-      <div class="sc-time">In: ${fmtTime(s.check_in_at)}</div>
-      <div class="sc-dur">On shift ${fmtDuration(s.check_in_at, null)}</div>
-      <button class="btn small ghost" onclick="submitClockOut('${s.id}')">&#8901; Clock Out</button>
+      <div class="sc-name">${esc(s.full_name)}</div>
+      <div class="sc-role">${esc(s.role||s.department)||'Staff'}</div>
+      <div class="sc-time">In: ${fmtTime(s.on_duty_since)}</div>
+      <div class="sc-dur">On shift ${fmtDuration(s.on_duty_since, null)}</div>
+      <button class="btn small ghost" onclick="submitClockOut('${esc(s.initials)}')">&#8901; Check Out</button>
     </div>`).join('');
 }
 
 function renderShiftLog(){
-  const todayStr = new Date().toISOString().slice(0,10);
-  const todays = state.shifts.filter(s => s.shift_date === todayStr || fmtDate(s.check_in_at) === new Date().toLocaleDateString('en-GB'));
+  const todayStr = new Date().toLocaleDateString('en-GB');
+  const todays = (state.shiftLog||[]).filter(s => fmtDate(s.created_at) === todayStr);
   const body = document.getElementById('shiftLogBody');
   if(!todays.length){ body.innerHTML = '<tr><td colspan="7" class="empty">No shifts logged yet today.</td></tr>'; return; }
-  body.innerHTML = todays.map(s => `
+  // Pair each Check In with its matching Check Out (same staff_id, next chronological entry) for duration display.
+  const asc = todays.slice().sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+  const rows = [];
+  const openIns = {};
+  asc.forEach(s => {
+    if(s.action === 'Check In'){ openIns[s.staff_id] = s; rows.push({ in: s, out: null }); }
+    else if(s.action === 'Check Out' && openIns[s.staff_id]){
+      const row = rows.find(r => r.in === openIns[s.staff_id]);
+      if(row) row.out = s;
+      delete openIns[s.staff_id];
+    }
+  });
+  body.innerHTML = rows.slice().reverse().map(r => `
     <tr>
-      <td><strong>${esc(s.staff_name)}</strong></td>
-      <td style="font-size:11px">${esc(s.role)||'—'}</td>
-      <td style="font-size:11px">${fmtTime(s.check_in_at)}</td>
-      <td style="font-size:11px">${s.check_out_at ? fmtTime(s.check_out_at) : '—'}</td>
-      <td style="font-size:11px">${fmtDuration(s.check_in_at, s.check_out_at)}</td>
-      <td>${s.check_out_at ? '<span class="pill done">Off shift</span>' : '<span class="pill occupied">On shift</span>'}</td>
-      <td>${!s.check_out_at ? `<button class="btn small ghost" onclick="submitClockOut('${s.id}')">Clock Out</button>` : ''}</td>
+      <td><strong>${esc(r.in.name)}</strong></td>
+      <td style="font-size:11px">${esc(r.in.department)||'—'}</td>
+      <td style="font-size:11px">${fmtTime(r.in.created_at)}</td>
+      <td style="font-size:11px">${r.out ? fmtTime(r.out.created_at) : '—'}</td>
+      <td style="font-size:11px">${fmtDuration(r.in.created_at, r.out ? r.out.created_at : null)}</td>
+      <td>${r.out ? '<span class="pill done">Off shift</span>' : '<span class="pill occupied">On shift</span>'}</td>
+      <td></td>
     </tr>`).join('');
 }
 
 async function submitClockIn(){
-  const existingId = document.getElementById('ciExisting').value;
-  const typedName = document.getElementById('ciName').value.trim();
-  const existingOpt = existingId ? document.getElementById('ciExisting').selectedOptions[0] : null;
-  const name = typedName || (existingOpt ? existingOpt.textContent.replace(' (on shift)','') : '');
+  const initials = document.getElementById('ciExisting').value;
   const result = document.getElementById('ciResult');
-  if(!name){ result.innerHTML = '<span class="err-msg">Select or type a staff name.</span>'; return; }
-  result.innerHTML = '<span style="color:var(--muted)">Clocking in…</span>';
+  if(!initials){ result.innerHTML = '<span class="err-msg">Select your name first.</span>'; return; }
+  const s = (state.staff||[]).find(x=>x.initials===initials);
+  result.innerHTML = '<span style="color:var(--muted)">Checking in…</span>';
   try{
-    const { error } = await supabaseClient.rpc('clock_in', {
-      p_client_id: genClientId(),
-      p_staff_name: name,
-      p_role: document.getElementById('ciRole').value,
-      p_checked_in_by: document.getElementById('ciBy').value.trim() || null
-    });
+    const { error } = await supabaseClient.rpc('set_staff_on_duty', { p_initials: initials, p_on_duty: true });
     if(error) throw new Error(error.message);
-    result.innerHTML = '<span style="color:var(--green);font-weight:700">&#10003; Clocked in</span>';
-    showToast(name + ' clocked in');
-    document.getElementById('ciName').value=''; document.getElementById('ciBy').value='';
+    if(s){
+      await supabaseClient.rpc('log_staff_shift', { p_staff_id: s.id, p_name: s.full_name, p_department: 'Reception', p_action: 'Check In', p_source: 'Reception Dashboard' });
+    }
+    result.innerHTML = '<span style="color:var(--green);font-weight:700">&#10003; Checked in</span>';
+    showToast((s?s.full_name:initials) + ' checked in');
     document.getElementById('ciExisting').value='';
+    if(!state.actingAs) setActingAs(initials);
     loadAll();
-  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not clock in: has reception_schema.sql been run yet?')+'</span>'; }
+  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not check in')+'</span>'; }
 }
 
-async function submitClockOut(shiftId){
+async function submitClockOut(initials){
+  const s = (state.staff||[]).find(x=>x.initials===initials);
   try{
-    const { error } = await supabaseClient.rpc('clock_out', { p_shift_id: shiftId, p_checked_out_by: null, p_notes: null });
+    const { error } = await supabaseClient.rpc('set_staff_on_duty', { p_initials: initials, p_on_duty: false });
     if(error) throw new Error(error.message);
-    showToast('Clocked out');
+    if(s){
+      await supabaseClient.rpc('log_staff_shift', { p_staff_id: s.id, p_name: s.full_name, p_department: 'Reception', p_action: 'Check Out', p_source: 'Reception Dashboard' });
+    }
+    showToast('Checked out');
     loadAll();
-  }catch(e){ showToast('Could not clock out: ' + (e.message||'error')); }
+  }catch(e){ showToast('Could not check out: ' + (e.message||'error')); }
+}
+
+// ---------------------------------------------------------------------------
+// ACTING AS — one global "who's using this tablet right now" selector.
+// Fills in every "reported by / taken by / staff" field across the
+// dashboard automatically, and is what every activity tally on the
+// Manager Dashboard Staff Profile is keyed on.
+// ---------------------------------------------------------------------------
+function populateActingAsDropdown(){
+  const sel = document.getElementById('actingAsSelect');
+  if(!sel) return;
+  const prev = state.actingAs || '';
+  const roster = (state.staff||[]).slice().sort((a,b)=>(a.full_name||'').localeCompare(b.full_name||''));
+  sel.innerHTML = '<option value="">Who are you?</option>' +
+    roster.map(s => `<option value="${esc(s.initials)}">${esc(s.full_name)}${s.on_duty?' &#9679;':''}</option>`).join('');
+  sel.value = prev;
+}
+function setActingAs(initials){
+  state.actingAs = initials || '';
+  try{ localStorage.setItem('reception_acting_as', state.actingAs); }catch(e){}
+  const sel = document.getElementById('actingAsSelect');
+  if(sel) sel.value = state.actingAs;
+  document.getElementById('actingAsNote').style.display = state.actingAs ? 'none' : 'block';
+  applyActingAsToForms();
+}
+function onActingAsChange(){ setActingAs(document.getElementById('actingAsSelect').value); }
+function applyActingAsToForms(){
+  const s = (state.staff||[]).find(x=>x.initials===state.actingAs);
+  const name = s ? s.full_name : '';
+  ['tkReportedBy','clStaff','tsCreatedBy','bkAddedBy'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el && state.actingAs) el.value = state.actingAs;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1409,9 +1482,8 @@ function renderTickets(){
 }
 async function setTicketStatus(ticketId, status){
   try{
-    const res = await fetch(FACILITIES_API_URL + '?action=updateTicketStatus&ticketId=' + encodeURIComponent(ticketId) + '&status=' + encodeURIComponent(status) + '&t=' + Date.now());
-    const data = await res.json();
-    if(!data.success) throw new Error(data.error || 'Unknown error');
+    const { error } = await supabaseClient.rpc('fac_update_ticket_status', { p_ticket_id: ticketId, p_status: status });
+    if(error) throw new Error(error.message);
     showToast('Ticket updated');
     loadFacilities();
   }catch(e){ showToast('Could not update: ' + (e.message||'error')); }
@@ -1447,50 +1519,19 @@ async function submitTicket(){
   if(!location || !description){ result.innerHTML = '<span class="err-msg">Location and description are required.</span>'; return; }
   if(isOther && !otherWhere){ result.innerHTML = '<span class="err-msg">Please describe exactly where the issue is.</span>'; return; }
   if(isOther){ description = 'Location: ' + otherWhere + ' — ' + description; }
+  if(tkPhotoDataUrl){ description += ' (photo taken by reporter — not yet auto-attached, ask them to send it directly if needed)'; }
   result.innerHTML = '<span style="color:var(--muted)">Sending…</span>';
   const clientId = genClientId();
-  const basePayload = {
-    action: 'submitTicket', location, category: 'Other', description,
-    priority: document.getElementById('tkUrgency').value,
-    reportedByType: 'Staff',
-    reporterName: document.getElementById('tkReportedBy').value.trim() || 'Reception',
-    clientId
-  };
   try{
-    let data;
-    if(tkPhotoDataUrl){
-      // Best-effort: send as JSON POST so the photo can travel with the ticket.
-      // Requires the Facilities Apps Script to accept a POST with a photoData
-      // field (base64 data URL) — if the deployed script doesn't support this
-      // yet, this call will fail and we automatically fall back to the plain
-      // text-only report below so the ticket still gets through.
-      try{
-        const res = await fetch(FACILITIES_API_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({ ...basePayload, photoData: tkPhotoDataUrl })
-        });
-        data = await res.json();
-        if(!data.success) throw new Error(data.error || 'Unknown error');
-      }catch(photoErr){
-        console.log('Photo upload not supported by Facilities backend yet, sending without photo:', photoErr.message);
-        const qs = Object.entries(basePayload).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
-        const res2 = await fetch(FACILITIES_API_URL + '?' + qs);
-        data = await res2.json();
-        if(!data.success) throw new Error(data.error || 'Unknown error');
-        result.innerHTML = '<span style="color:var(--amber);font-weight:700">&#10003; Reported (photo not attached: ask a manager to enable photo uploads on the Facilities system)'+(data.ticketId?': '+data.ticketId:'')+'</span>';
-        showToast('Breakdown reported (without photo)');
-        resetTicketForm();
-        loadFacilities();
-        return;
-      }
-    } else {
-      const qs = Object.entries(basePayload).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
-      const res = await fetch(FACILITIES_API_URL + '?' + qs);
-      data = await res.json();
-      if(!data.success) throw new Error(data.error || 'Unknown error');
-    }
-    result.innerHTML = '<span style="color:var(--green);font-weight:700">&#10003; Reported'+(data.ticketId?': '+data.ticketId:'')+'</span>';
+    const { data, error } = await supabaseClient.rpc('fac_submit_ticket', {
+      p_client_id: clientId, p_location: location, p_category: 'Other',
+      p_priority: document.getElementById('tkUrgency').value, p_description: description,
+      p_reported_via: 'staff',
+      p_reporter_name: document.getElementById('tkReportedBy').value.trim() || 'Reception',
+      p_reporter_contact: null
+    });
+    if(error) throw new Error(error.message);
+    result.innerHTML = '<span style="color:var(--green);font-weight:700">&#10003; Reported'+(data&&data.id?': '+data.id.slice(0,8).toUpperCase():'')+'</span>';
     showToast('Breakdown reported');
     resetTicketForm();
     loadFacilities();
@@ -1582,8 +1623,12 @@ function renderTasks(){
     </div>`).join('');
 }
 async function setTaskStatus(id, status){
+  if(status === 'done' && !state.actingAs){
+    showToast('Select "Who are you?" at the top first, so this task credits the right person.');
+    return;
+  }
   try{
-    const { error } = await supabaseClient.rpc('update_task_status', { p_id: id, p_status: status, p_completed_by: null });
+    const { error } = await supabaseClient.rpc('update_task_status', { p_id: id, p_status: status, p_completed_by: status==='done' ? state.actingAs : null });
     if(error) throw new Error(error.message);
     loadAll();
   }catch(e){ showToast('Could not update: ' + (e.message||'error')); }
