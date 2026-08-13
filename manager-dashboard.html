@@ -128,6 +128,7 @@ textarea{min-height:60px;resize:vertical;}
     <button class="tab" data-sec="cocktails" onclick="switchSection('cocktails',this)">COCKTAILS</button>
     <button class="tab" data-sec="barcanteen" onclick="switchSection('barcanteen',this)">BAR &amp; CANTEEN</button>
     <button class="tab" data-sec="facilities" onclick="switchSection('facilities',this)">FACILITIES</button>
+    <button class="tab" data-sec="reception" onclick="switchSection('reception',this)">RECEPTION</button>
     <button class="tab" data-sec="members" onclick="switchSection('members',this)">MEMBERS</button>
     <button class="tab" data-sec="shifts" onclick="switchSection('shifts',this)">SHIFTS</button>
     <button class="tab" data-sec="summaries" onclick="switchSection('summaries',this)">SHIFT SUMMARIES</button>
@@ -188,6 +189,10 @@ textarea{min-height:60px;resize:vertical;}
 
   <!-- PAYROLL & STAFF -->
   <div class="section" id="sec-payroll">
+    <div class="card">
+      <div class="card-title">&#128100; STAFF PROFILE <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(bar sales + reception activity, tallied automatically from every station — checking in at Reception works exactly like checking in at the Bar)</span></div>
+      <div id="staffProfileGrid" class="metrics-grid"><div class="empty">Loading...</div></div>
+    </div>
     <div class="two-col">
       <div class="card">
         <div class="card-title">&#127942; STAFF MASTER</div>
@@ -276,6 +281,26 @@ textarea{min-height:60px;resize:vertical;}
       <div id="facProjects"><div class="empty">Loading...</div></div>
     </div>
     <div style="font-size:11px;color:var(--muted);margin-top:-8px;margin-bottom:16px">Read-only — edit tickets and projects on the Facilities dashboard directly.</div>
+  </div>
+
+  <!-- RECEPTION (read-only) -->
+  <div class="section" id="sec-reception">
+    <div class="metrics-grid" id="recMetrics"><div class="loading">Loading...</div></div>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title">&#128197; TODAY'S BOOKINGS</div>
+        <div id="recBookings"><div class="empty">Loading...</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">&#128273; ROOM STATUS</div>
+        <div id="recRooms"><div class="empty">Loading...</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">&#128203; OPEN RECEPTION TASKS</div>
+      <div id="recTasks"><div class="empty">Loading...</div></div>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:-8px;margin-bottom:16px">Read-only — manage bookings, rooms, and tasks on the Reception dashboard directly.</div>
   </div>
 
   <!-- MEMBERS (read-only) -->
@@ -369,7 +394,7 @@ async function loadData(){
   document.getElementById('lastRefresh').textContent = 'Refreshing...';
   try{
     const [staffRes, expensesRes, budgetsRes, ticketsRes, projectsRes, custRes, shiftLogRes, settingsRes,
-           costingRes, spendRes, payrollRes, payrollEstRes, summariesRes] = await Promise.all([
+           costingRes, spendRes, payrollRes, payrollEstRes, summariesRes, bookingsRes, roomsRes, recTasksRes, activityRes] = await Promise.all([
       supabaseClient.from('staff').select(STAFF_COLUMNS).order('slot'),
       supabaseClient.from('expenses').select('*').order('created_at', { ascending: false }).limit(150),
       supabaseClient.from('budgets').select('*'),
@@ -382,10 +407,14 @@ async function loadData(){
       supabaseClient.rpc('get_spend_by_category_this_month'),
       supabaseClient.rpc('get_payroll_records', { p_limit: 30 }),
       supabaseClient.rpc('get_monthly_payroll_gross_estimate'),
-      supabaseClient.rpc('get_shift_summaries_for_manager', { p_limit: 30 })
+      supabaseClient.rpc('get_shift_summaries_for_manager', { p_limit: 30 }),
+      supabaseClient.from('bookings').select('*').order('created_at', { ascending: false }).limit(100),
+      supabaseClient.from('rooms').select('room_number, status, current_guest_name').order('room_number'),
+      supabaseClient.from('reception_tasks').select('*').neq('status','done').order('created_at', { ascending: false }).limit(50),
+      supabaseClient.rpc('get_staff_activity_summary')
     ]);
     [staffRes, expensesRes, budgetsRes, ticketsRes, projectsRes, custRes, shiftLogRes, settingsRes,
-     costingRes, spendRes, payrollRes, payrollEstRes, summariesRes].forEach(r => { if(r.error) throw new Error(r.error.message); });
+     costingRes, spendRes, payrollRes, payrollEstRes, summariesRes, bookingsRes, roomsRes, recTasksRes, activityRes].forEach(r => { if(r.error) throw new Error(r.error.message); });
 
     const staff = staffRes.data.map(s => ({
       staffId: s.id, fullName: s.full_name, department: s.department, role: s.role,
@@ -404,10 +433,15 @@ async function loadData(){
     const spendByCategoryThisMonth = spendRes.data || {};
     const budgets = budgetsRes.data.map(b => ({ category: b.category, target: parseFloat(b.target_ghs)||0, actual: parseFloat(spendByCategoryThisMonth[b.category]||0) }));
 
+    // Bug fix: facilities_tickets.status/urgency are stored lowercase
+    // ('open'/'in_progress'/'closed', 'urgent'/'high'/...), but this was
+    // comparing against 'Complete' and 'Urgent' -- those never matched, so
+    // Open Facilities Tickets / urgent counts always read 0 here even when
+    // real open/urgent tickets existed.
     const facTickets = ticketsRes.data || [];
     const facilities = {
-      openTickets: facTickets.filter(t => t.status !== 'Complete' && t.verified !== 'DISMISSED').length,
-      urgentOpen: facTickets.filter(t => t.status !== 'Complete' && t.urgency === 'Urgent' && t.verified !== 'DISMISSED').length,
+      openTickets: facTickets.filter(t => t.status !== 'closed' && t.verified !== 'DISMISSED').length,
+      urgentOpen: facTickets.filter(t => t.status !== 'closed' && (t.urgency||'').toLowerCase() === 'urgent' && t.verified !== 'DISMISSED').length,
       unverified: facTickets.filter(t => t.verified === 'NO' || t.verified === null).length,
       projects: (projectsRes.data||[]).map(p => ({ title: p.title, status: p.status }))
     };
@@ -431,8 +465,19 @@ async function loadData(){
     bar.crmError = null;
     const cocktails = (costingRes.data||{}).cocktails || {};
 
+    const todayISO = new Date().toISOString().slice(0,10);
+    const bookings = bookingsRes.data || [];
+    const rooms = roomsRes.data || [];
+    const reception = {
+      todaysBookings: bookings.filter(b => (b.check_in && b.check_in.slice(0,10)===todayISO) || (b.created_at && b.created_at.slice(0,10)===todayISO))
+        .map(b => ({ guestName: b.guest_name, roomType: b.room_type, checkIn: b.check_in, status: b.status || 'pending' })),
+      rooms: rooms.map(r => ({ roomNumber: r.room_number, status: r.status, guestName: r.current_guest_name })),
+      openTasks: (recTasksRes.data||[]).map(t => ({ title: t.title, priority: t.priority, category: t.category }))
+    };
+
     data = {
-      staff, expenses, budgets, facilities, members, shiftLog, onShift, settings,
+      staff, expenses, budgets, facilities, members, shiftLog, onShift, settings, reception,
+      staffActivity: activityRes.data || [],
       bar, cocktails, spendByCategoryThisMonth,
       payrollRuns: payrollRes.data || [],
       totalMonthlyPayrollGrossEstimate: payrollEstRes.data || 0,
@@ -456,6 +501,7 @@ function renderAll(){
   renderExpensesTable();
   renderExpenseCategoryBreakdown();
   renderStaffList();
+  renderStaffProfiles();
   populateStaffSelects();
   renderPayrollTable();
   renderBudgets();
@@ -463,6 +509,7 @@ function renderAll(){
   renderCocktails();
   renderBarCanteen();
   renderFacilities();
+  renderReception();
   renderMembers();
   renderShifts();
   renderSummaries();
@@ -589,6 +636,43 @@ function populateStaffSelects(){
   prSel.innerHTML = '<option value="">All active staff (one full period)</option>' + staff.map(s=>`<option value="${s.staffId}">${s.fullName} (${s.department})</option>`).join('');
   const shSel = document.getElementById('shStaff');
   shSel.innerHTML = '<option value="">Select staff...</option>' + staff.map(s=>`<option value="${s.staffId}" data-name="${s.fullName}" data-dept="${s.department}" data-initials="${s.initials||''}">${s.fullName} (${s.department})</option>`).join('');
+}
+
+// ---------- STAFF PROFILE (bar + reception activity tally) ----------
+const TASK_CATEGORY_ICON = { 'Cleaning':'&#129529;', 'Guest Request':'&#128100;', 'Maintenance':'&#128295;', 'Admin':'&#128203;', 'General':'&#128204;', 'Booking':'&#128197;' };
+
+function renderStaffProfiles(){
+  const activity = data.staffActivity || [];
+  const el = document.getElementById('staffProfileGrid');
+  if(!activity.length){ el.innerHTML = '<div class="empty">No staff on the roster yet.</div>'; return; }
+  const sorted = activity.slice().sort((a,b)=>{
+    if(!!b.on_duty !== !!a.on_duty) return (b.on_duty?1:0)-(a.on_duty?1:0);
+    return (a.full_name||'').localeCompare(b.full_name||'');
+  });
+  el.innerHTML = sorted.map(s => {
+    const catEntries = Object.entries(s.tasks_by_category || {});
+    const catHtml = catEntries.length ? catEntries.map(([cat,cnt]) => `<span class="onshift-pill" style="border-color:var(--teal);color:var(--teal)">${TASK_CATEGORY_ICON[cat]||''} ${cat}: ${cnt}</span>`).join('') : '';
+    const totalActivity = (s.bookings_taken||0) + (s.tasks_completed||0) + (s.cleaning_logs_submitted||0) + (s.tickets_closed||0) + (s.bar_orders_handled||0);
+    return `
+    <div class="metric-card ${s.on_duty?'green':''}" style="text-align:left;cursor:default">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div style="font-weight:800;font-size:14px">${s.full_name}${s.on_duty?' <span style="color:var(--green);font-size:10px">&#9679; ON DUTY</span>':''}</div>
+          <div style="font-size:11px;color:var(--muted)">${s.initials||'—'} · ${s.department||'—'} · ${s.role||'—'}</div>
+        </div>
+        <div style="text-align:right"><div class="metric-value" style="font-size:18px">${totalActivity}</div><div class="metric-sub">total activity</div></div>
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:11px;color:var(--text-dim)">
+        <span>&#128181; ${fmt(s.bar_revenue_handled)} bar (${s.bar_orders_handled||0} orders)</span>
+        <span>&#128197; ${s.bookings_taken||0} bookings taken</span>
+        <span>&#9989; ${s.tasks_completed||0} tasks done</span>
+        <span>&#129529; ${s.cleaning_logs_submitted||0} cleaning checks</span>
+        <span>&#128295; ${s.tickets_closed||0} tickets closed</span>
+        <span>&#8901; ${s.total_shifts_logged||0} shifts logged</span>
+      </div>
+      ${catHtml ? `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${catHtml}</div>` : ''}
+    </div>`;
+  }).join('');
 }
 
 async function submitAddStaff(){
@@ -726,6 +810,29 @@ function renderFacilities(){
     <div class="metric-card gold"><div class="metric-label">NEEDS VERIFICATION</div><div class="metric-value">${fac.unverified||0}</div><div class="metric-sub">guest-submitted</div></div>`;
   const projects = fac.projects || [];
   document.getElementById('facProjects').innerHTML = projects.length ? projects.map(p=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1a1a1a;font-size:12px"><span>${p.title}</span><span class="pill warn">${p.status}</span></div>`).join('') : '<div class="empty">No projects logged yet.</div>';
+}
+
+// ---------- RECEPTION ----------
+function renderReception(){
+  const rec = data.reception || {};
+  const bookings = rec.todaysBookings || [];
+  const rooms = rec.rooms || [];
+  const occupied = rooms.filter(r=>r.status==='Occupied').length;
+  const tasks = rec.openTasks || [];
+  document.getElementById('recMetrics').innerHTML = `
+    <div class="metric-card green"><div class="metric-label">TODAY'S BOOKINGS</div><div class="metric-value">${bookings.length}</div></div>
+    <div class="metric-card gold"><div class="metric-label">ROOMS OCCUPIED</div><div class="metric-value">${occupied}/${rooms.length||25}</div></div>
+    <div class="metric-card teal"><div class="metric-label">OPEN RECEPTION TASKS</div><div class="metric-value">${tasks.length}</div></div>`;
+  document.getElementById('recBookings').innerHTML = bookings.length ? bookings.map(b=>`
+    <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1a1a1a;font-size:12px"><span>${b.guestName||'—'} · ${b.roomType||'—'}</span><span class="pill warn">${b.status}</span></div>`).join('') : '<div class="empty">No bookings dated for today.</div>';
+  document.getElementById('recRooms').innerHTML = rooms.length ? `
+    <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-bottom:8px">
+      <span>&#128308; Occupied: ${occupied}</span>
+      <span>&#9899; Vacant: ${rooms.filter(r=>r.status==='Vacant').length}</span>
+    </div>` + rooms.filter(r=>r.status==='Occupied').map(r=>`
+    <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1a1a1a;font-size:12px"><span>Room ${r.roomNumber}</span><span>${r.guestName||'—'}</span></div>`).join('') : '<div class="empty">No room data yet.</div>';
+  document.getElementById('recTasks').innerHTML = tasks.length ? tasks.map(t=>`
+    <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1a1a1a;font-size:12px"><span>${t.title}</span><span class="pill warn">${t.priority||'Medium'}</span></div>`).join('') : '<div class="empty">Nothing outstanding.</div>';
 }
 
 // ---------- MEMBERS ----------
