@@ -236,7 +236,7 @@ async function loadAll(){
   try{
     const [menuRes, staffRes] = await Promise.all([
       supabaseClient.from('food_menu').select('item_name, category, price_ghs'),
-      supabaseClient.from('staff').select('*').eq('active', true).order('slot')
+      supabaseClient.from('staff').select('id, initials, full_name, department, role, pay_type, pay_rate, phone, active, on_duty, on_duty_since, working_days, working_hours, slot').eq('active', true).order('slot')
     ]);
     if(menuRes.error) throw new Error(menuRes.error.message);
     if(staffRes.error) throw new Error(staffRes.error.message);
