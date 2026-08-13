@@ -698,7 +698,7 @@ async function loadSupabaseBarData(){
     .sort((a,b) => catRank(a.category) - catRank(b.category));
 
   const staff = staffRes.data.map(s => ({
-    initials: s.initials || s.staff_code || '', name: s.full_name || '',
+    id: s.id, initials: s.initials || s.staff_code || '', name: s.full_name || '',
     workingDays: s.working_days || '', workingHours: s.working_hours || (s.shift_start && s.shift_end ? (s.shift_start + ' – ' + s.shift_end) : ''),
     active: s.active !== false, onDuty: !!s.on_duty
   }));
@@ -781,6 +781,7 @@ async function loadData(){
     renderQuickSellPanel();
     renderTodaysShifts();
     renderOpenTabs();
+    autoClearStaleShiftSummary();
   }catch(e){
     document.getElementById('lastRefresh').textContent = 'Offline — see message above';
     showApiError(e.message || 'Could not load data (unknown error).');
@@ -999,6 +1000,10 @@ async function submitCheckIn(){
   try{
     const { error } = await supabaseClient.rpc('set_staff_on_duty', { p_initials: initials, p_on_duty: true });
     if(error) throw new Error(error.message);
+    const s = (barData.staff||[]).find(x=>x.initials===initials);
+    if(s && s.id){
+      await supabaseClient.rpc('log_staff_shift', { p_staff_id: s.id, p_name: s.name, p_department: 'Bar', p_action: 'Check In', p_source: 'Bar Dashboard' });
+    }
     resultEl.innerHTML = '<span class="flash">&#10003; Checked in.</span>';
     setTimeout(() => { resultEl.innerHTML = ''; }, 4000);
     loadData();
@@ -1009,6 +1014,10 @@ async function toggleOnDuty(initials, newState){
   try{
     const { error } = await supabaseClient.rpc('set_staff_on_duty', { p_initials: initials, p_on_duty: newState });
     if(error) throw new Error(error.message);
+    const s = (barData.staff||[]).find(x=>x.initials===initials);
+    if(s && s.id){
+      await supabaseClient.rpc('log_staff_shift', { p_staff_id: s.id, p_name: s.name, p_department: 'Bar', p_action: newState ? 'Check In' : 'Check Out', p_source: 'Bar Dashboard' });
+    }
     loadData();
   }catch(e){ alert('Could not update on-duty status: ' + e.message); }
 }
@@ -1879,8 +1888,27 @@ Low stock (${lowStock.length}):${lowStock.length ? '\n' + lowStock.map(s=>`  ${s
         <button class="btn" style="background:var(--border);color:var(--text)" onclick="sendShiftSummaryEmail()">&#128231; SEND TO MANAGER — EMAIL</button>
       </div>
       <button class="btn" style="margin-top:8px" onclick="copyShiftSummary()">&#128203; COPY AS TEXT</button>
+      <button class="btn" style="margin-top:8px;background:transparent;border:1px solid var(--border)" onclick="dismissShiftSummary()">&#10005; CLOSE THIS SUMMARY</button>
       <div id="shiftCopyResult" style="margin-top:6px;font-size:11px"></div>
     </div>`;
+  window._shiftSummaryOrderCount = orders.length;
+}
+
+// Fixes: the generated summary used to stay on screen forever (no clear
+// button, and nothing ever emptied #shiftSummaryBody), so it kept showing
+// the previous shift's numbers well into the next one. Staff can now
+// dismiss it manually, and it also clears itself automatically once a
+// fresh (empty) shift has actually started.
+function dismissShiftSummary(){
+  const el = document.getElementById('shiftSummaryBody');
+  if(el) el.innerHTML = '';
+  window._shiftSummaryText = null;
+  window._shiftSummaryOrderCount = null;
+}
+function autoClearStaleShiftSummary(){
+  if(window._shiftSummaryText && (barData.todayOrders||[]).length === 0 && window._shiftSummaryOrderCount){
+    dismissShiftSummary();
+  }
 }
 
 async function renderTodaysShifts(){
