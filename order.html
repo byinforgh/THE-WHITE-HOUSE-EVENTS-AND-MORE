@@ -44,6 +44,10 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 @media(min-width:1300px){.main{max-width:1240px;padding:22px 32px 0;}}
 @media(min-width:1700px){.main{max-width:1520px;padding:26px 40px 0;}}
 
+.loyalty-banner{background:linear-gradient(135deg,#1c1608,#12100c);border:1px solid var(--gold-dim);border-radius:12px;padding:14px 16px;margin:12px 0;font-size:12px;line-height:1.6;color:var(--text-dim);}
+.loyalty-banner b{color:var(--gold);}
+.loyalty-banner .lb-title{font-family:'Syne',sans-serif;font-weight:800;font-size:13px;color:var(--gold);margin-bottom:4px;}
+.loyalty-banner .lb-close{float:right;cursor:pointer;color:var(--muted);font-size:14px;padding:0 4px;}
 .loc-box{margin-bottom:14px;}
 .field-label{font-size:11px;color:var(--text-dim);font-weight:700;letter-spacing:0.5px;margin:10px 0 4px;text-transform:uppercase;}
 .loc-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px;}
@@ -160,6 +164,15 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 </div>
 
 <div class="main">
+  <div class="loyalty-banner" id="loyaltyBanner">
+    <span class="lb-close" onclick="document.getElementById('loyaltyBanner').style.display='none'">&times;</span>
+    <div class="lb-title">&#127942; Earn points every time you order</div>
+    Enter your phone number at checkout and we'll set you up with a <b>free Member ID</b> (like <b>THWGH12</b>) automatically —
+    no forms, no fees. Every order earns you loyalty points toward rewards, and once you have an ID, just enter it next time
+    to skip re-entering your details and see your points balance instantly. Members also get first access to
+    <b>VIP perks and promotions</b> at The White House Events &amp; More.
+  </div>
+
   <div id="locationBox" class="loc-box">
     <div class="field-label">Where is this order for?</div>
     <div class="loc-grid" id="locationGrid"><div class="empty" style="grid-column:1/-1">Loading options…</div></div>
