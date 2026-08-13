@@ -143,9 +143,17 @@
   </form>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-// Fill in once the Facilities Apps Script is deployed (see Code.gs setup notes).
-const API_URL = 'https://script.google.com/macros/s/AKfycbxdXWHqohz78kNcgtFrI_dVO6k5s6SqFL4wd-c00OB4xCfbFg4TrFyPwd2VGYz4j3Ry/exec';
+// Migrated off the old Facilities Google Apps Script backend onto the same
+// Supabase project every other dashboard uses (facilities_assets for the
+// location list, fac_submit_ticket for the write) so tickets raised here
+// show up live on facilities-dashboard.html, reception-dashboard.html, and
+// the manager-dashboard.html Facilities tab, instead of sitting in a
+// disconnected Google Sheet.
+const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNydnV6a3lmcnFiZm1hbWVneGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MzI5NjQsImV4cCI6MjEwMDAwODk2NH0.gMsv3yvw6plDCherA2YdU4UgWRMXUc9H1Hr_IdR9GxA';
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Static fallback list, mirrors the seeded 🏢 Facilities Assets sheet.
 const FALLBACK_LOCATIONS = (function(){
@@ -180,12 +188,11 @@ function populateLocations(list){
 populateLocations(FALLBACK_LOCATIONS);
 
 async function tryLoadLiveLocations(){
-  if(API_URL.indexOf('PASTE_YOUR') === 0) return;
   try{
-    const res = await fetch(API_URL + '?action=getFacilitiesData&t=' + Date.now());
-    const data = await res.json();
-    if(data.success && data.assets && data.assets.length){
-      const active = data.assets.filter(a => a.status !== 'Inactive').map(a => a.location);
+    const { data, error } = await supabaseClient.from('facilities_assets').select('location, status').order('location');
+    if(error) throw error;
+    if(data && data.length){
+      const active = data.filter(a => a.status !== 'Inactive').map(a => a.location);
       populateLocations(active.concat(['Other / Not Listed']));
     }
   }catch(e){ /* keep fallback list */ }
@@ -226,24 +233,21 @@ async function submitReport(){
   btn.disabled = true; spinner.style.display='inline-block'; label.textContent='Sending...';
 
   const clientId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : ('cid-'+Date.now()+'-'+Math.random().toString(36).slice(2));
-  const payload = {
-    action: 'submitTicket',
-    location: document.getElementById('location').value,
-    category: 'Other',
-    description: document.getElementById('description').value.trim(),
-    priority: document.getElementById('priority').value,
-    reportedByType: 'Guest',
-    reporterName: document.getElementById('reporterName').value.trim(),
-    reporterContact: document.getElementById('reporterContact').value.trim(),
-    clientId: clientId
-  };
-  const qs = Object.entries(payload).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
 
   let result = null;
   try{
-    const res = await fetch(API_URL + '?' + qs);
-    result = await res.json();
-    if(!result.success) throw new Error(result.error || 'Unknown error');
+    const { data, error } = await supabaseClient.rpc('fac_submit_ticket', {
+      p_client_id: clientId,
+      p_location: document.getElementById('location').value,
+      p_category: 'Other',
+      p_priority: document.getElementById('priority').value,
+      p_description: document.getElementById('description').value.trim(),
+      p_reported_via: 'guest',
+      p_reporter_name: document.getElementById('reporterName').value.trim() || null,
+      p_reporter_contact: document.getElementById('reporterContact').value.trim() || null
+    });
+    if(error) throw new Error(error.message);
+    result = { success: true, ticketId: data && data.id ? data.id.slice(0,8).toUpperCase() : '' };
   }catch(e){
     console.warn('Report issue:', e);
   }finally{
