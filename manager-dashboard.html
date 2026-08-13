@@ -137,6 +137,7 @@ textarea{min-height:60px;resize:vertical;}
 
   <!-- OVERVIEW -->
   <div class="section active" id="sec-overview">
+    <div id="overviewAlerts"></div>
     <div class="metrics-grid" id="overviewMetrics"><div class="loading">Loading...</div></div>
     <div class="two-col">
       <div class="card">
@@ -475,8 +476,31 @@ async function loadData(){
       openTasks: (recTasksRes.data||[]).map(t => ({ title: t.title, priority: t.priority, category: t.category }))
     };
 
+    // ---- ALERTS: things nobody's watching for unless the manager happens to look ----
+    const alerts = [];
+    const nowMs = now.getTime();
+    facTickets.filter(t => t.status !== 'closed' && (t.urgency||'').toLowerCase() === 'urgent' && t.verified !== 'DISMISSED').forEach(t => {
+      const ageHrs = (nowMs - new Date(t.created_at).getTime()) / 3600000;
+      if(ageHrs >= 2){
+        alerts.push({ level:'urgent', text: 'Urgent ticket open ' + Math.floor(ageHrs) + 'h: ' + (t.title||t.description||t.location||'Untitled') });
+      }
+    });
+    const hourNow = now.getHours();
+    const anyReceptionCheckinToday = shiftLogRes.data.some(l => l.department === 'Reception' && l.action === 'Check In' && l.created_at && l.created_at.slice(0,10)===todayISO);
+    if(hourNow >= 10 && !anyReceptionCheckinToday){
+      alerts.push({ level:'warn', text: 'Nobody has checked in at Reception today, and it is past 10am.' });
+    }
+    const anyBarCheckinToday = shiftLogRes.data.some(l => l.department === 'Bar' && l.action === 'Check In' && l.created_at && l.created_at.slice(0,10)===todayISO);
+    if(hourNow >= 12 && !anyBarCheckinToday){
+      alerts.push({ level:'warn', text: 'Nobody has checked in at the Bar today, and it is past midday.' });
+    }
+    const overdueUnpaidBookings = bookings.filter(b => (b.status==='pending'||b.status==='confirmed') && !b.deposit_paid && b.check_in && new Date(b.check_in) <= now);
+    if(overdueUnpaidBookings.length){
+      alerts.push({ level:'warn', text: overdueUnpaidBookings.length + ' booking(s) at or past check-in date with no deposit/payment recorded.' });
+    }
+
     data = {
-      staff, expenses, budgets, facilities, members, shiftLog, onShift, settings, reception,
+      staff, expenses, budgets, facilities, members, shiftLog, onShift, settings, reception, alerts,
       staffActivity: activityRes.data || [],
       bar, cocktails, spendByCategoryThisMonth,
       payrollRuns: payrollRes.data || [],
@@ -520,6 +544,15 @@ function renderAll(){
 function renderOverview(){
   const bar = data.bar || {}; const fac = data.facilities || {}; const mem = data.members || {};
   const totalExpensesThisMonth = Object.values(data.spendByCategoryThisMonth||{}).reduce((a,b)=>a+parseFloat(b||0),0);
+
+  const alerts = data.alerts || [];
+  const alertsEl = document.getElementById('overviewAlerts');
+  if(alertsEl){
+    alertsEl.innerHTML = alerts.length ? `<div style="margin-bottom:16px">` + alerts.map(a =>
+      `<div style="padding:10px 14px;border-radius:6px;margin-bottom:6px;font-size:13px;font-weight:600;${a.level==='urgent'?'background:#2a1010;color:#ff8a8a;border:1px solid #5a2020':'background:#2a2006;color:var(--gold);border:1px solid var(--gold-dim)'}">&#9888; ${a.text}</div>`
+    ).join('') + `</div>` : '';
+  }
+
   document.getElementById('overviewMetrics').innerHTML = `
     <div class="metric-card gold"><div class="metric-label">BAR/CANTEEN REVENUE TODAY</div><div class="metric-value">${fmt(bar.todayRevenue)}</div><div class="metric-sub">${bar.todayItemCount||0} items sold</div></div>
     <div class="metric-card red"><div class="metric-label">SPEND THIS MONTH</div><div class="metric-value">${fmt(totalExpensesThisMonth)}</div><div class="metric-sub">across all categories</div></div>
