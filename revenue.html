@@ -1,514 +1,444 @@
 <!DOCTYPE html>
 <html lang="en">
-<!--
-  THE WHITE HOUSE EVENTS & MORE — REVENUE & REPORTS (v2.0)
-
-  v2.0 CHANGES:
-  - NEW STAFF TAB: lists everyone who has ever rung up a sale. Click
-    a name to see their lifetime revenue, best single day, best week,
-    best month, and a 14-day trend — backed by two new password-gated
-    Postgres functions (get_staff_list, get_staff_detail).
-  - LOGO added to header, matching every other dashboard.
-  - FULL WIDTH LAYOUT: responsive breakpoints so this uses the screen
-    on tablets/desktops instead of a narrow centered column.
-  - Password unchanged from v1.0 (whgh2026 default) — not touched
-    this session per instruction.
--->
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>The White House Events & More — Revenue & Reports</title>
-<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<title>Revenue & Reports — The White House Events & More</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Space+Mono&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
-:root{--black:#0a0a0a;--surface:#111111;--card:#181818;--border:#2a2a2a;--gold:#f5a623;--gold-dim:#c9861a;--teal:#3fb6a8;--red:#ef4444;--green:#22c55e;--text:#f2f2f2;--text-dim:#b5b5b5;--muted:#888;}
-*{margin:0;padding:0;box-sizing:border-box;}
-body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min-height:100vh;}
-.header{background:var(--surface);border-bottom:1px solid var(--border);padding:16px 24px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:100;flex-wrap:wrap;}
-.brand-logo{height:36px;width:auto;border-radius:6px;display:block;}
-.logo{font-size:18px;font-weight:800;letter-spacing:1px;color:var(--gold);}
+:root{
+  --black:#0b0b0b; --surface:#161616; --card:#1c1c1c; --border:#2a2a2a; --border-soft:#232323;
+  --text:#f2f2f2; --text-dim:#b8b8b8; --muted:#8a8a8a;
+  --gold:#d4af6a; --gold-deep:#a9843f; --green:#5fbf7a; --red:#e07a7a; --teal:#5fb8b8; --pink:#d98bb8; --purple:#9b7fd4;
+}
+*{box-sizing:border-box;}
+body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min-height:100vh;margin:0;}
+.header{display:flex;justify-content:space-between;align-items:center;padding:16px 22px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--black);z-index:5;flex-wrap:wrap;gap:10px;}
+.brand-logo{height:34px;width:auto;border-radius:6px;display:block;}
+.header-left{display:flex;align-items:center;gap:12px;}
+.logo{font-size:16px;font-weight:800;letter-spacing:1px;color:var(--gold);}
 .logo span{color:var(--text-dim);font-weight:400;font-size:11px;display:block;letter-spacing:2px;margin-top:2px;}
-.main{padding:20px 24px;max-width:1200px;margin:0 auto;}
-@media(min-width:1400px){.main{max-width:1600px;padding:24px 40px;}}
-@media(min-width:1800px){.main{max-width:1900px;padding:28px 56px;}}
-.lock-screen{max-width:400px;margin:80px auto;text-align:center;}
-.lock-screen .lock-icon{font-size:44px;margin-bottom:14px;}
-.lock-screen h2{color:var(--gold);font-size:18px;margin-bottom:6px;}
-.lock-screen p{color:var(--text-dim);font-size:12px;margin-bottom:20px;line-height:1.6;}
-.search-input,.select-input{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:12px 14px;color:var(--text);font-size:16px;font-family:'Syne',sans-serif;width:100%;margin-bottom:10px;outline:none;}
-.search-input:focus,.select-input:focus{border-color:var(--gold);}
-.btn{background:var(--gold);color:var(--black);border:none;padding:12px 18px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:800;letter-spacing:1px;font-family:'Syne',sans-serif;width:100%;}
-.btn:hover{background:var(--gold-dim);}
-.btn.secondary{background:var(--border);color:var(--text);}
-.error-msg{color:var(--red);font-size:12px;margin-top:8px;}
-.card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:18px;margin-bottom:16px;}
-.card-title{font-size:11px;font-weight:700;letter-spacing:2px;color:var(--muted);margin-bottom:14px;text-transform:uppercase;display:flex;justify-content:space-between;align-items:center;}
-.tab-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;}
-.tab-pill{background:var(--surface);border:1px solid var(--border);color:var(--text-dim);padding:8px 16px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;font-family:'Syne',sans-serif;}
-.tab-pill.active{background:var(--gold);color:var(--black);border-color:var(--gold);}
-.section-tabs{display:flex;gap:4px;margin-bottom:18px;background:var(--surface);padding:6px;border-radius:8px;border:1px solid var(--border);overflow-x:auto;}
-.section-tab{padding:9px 16px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:700;letter-spacing:0.5px;white-space:nowrap;color:var(--text-dim);border:none;background:none;font-family:'Syne',sans-serif;}
-.section-tab.active{background:var(--gold);color:var(--black);}
-.section{display:none;}
-.section.active{display:block;}
-.metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px;}
-@media(min-width:1400px){.metrics-grid{grid-template-columns:repeat(4,1fr);}}
-.metric-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px;}
-.metric-label{font-size:10px;font-weight:700;letter-spacing:2px;color:var(--muted);margin-bottom:8px;}
-.metric-value{font-size:26px;font-weight:800;font-family:'Space Mono',monospace;color:var(--gold);}
-.two-col{display:grid;grid-template-columns:1.2fr 1fr;gap:16px;}
-@media(max-width:900px){.two-col{grid-template-columns:1fr;}}
-@media(min-width:1600px){.two-col{grid-template-columns:1.6fr 1fr;}}
-table{width:100%;border-collapse:collapse;font-size:12px;}
-th{text-align:left;padding:8px 10px;color:var(--muted);font-weight:700;letter-spacing:1px;border-bottom:1px solid var(--border);font-size:10px;}
-td{padding:7px 10px;border-bottom:1px solid #1a1a1a;}
-.bar-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #1a1a1a;}
-.bar-row:last-child{border-bottom:none;}
-.bar-label{width:120px;font-size:12px;flex-shrink:0;}
-.bar-track{flex:1;background:var(--surface);border-radius:4px;height:18px;position:relative;overflow:hidden;}
-.bar-fill{background:var(--gold);height:100%;border-radius:4px;}
-.bar-value{width:80px;text-align:right;font-family:'Space Mono',monospace;font-size:12px;color:var(--gold);flex-shrink:0;}
-.rank-row{display:flex;align-items:center;gap:12px;padding:9px 4px;border-bottom:1px solid #1a1a1a;cursor:pointer;}
-.rank-row:hover{background:#1c1c1c;}
-.rank-row:last-child{border-bottom:none;}
-.rank-num{font-family:'Space Mono',monospace;font-weight:800;font-size:13px;color:var(--muted);width:20px;flex-shrink:0;}
-.rank-info{flex:1;min-width:0;}
-.rank-name{font-size:12px;font-weight:700;}
-.rank-sub{font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;margin-top:2px;}
-.rank-value{font-family:'Space Mono',monospace;font-weight:700;font-size:12px;color:var(--teal);flex-shrink:0;}
-.empty{text-align:center;padding:24px;color:var(--muted);font-size:12px;}
-.loading{text-align:center;padding:24px;color:var(--muted);font-size:12px;font-family:'Space Mono',monospace;}
-.chart-wrap{overflow-x:auto;}
-.trend-bars{display:flex;align-items:flex-end;gap:6px;height:160px;min-width:100%;padding-top:10px;}
-.trend-col{flex:1;min-width:26px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;}
-.trend-col .tcol-bar{width:100%;background:var(--gold);border-radius:3px 3px 0 0;min-height:2px;}
-.trend-col .tcol-label{font-size:9px;color:var(--muted);margin-top:6px;font-family:'Space Mono',monospace;white-space:nowrap;}
-.trend-col .tcol-value{font-size:9px;color:var(--text-dim);font-family:'Space Mono',monospace;margin-bottom:3px;}
-.summary-item{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:12px 14px;margin-bottom:8px;font-size:12px;}
-.summary-item pre{white-space:pre-wrap;font-family:'Space Mono',monospace;font-size:11px;color:var(--text-dim);margin-top:8px;line-height:1.6;}
-.summary-item .si-head{display:flex;justify-content:space-between;color:var(--text-dim);font-size:11px;}
-.settings-row{display:flex;gap:8px;}
-.back-link{color:var(--teal);font-size:12px;cursor:pointer;margin-bottom:12px;display:inline-block;}
-.staff-detail-card{background:var(--surface);border:1px solid var(--teal);border-radius:8px;padding:16px;margin-bottom:16px;}
+.last-refresh{font-size:11px;color:var(--muted);font-family:'Space Mono',monospace;}
+.refresh-btn,.btn{background:var(--border);border:none;color:var(--text);padding:8px 16px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:700;letter-spacing:0.5px;font-family:'Syne',sans-serif;}
+.btn.gold{background:var(--gold);color:#161616;}
+.btn.ghost{background:transparent;border:1px solid var(--border);}
+.btn.small{padding:5px 10px;font-size:11px;}
+.main{max-width:1180px;margin:0 auto;padding:20px;}
+.gate{max-width:360px;margin:80px auto;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:30px 26px;text-align:center;}
+.gate h1{font-size:17px;color:var(--gold);margin:0 0 6px;}
+.gate p{font-size:12.5px;color:var(--muted);margin:0 0 18px;line-height:1.5;}
+.gate input{width:100%;background:var(--card);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:6px;font-size:14px;font-family:'Space Mono',monospace;text-align:center;letter-spacing:2px;margin-bottom:10px;}
+.gate button{width:100%;background:var(--gold);color:#161616;font-weight:700;border:none;padding:10px;border-radius:6px;cursor:pointer;font-size:13px;letter-spacing:0.5px;}
+.gate .err{color:var(--red);font-size:12px;margin-top:10px;min-height:16px;}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px;}
+.tab-btn{background:var(--surface);border:1px solid var(--border);color:var(--text-dim);padding:8px 16px;border-radius:20px;cursor:pointer;font-size:12px;font-weight:700;letter-spacing:0.5px;font-family:'Syne',sans-serif;}
+.tab-btn.active{background:var(--gold);color:#161616;border-color:var(--gold);}
+.section{display:none;} .section.active{display:block;}
+.filter-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center;}
+.chip{background:var(--surface);border:1px solid var(--border);color:var(--text-dim);padding:6px 13px;border-radius:20px;cursor:pointer;font-size:11.5px;font-weight:700;}
+.chip.active{background:var(--gold);color:#161616;border-color:var(--gold);}
+.metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:20px;}
+.metric-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 16px;}
+.metric-card.gold{border-left:3px solid var(--gold);} .metric-card.pink{border-left:3px solid var(--pink);}
+.metric-card.teal{border-left:3px solid var(--teal);} .metric-card.green{border-left:3px solid var(--green);}
+.metric-card.purple{border-left:3px solid var(--purple);}
+.metric-label{font-size:10.5px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;}
+.metric-value{font-size:20px;font-weight:800;font-family:'Space Mono',monospace;}
+.metric-sub{font-size:11px;color:var(--text-dim);margin-top:4px;}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:18px 20px;margin-bottom:18px;}
+.card-title{font-size:13px;font-weight:700;letter-spacing:0.5px;color:var(--gold);margin-bottom:12px;text-transform:uppercase;display:flex;justify-content:space-between;align-items:center;}
+.scroll-table{overflow-x:auto;}
+table{width:100%;border-collapse:collapse;font-size:12.5px;}
+th{text-align:left;color:var(--muted);font-size:10.5px;letter-spacing:0.5px;text-transform:uppercase;padding:6px 8px;border-bottom:1px solid var(--border);white-space:nowrap;}
+td{padding:7px 8px;border-bottom:1px solid var(--border-soft);white-space:nowrap;}
+tr.clickable{cursor:pointer;} tr.clickable:hover{background:rgba(212,175,106,0.06);}
+.empty{padding:16px;text-align:center;color:var(--muted);font-size:12.5px;}
+.pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10.5px;font-weight:700;}
+.pill.cash{background:#0f2a14;color:var(--green);} .pill.momo{background:#0f1a2a;color:var(--teal);} .pill.unspecified{background:#2a2020;color:var(--muted);}
+.pill.morning{background:#2a2306;color:var(--gold);} .pill.evening{background:#0f1a2a;color:var(--teal);} .pill.night{background:#20101a;color:var(--pink);}
+.bar-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:12px;}
+.bar-label{width:130px;flex-shrink:0;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.bar-track{flex:1;background:var(--card);border-radius:4px;height:18px;overflow:hidden;}
+.bar-fill{height:100%;background:linear-gradient(90deg,var(--gold-deep),var(--gold));}
+.bar-val{width:90px;text-align:right;font-family:'Space Mono',monospace;font-size:11.5px;color:var(--gold);}
+.summary-item{border:1px solid var(--border-soft);border-radius:8px;padding:12px 14px;margin-bottom:10px;}
+.si-head{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:6px;flex-wrap:wrap;gap:6px;}
+.si-head b{color:var(--gold);}
+pre{white-space:pre-wrap;font-family:'Space Mono',monospace;font-size:11.5px;color:var(--text-dim);margin:0;}
+.loading{padding:40px;text-align:center;color:var(--muted);}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:50;align-items:center;justify-content:center;}
+.modal-overlay.show{display:flex;}
+.modal-box{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 24px;max-width:520px;width:92%;max-height:85vh;overflow-y:auto;}
+.modal-title{display:flex;justify-content:space-between;align-items:center;font-size:15px;font-weight:800;color:var(--gold);margin-bottom:14px;}
+.close-x{cursor:pointer;color:var(--muted);font-size:20px;line-height:1;}
+.pw-row{display:flex;gap:8px;margin-top:10px;}
+.pw-row input{flex:1;background:var(--card);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-size:12.5px;}
 </style>
 </head>
 <body>
 
-<div class="header">
-  <img src="logo.jpg" alt="" class="brand-logo" onerror="this.style.display='none'">
-  <div class="logo">THE WHITE HOUSE EVENTS & MORE <span>REVENUE &amp; REPORTS</span></div>
+<div id="gateScreen" class="gate">
+  <h1>Revenue &amp; Reports</h1>
+  <p>Management access only. Enter the revenue password.</p>
+  <input type="password" id="gatePw" placeholder="Password" autocomplete="off" onkeydown="if(event.key==='Enter')checkGate()">
+  <button onclick="checkGate()">Unlock</button>
+  <div class="err" id="gateErr"></div>
 </div>
 
-<div class="main">
-  <div id="lockScreen" class="lock-screen">
-    <div class="lock-icon">&#128274;</div>
-    <h2>Enter Revenue Password</h2>
-    <p>This page shows real GHS figures — daily/weekly/monthly sales, staff performance, and shift summaries. Not shared publicly.</p>
-    <input class="search-input" id="passwordInput" type="password" placeholder="Password" onkeydown="if(event.key==='Enter')tryUnlock()">
-    <button class="btn" onclick="tryUnlock()">UNLOCK</button>
-    <div class="error-msg" id="lockError"></div>
+<div id="appScreen" style="display:none">
+  <div class="header">
+    <div class="header-left">
+      <img src="logo.jpg" alt="The White House Events & More" class="brand-logo" onerror="this.style.display='none'">
+      <div class="logo">THE WHITE HOUSE EVENTS &amp; MORE <span>REVENUE &amp; REPORTS</span></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:14px">
+      <span class="last-refresh" id="lastRefresh">Loading...</span>
+      <button class="btn ghost small" onclick="openPwModal()">Change Password</button>
+      <button class="refresh-btn" onclick="loadAll()">&#8635; REFRESH</button>
+    </div>
   </div>
 
-  <div id="reportArea" style="display:none">
-    <div class="section-tabs">
-      <button class="section-tab active" data-sec="overview" onclick="switchSection('overview',this)">OVERVIEW</button>
-      <button class="section-tab" data-sec="staff" onclick="switchSection('staff',this)">STAFF</button>
-      <button class="section-tab" data-sec="settings" onclick="switchSection('settings',this)">SETTINGS</button>
+  <div class="main">
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="overview" onclick="switchSec('overview')">Overview</button>
+      <button class="tab-btn" data-tab="trend" onclick="switchSec('trend')">Revenue Trend</button>
+      <button class="tab-btn" data-tab="day" onclick="switchSec('day')">Day Drill-Down</button>
+      <button class="tab-btn" data-tab="staff" onclick="switchSec('staff')">Staff Performance</button>
+      <button class="tab-btn" data-tab="cocktails" onclick="switchSec('cocktails')">Cocktails</button>
+      <button class="tab-btn" data-tab="shifts" onclick="switchSec('shifts')">Shift Summaries</button>
     </div>
 
     <!-- OVERVIEW -->
     <div class="section active" id="sec-overview">
-      <div class="tab-row" id="periodTabs"></div>
-
-      <div class="metrics-grid" id="summaryMetrics"><div class="loading">Loading...</div></div>
-
+      <div class="filter-row" id="overviewRangeChips"></div>
+      <div class="metrics-grid" id="overviewMetrics"><div class="loading">Loading...</div></div>
       <div class="card">
-        <div class="card-title">REVENUE TREND</div>
-        <div class="tab-row" id="trendTabs"></div>
-        <div class="chart-wrap"><div class="trend-bars" id="trendChart"><div class="loading">Loading...</div></div></div>
-      </div>
-
-      <div id="dayDetailArea" style="display:none"></div>
-
-      <div class="two-col">
-        <div class="card">
-          <div class="card-title">STAFF PERFORMANCE <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(this period, by revenue — click a name for full history)</span></div>
-          <div id="staffBody"><div class="empty">Loading...</div></div>
-        </div>
-        <div class="card">
-          <div class="card-title">CASH VS MOMO</div>
-          <div id="paymentBody"><div class="empty">Loading...</div></div>
-        </div>
-      </div>
-
-      <div class="two-col">
-        <div class="card">
-          <div class="card-title">&#128293; TOP SELLERS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(this period, by qty)</span></div>
-          <div id="topSellersBody"><div class="empty">Loading...</div></div>
-        </div>
-        <div class="card">
-          <div class="card-title">&#128173; LOWEST SELLERS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(this period, by qty — needs at least 1 sale)</span></div>
-          <div id="lowestSellersBody"><div class="empty">Loading...</div></div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">&#128274; SHIFT SUMMARIES <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(every summary generated on the bar dashboard is saved here automatically)</span></div>
-        <div id="shiftSummariesBody"><div class="empty">Loading...</div></div>
+        <div class="card-title">Cash vs MoMo Split</div>
+        <div id="paymentSplitBars"></div>
       </div>
     </div>
 
-    <!-- STAFF -->
+    <!-- TREND -->
+    <div class="section" id="sec-trend">
+      <div class="filter-row">
+        <span style="font-size:11px;color:var(--muted);margin-right:4px">Bucket:</span>
+        <div id="trendBucketChips"></div>
+      </div>
+      <div class="card">
+        <div class="card-title" id="trendTitle">Revenue Trend</div>
+        <div class="scroll-table"><table><thead><tr><th>Period</th><th>Revenue</th><th>Transactions</th></tr></thead><tbody id="trendBody"></tbody></table></div>
+      </div>
+    </div>
+
+    <!-- DAY DRILL-DOWN -->
+    <div class="section" id="sec-day">
+      <div class="filter-row">
+        <input type="date" id="dayPicker" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-size:13px">
+        <button class="btn gold" onclick="loadDayTransactions()">Load Day</button>
+      </div>
+      <div class="card">
+        <div class="card-title">Transactions</div>
+        <div class="scroll-table"><table><thead><tr><th>Time</th><th>Item</th><th>Qty</th><th>Unit Price</th><th>Total</th><th>Staff</th><th>Payment</th><th>Customer</th></tr></thead><tbody id="dayBody"></tbody></table></div>
+      </div>
+    </div>
+
+    <!-- STAFF PERFORMANCE -->
     <div class="section" id="sec-staff">
-      <div id="staffListView">
-        <div class="card">
-          <div class="card-title">&#129489;&#8205;&#128188; ALL STAFF <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(lifetime, by revenue — click a name for their full record)</span></div>
-          <div id="staffListBody"><div class="empty">Loading...</div></div>
-        </div>
+      <div class="filter-row" id="staffRangeChips"></div>
+      <div class="card">
+        <div class="card-title">Staff Leaderboard (selected range)</div>
+        <div class="scroll-table"><table><thead><tr><th>Staff</th><th>Revenue</th><th>Orders</th><th>Items Sold</th></tr></thead><tbody id="staffPerfBody"></tbody></table></div>
+        <div style="font-size:10.5px;color:var(--muted);margin-top:8px">Click a row for that staff member's full daily/weekly/monthly/quarterly/half-year/1-2-3 year breakdown.</div>
       </div>
-      <div id="staffDetailView" style="display:none">
-        <span class="back-link" onclick="showStaffList()">&larr; Back to all staff</span>
-        <div id="staffDetailBody"></div>
+      <div class="card">
+        <div class="card-title">All-Time Leaderboard</div>
+        <div class="scroll-table"><table><thead><tr><th>Staff</th><th>All-Time Revenue</th><th>All-Time Orders</th></tr></thead><tbody id="staffListBody"></tbody></table></div>
       </div>
     </div>
 
-    <!-- SETTINGS -->
-    <div class="section" id="sec-settings">
+    <!-- COCKTAILS -->
+    <div class="section" id="sec-cocktails">
+      <div class="metrics-grid" style="margin-bottom:14px">
+        <div class="metric-card pink"><div class="metric-label">Cocktail Revenue Today</div><div class="metric-value" id="ckToday">—</div></div>
+        <div class="metric-card gold"><div class="metric-label">Cocktail Revenue All-Time</div><div class="metric-value" id="ckAll">—</div></div>
+      </div>
       <div class="card">
-        <div class="card-title">SETTINGS</div>
-        <div style="font-size:11px;color:var(--text-dim);margin-bottom:10px">Change the revenue password. Whoever knows the current one can set a new one — there's no separate account per staff member yet.</div>
-        <div class="settings-row">
-          <input class="search-input" id="newPasswordInput" type="password" placeholder="New password" style="margin:0">
-          <button class="btn secondary" style="width:auto;padding:12px 20px" onclick="changePassword()">CHANGE</button>
-        </div>
-        <div class="error-msg" id="settingsMsg"></div>
+        <div class="card-title">Top Sellers — Revenue vs True Cost of Goods</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px">Cost pulled live from Bar Stock cost-per-unit &times; recipe quantities.</div>
+        <div class="scroll-table"><table><thead><tr><th>Item</th><th>Qty Sold</th><th>Revenue</th><th>COGS Used</th><th>Margin</th></tr></thead><tbody id="costingBody"></tbody></table></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Cocktails Breakdown</div>
+        <div class="scroll-table"><table><thead><tr><th>Item</th><th>Category</th><th>Qty</th><th>Revenue</th><th>Ingredient Cost</th><th>Margin</th></tr></thead><tbody id="cocktailTopBody"></tbody></table></div>
+      </div>
+    </div>
+
+    <!-- SHIFT SUMMARIES -->
+    <div class="section" id="sec-shifts">
+      <div class="card">
+        <div class="card-title">Shift Summaries</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px">Same record the Bar Dashboard generates and the Manager Dashboard reads.</div>
+        <div id="summariesBody"></div>
       </div>
     </div>
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<div class="modal-overlay" id="staffModal">
+  <div class="modal-box">
+    <div class="modal-title"><span id="staffModalTitle">Staff</span><span class="close-x" onclick="closeStaffModal()">&times;</span></div>
+    <div id="staffModalBody"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="pwModal">
+  <div class="modal-box">
+    <div class="modal-title"><span>Change Revenue Password</span><span class="close-x" onclick="document.getElementById('pwModal').classList.remove('show')">&times;</span></div>
+    <div class="pw-row"><input type="password" id="pwCurrent" placeholder="Current password"></div>
+    <div class="pw-row"><input type="password" id="pwNew" placeholder="New password"></div>
+    <button class="btn gold" style="margin-top:12px;width:100%" onclick="changePassword()">Update Password</button>
+    <div id="pwResult" style="font-size:12px;margin-top:10px"></div>
+  </div>
+</div>
+
 <script>
 const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNydnV6a3lmcnFiZm1hbWVneGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MzI5NjQsImV4cCI6MjEwMDAwODk2NH0.gMsv3yvw6plDCherA2YdU4UgWRMXUc9H1Hr_IdR9GxA';
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-let revenuePassword = null;
-let activePeriod = '7d';
-let activeTrendBucket = 'day';
+let REV_PW = '';
+try{ REV_PW = sessionStorage.getItem('revenue_pw') || ''; }catch(e){}
 
-const PERIODS = [
-  {key:'today', label:'Today'},
-  {key:'7d', label:'This Week'},
-  {key:'30d', label:'This Month'},
-  {key:'90d', label:'Quarter'},
-  {key:'180d', label:'6 Months'},
-  {key:'365d', label:'1 Year'},
-  {key:'730d', label:'2 Years'},
-  {key:'1095d', label:'3 Years'}
-];
-const TREND_BUCKETS = [
-  {key:'day', label:'Daily', periods:30},
-  {key:'week', label:'Weekly', periods:12},
-  {key:'month', label:'Monthly', periods:12},
-  {key:'quarter', label:'Quarterly', periods:8},
-  {key:'half_year', label:'Half-Yearly', periods:6},
-  {key:'year', label:'Yearly', periods:3}
-];
+function fmt(n){ return '\u20B5' + (parseFloat(n)||0).toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
-function periodRange(key){
-  const end = new Date(Date.now() + 24*3600*1000);
-  let start;
-  if(key === 'today'){
-    start = new Date(); start.setHours(0,0,0,0);
-  }else{
-    const days = parseInt(key);
-    start = new Date(Date.now() - days*24*3600*1000);
-  }
-  return { start: start.toISOString(), end: end.toISOString() };
-}
-
-function switchSection(sec, btn){
-  document.querySelectorAll('.section-tab').forEach(t=>t.classList.remove('active'));
-  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
-  btn.classList.add('active');
-  document.getElementById('sec-'+sec).classList.add('active');
-  if(sec === 'staff') loadStaffList();
-}
-
-async function tryUnlock(){
-  const pw = document.getElementById('passwordInput').value;
-  const errEl = document.getElementById('lockError');
-  if(!pw){ errEl.textContent = 'Enter the password.'; return; }
-  errEl.textContent = 'Checking...';
+async function checkGate(){
+  const pw = document.getElementById('gatePw').value;
+  const errEl = document.getElementById('gateErr');
+  errEl.textContent = 'Checking…';
   try{
     const { data, error } = await supabaseClient.rpc('check_revenue_password', { p_password: pw });
     if(error) throw new Error(error.message);
-    if(!data){ errEl.textContent = 'Incorrect password.'; return; }
-    revenuePassword = pw;
-    document.getElementById('lockScreen').style.display = 'none';
-    document.getElementById('reportArea').style.display = 'block';
-    renderPeriodTabs();
-    renderTrendTabs();
+    if(!data){ errEl.textContent = 'Wrong password.'; return; }
+    REV_PW = pw;
+    try{ sessionStorage.setItem('revenue_pw', pw); }catch(e){}
+    document.getElementById('gateScreen').style.display = 'none';
+    document.getElementById('appScreen').style.display = 'block';
     loadAll();
-  }catch(e){
-    errEl.textContent = 'Could not check password: ' + e.message;
-  }
+  }catch(e){ errEl.textContent = e.message || 'Could not check password.'; }
 }
-
-async function changePassword(){
-  const newPw = document.getElementById('newPasswordInput').value;
-  const msgEl = document.getElementById('settingsMsg');
-  if(!newPw){ msgEl.textContent = 'Enter a new password first.'; msgEl.style.color = 'var(--red)'; return; }
-  msgEl.textContent = 'Saving...'; msgEl.style.color = 'var(--text-dim)';
-  try{
-    const { data, error } = await supabaseClient.rpc('set_revenue_password', { p_current_password: revenuePassword, p_new_password: newPw });
-    if(error) throw new Error(error.message);
-    revenuePassword = newPw;
-    document.getElementById('newPasswordInput').value = '';
-    msgEl.textContent = 'Password changed. Use the new one next time.'; msgEl.style.color = 'var(--green)';
-  }catch(e){
-    msgEl.textContent = e.message; msgEl.style.color = 'var(--red)';
-  }
-}
-
-function renderPeriodTabs(){
-  const row = document.getElementById('periodTabs');
-  row.innerHTML = '';
-  PERIODS.forEach(p => {
-    const btn = document.createElement('button');
-    btn.className = 'tab-pill' + (activePeriod===p.key?' active':'');
-    btn.textContent = p.label;
-    btn.onclick = () => { activePeriod = p.key; renderPeriodTabs(); loadAll(); };
-    row.appendChild(btn);
+if(REV_PW){
+  // verify silently on load, drop back to gate if it's stale
+  supabaseClient.rpc('check_revenue_password', { p_password: REV_PW }).then(({data})=>{
+    if(data){
+      document.getElementById('gateScreen').style.display = 'none';
+      document.getElementById('appScreen').style.display = 'block';
+      loadAll();
+    }
   });
 }
 
-function renderTrendTabs(){
-  const row = document.getElementById('trendTabs');
-  row.innerHTML = '';
-  TREND_BUCKETS.forEach(b => {
-    const btn = document.createElement('button');
-    btn.className = 'tab-pill' + (activeTrendBucket===b.key?' active':'');
-    btn.textContent = b.label;
-    btn.onclick = () => { activeTrendBucket = b.key; renderTrendTabs(); loadTrend(); };
-    row.appendChild(btn);
-  });
+function switchSec(name){
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===name));
+  document.querySelectorAll('.section').forEach(s=>s.classList.toggle('active', s.id==='sec-'+name));
 }
 
-async function loadAll(){
-  await Promise.all([loadSummary(), loadTrend(), loadStaff(), loadItems(), loadShiftSummaries()]);
-}
+// ---------------- OVERVIEW ----------------
+const RANGE_DEFS = [
+  ['today','Today',0], ['week','7 Days',7], ['month','30 Days',30],
+  ['quarter','Quarter',90], ['half_year','6 Months',180], ['year','1 Year',365],
+  ['year2','2 Years',730], ['year3','3 Years',1095]
+];
+let overviewRange = 'month';
+let staffRange = 'month';
 
-async function loadSummary(){
-  const { start, end } = periodRange(activePeriod);
-  try{
-    const { data, error } = await supabaseClient.rpc('get_revenue_summary', { p_password: revenuePassword, p_start: start, p_end: end });
-    if(error) throw new Error(error.message);
-    const byPayment = data.byPayment || {};
-    document.getElementById('summaryMetrics').innerHTML = `
-      <div class="metric-card"><div class="metric-label">TOTAL REVENUE</div><div class="metric-value">&#8373;${(data.totalRevenue||0).toFixed(2)}</div></div>
-      <div class="metric-card"><div class="metric-label">TRANSACTIONS</div><div class="metric-value">${data.txnCount||0}</div></div>
-      <div class="metric-card"><div class="metric-label">CASH</div><div class="metric-value">&#8373;${(byPayment.Cash||0).toFixed(2)}</div></div>
-      <div class="metric-card"><div class="metric-label">MOMO</div><div class="metric-value">&#8373;${(byPayment.MoMo||0).toFixed(2)}</div></div>`;
-
-    const paymentEl = document.getElementById('paymentBody');
-    const entries = Object.keys(byPayment).map(k=>({method:k, revenue:byPayment[k]})).sort((a,b)=>b.revenue-a.revenue);
-    const maxRev = Math.max(1, ...entries.map(e=>e.revenue));
-    paymentEl.innerHTML = entries.length ? entries.map(e => `
-      <div class="bar-row">
-        <div class="bar-label">${e.method}</div>
-        <div class="bar-track"><div class="bar-fill" style="width:${(e.revenue/maxRev*100).toFixed(1)}%"></div></div>
-        <div class="bar-value">&#8373;${e.revenue.toFixed(2)}</div>
-      </div>`).join('') : '<div class="empty">No sales in this period.</div>';
-  }catch(e){
-    document.getElementById('summaryMetrics').innerHTML = `<div class="empty">Could not load: ${e.message}</div>`;
+function rangeToDates(key){
+  const now = new Date();
+  if(key === 'today'){
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return [start.toISOString(), now.toISOString()];
   }
+  const days = { week:7, month:30, quarter:90, half_year:180, year:365, year2:730, year3:1095 }[key] || 30;
+  const start = new Date(now.getTime() - days*86400000);
+  return [start.toISOString(), now.toISOString()];
 }
 
+function renderRangeChips(containerId, activeKey, onClick){
+  document.getElementById(containerId).innerHTML = RANGE_DEFS.map(([k,l]) =>
+    `<button class="chip ${k===activeKey?'active':''}" onclick="${onClick}('${k}')">${l}</button>`).join('');
+}
+
+async function setOverviewRange(key){
+  overviewRange = key;
+  renderRangeChips('overviewRangeChips', overviewRange, 'setOverviewRange');
+  await loadOverview();
+}
+async function loadOverview(){
+  const [start, end] = rangeToDates(overviewRange);
+  const { data, error } = await supabaseClient.rpc('get_revenue_summary', { p_password: REV_PW, p_start: start, p_end: end });
+  if(error){ console.log('revenue summary error', error.message); return; }
+  const byPayment = data.byPayment || {};
+  const cash = byPayment['Cash'] || 0;
+  const momo = byPayment['MoMo'] || 0;
+  const other = Object.entries(byPayment).filter(([k])=>k!=='Cash'&&k!=='MoMo').reduce((s,[,v])=>s+parseFloat(v||0),0);
+  document.getElementById('overviewMetrics').innerHTML = `
+    <div class="metric-card gold"><div class="metric-label">Total Revenue</div><div class="metric-value">${fmt(data.totalRevenue)}</div><div class="metric-sub">${data.txnCount||0} transactions</div></div>
+    <div class="metric-card green"><div class="metric-label">Cash</div><div class="metric-value">${fmt(cash)}</div></div>
+    <div class="metric-card teal"><div class="metric-label">MoMo</div><div class="metric-value">${fmt(momo)}</div></div>
+    ${other ? `<div class="metric-card purple"><div class="metric-label">Other / Unspecified</div><div class="metric-value">${fmt(other)}</div></div>` : ''}
+  `;
+  const total = parseFloat(data.totalRevenue)||1;
+  const bars = Object.entries(byPayment).sort((a,b)=>b[1]-a[1]);
+  document.getElementById('paymentSplitBars').innerHTML = bars.length ? bars.map(([method,amt])=>{
+    const pct = Math.round((amt/total)*100);
+    return `<div class="bar-row"><div class="bar-label">${esc(method)}</div><div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div><div class="bar-val">${fmt(amt)} (${pct}%)</div></div>`;
+  }).join('') : '<div class="empty">No transactions in this range.</div>';
+}
+
+// ---------------- TREND ----------------
+const BUCKETS = [['day','Daily'],['week','Weekly'],['month','Monthly'],['quarter','Quarterly'],['half_year','Half-Yearly'],['year','Yearly']];
+let trendBucket = 'day';
+function setTrendBucket(b){
+  trendBucket = b;
+  document.getElementById('trendBucketChips').innerHTML = BUCKETS.map(([k,l])=>
+    `<button class="chip ${k===trendBucket?'active':''}" onclick="setTrendBucket('${k}')" style="display:inline-block">${l}</button>`).join('');
+  loadTrend();
+}
 async function loadTrend(){
-  const bucketDef = TREND_BUCKETS.find(b=>b.key===activeTrendBucket);
-  try{
-    const { data, error } = await supabaseClient.rpc('get_revenue_trend', { p_password: revenuePassword, p_bucket: activeTrendBucket, p_periods: bucketDef.periods });
-    if(error) throw new Error(error.message);
-    const maxRev = Math.max(1, ...data.map(d=>parseFloat(d.revenue)));
-    const clickable = activeTrendBucket === 'day';
-    document.getElementById('trendChart').innerHTML = data.map(d => `
-      <div class="trend-col"${clickable ? ` onclick="openDayDetail('${d.bucket_start.slice(0,10)}')" style="cursor:pointer"` : ''}>
-        <div class="tcol-value">${parseFloat(d.revenue)>0 ? '\u20b5'+parseFloat(d.revenue).toFixed(0) : ''}</div>
-        <div class="tcol-bar" style="height:${Math.max(2, parseFloat(d.revenue)/maxRev*130)}px"></div>
-        <div class="tcol-label">${d.bucket_label}</div>
-      </div>`).join('');
-    if(clickable) document.getElementById('trendChart').insertAdjacentHTML('afterend', '<div style="font-size:11px;color:var(--muted);margin-top:8px">Tap any day above to see the full transaction breakdown.</div>');
-  }catch(e){
-    document.getElementById('trendChart').innerHTML = `<div class="empty">Could not load: ${e.message}</div>`;
-  }
+  const periodsFor = { day:30, week:12, month:12, quarter:8, half_year:6, year:5 };
+  document.getElementById('trendTitle').textContent = 'Revenue Trend — ' + (BUCKETS.find(b=>b[0]===trendBucket)||[])[1];
+  const { data, error } = await supabaseClient.rpc('get_revenue_trend', { p_password: REV_PW, p_bucket: trendBucket, p_periods: periodsFor[trendBucket]||12 });
+  if(error){ document.getElementById('trendBody').innerHTML = '<tr><td colspan="3" class="empty">'+esc(error.message)+'</td></tr>'; return; }
+  const rows = (data||[]).slice().reverse();
+  document.getElementById('trendBody').innerHTML = rows.length ? rows.map(r=>`
+    <tr><td>${esc(r.bucket_label)}</td><td style="color:var(--gold);font-family:'Space Mono',monospace">${fmt(r.revenue)}</td><td style="font-family:'Space Mono',monospace">${r.txn_count}</td></tr>
+  `).join('') : '<tr><td colspan="3" class="empty">No data yet for this range.</td></tr>';
 }
 
-async function openDayDetail(dateStr){
-  const el = document.getElementById('dayDetailArea');
-  el.style.display = 'block';
-  el.innerHTML = '<div class="loading">Loading...</div>';
-  el.scrollIntoView({behavior:'smooth', block:'start'});
-  try{
-    const { data, error } = await supabaseClient.rpc('get_day_transactions', { p_password: revenuePassword, p_date: dateStr });
-    if(error) throw new Error(error.message);
-    const total = data.reduce((s,r)=>s+(parseFloat(r.lineTotal)||0),0);
-    el.innerHTML = `
-      <div class="card">
-        <div class="card-title">TRANSACTIONS — ${dateStr} <span class="back-link" style="margin:0" onclick="closeDayDetail()">&times; close</span></div>
-        <div style="font-size:13px;color:var(--text-dim);margin-bottom:10px">${data.length} line items &middot; &#8373;${total.toFixed(2)} total</div>
-        <div class="scroll-table"><table><thead><tr><th>TIME</th><th>ITEM</th><th>QTY</th><th>TOTAL</th><th>STAFF</th><th>PAYMENT</th><th>CUSTOMER</th></tr></thead><tbody>
-          ${data.length ? data.map(r => `<tr><td style="font-family:'Space Mono',monospace">${r.time}</td><td>${r.item}</td><td>${r.qty}</td><td style="color:var(--gold);font-weight:700">&#8373;${parseFloat(r.lineTotal).toFixed(2)}</td><td>${r.staff}</td><td>${r.payment}</td><td style="font-family:'Space Mono',monospace;font-size:11px">${r.customer}</td></tr>`).join('') : '<tr><td colspan="7" class="empty">No transactions this day</td></tr>'}
-        </tbody></table></div>
-      </div>`;
-  }catch(e){
-    el.innerHTML = `<div class="empty">Could not load: ${e.message}</div>`;
-  }
+// ---------------- DAY DRILL-DOWN ----------------
+document.getElementById('dayPicker').valueAsDate = new Date();
+async function loadDayTransactions(){
+  const dateVal = document.getElementById('dayPicker').value;
+  if(!dateVal) return;
+  const { data, error } = await supabaseClient.rpc('get_day_transactions', { p_password: REV_PW, p_date: dateVal });
+  if(error){ document.getElementById('dayBody').innerHTML = '<tr><td colspan="8" class="empty">'+esc(error.message)+'</td></tr>'; return; }
+  document.getElementById('dayBody').innerHTML = (data||[]).length ? data.map(t=>`
+    <tr><td>${esc(t.time)}</td><td>${esc(t.item)}</td><td>${t.qty}</td><td>${fmt(t.unitPrice)}</td><td style="color:var(--gold)">${fmt(t.lineTotal)}</td>
+    <td>${esc(t.staff)}</td><td><span class="pill ${(t.payment||'').toLowerCase()==='cash'?'cash':((t.payment||'').toLowerCase()==='momo'?'momo':'unspecified')}">${esc(t.payment)}</span></td><td>${esc(t.customer)}</td></tr>
+  `).join('') : '<tr><td colspan="8" class="empty">No transactions on this day.</td></tr>';
 }
 
-function closeDayDetail(){
-  document.getElementById('dayDetailArea').style.display = 'none';
-  document.getElementById('dayDetailArea').innerHTML = '';
+// ---------------- STAFF PERFORMANCE ----------------
+async function setStaffRange(key){
+  staffRange = key;
+  renderRangeChips('staffRangeChips', staffRange, 'setStaffRange');
+  await loadStaffPerf();
 }
-
-async function loadStaff(){
-  const { start, end } = periodRange(activePeriod);
-  try{
-    const { data, error } = await supabaseClient.rpc('get_staff_performance', { p_password: revenuePassword, p_start: start, p_end: end });
-    if(error) throw new Error(error.message);
-    const el = document.getElementById('staffBody');
-    if(!data.length){ el.innerHTML = '<div class="empty">No sales in this period.</div>'; return; }
-    el.innerHTML = data.map((s,i) => `
-      <div class="rank-row" onclick="switchSection('staff', document.querySelector('[data-sec=staff]')); openStaffDetail('${s.staff}')">
-        <div class="rank-num">${i+1}</div>
-        <div class="rank-info"><div class="rank-name">${s.staff}</div><div class="rank-sub">${s.orders_count} orders &middot; ${s.items_sold} items</div></div>
-        <div class="rank-value">&#8373;${parseFloat(s.revenue).toFixed(2)}</div>
-      </div>`).join('');
-  }catch(e){
-    document.getElementById('staffBody').innerHTML = `<div class="empty">Could not load: ${e.message}</div>`;
-  }
+async function loadStaffPerf(){
+  const [start, end] = rangeToDates(staffRange);
+  const { data, error } = await supabaseClient.rpc('get_staff_performance', { p_password: REV_PW, p_start: start, p_end: end });
+  if(error){ document.getElementById('staffPerfBody').innerHTML = '<tr><td colspan="4" class="empty">'+esc(error.message)+'</td></tr>'; return; }
+  const rows = (data||[]).slice().sort((a,b)=>b.revenue-a.revenue);
+  document.getElementById('staffPerfBody').innerHTML = rows.length ? rows.map(r=>`
+    <tr class="clickable" onclick="openStaffModal('${esc(r.staff)}')"><td><b>${esc(r.staff)}</b></td><td style="color:var(--gold);font-family:'Space Mono',monospace">${fmt(r.revenue)}</td><td>${r.orders_count}</td><td>${r.items_sold}</td></tr>
+  `).join('') : '<tr><td colspan="4" class="empty">No sales in this range.</td></tr>';
 }
-
-async function loadItems(){
-  const { start, end } = periodRange(activePeriod);
-  try{
-    const { data, error } = await supabaseClient.rpc('get_item_performance', { p_password: revenuePassword, p_start: start, p_end: end });
-    if(error) throw new Error(error.message);
-    const top = data.slice(0,8);
-    const lowest = data.slice().reverse().slice(0,8);
-    const topEl = document.getElementById('topSellersBody');
-    const lowEl = document.getElementById('lowestSellersBody');
-    topEl.innerHTML = top.length ? top.map((it,i)=>`
-      <div class="rank-row"><div class="rank-num">${i+1}</div>
-      <div class="rank-info"><div class="rank-name">${it.item}</div><div class="rank-sub">&#8373;${parseFloat(it.revenue).toFixed(2)} revenue</div></div>
-      <div class="rank-value">${it.qty} sold</div></div>`).join('') : '<div class="empty">No sales in this period.</div>';
-    lowEl.innerHTML = lowest.length ? lowest.map((it,i)=>`
-      <div class="rank-row"><div class="rank-num">${i+1}</div>
-      <div class="rank-info"><div class="rank-name">${it.item}</div><div class="rank-sub">&#8373;${parseFloat(it.revenue).toFixed(2)} revenue</div></div>
-      <div class="rank-value">${it.qty} sold</div></div>`).join('') : '<div class="empty">No sales in this period.</div>';
-  }catch(e){
-    document.getElementById('topSellersBody').innerHTML = `<div class="empty">Could not load: ${e.message}</div>`;
-  }
-}
-
-async function loadShiftSummaries(){
-  try{
-    const { data, error } = await supabaseClient.rpc('get_shift_summaries', { p_password: revenuePassword, p_limit: 60 });
-    if(error) throw new Error(error.message);
-    const el = document.getElementById('shiftSummariesBody');
-    if(!data.length){ el.innerHTML = '<div class="empty">No shift summaries saved yet — generate one on the Bar Dashboard and it will show up here.</div>'; return; }
-    el.innerHTML = data.map(s => `
-      <div class="summary-item">
-        <div class="si-head"><span><b style="color:var(--gold)">${s.business_date}</b> &mdash; ${s.generated_by||'unknown'}</span><span>&#8373;${parseFloat(s.total_revenue||0).toFixed(2)}</span></div>
-        <pre>${(s.summary_text||'').replace(/</g,'&lt;')}</pre>
-      </div>`).join('');
-  }catch(e){
-    document.getElementById('shiftSummariesBody').innerHTML = `<div class="empty">Could not load: ${e.message}</div>`;
-  }
-}
-
-// ---------- STAFF TAB ----------
 async function loadStaffList(){
-  const el = document.getElementById('staffListBody');
-  el.innerHTML = '<div class="loading">Loading...</div>';
-  try{
-    const { data, error } = await supabaseClient.rpc('get_staff_list', { p_password: revenuePassword });
-    if(error) throw new Error(error.message);
-    if(!data.length){ el.innerHTML = '<div class="empty">No sales recorded yet.</div>'; return; }
-    el.innerHTML = data.map((s,i) => `
-      <div class="rank-row" onclick="openStaffDetail('${s.staff}')">
-        <div class="rank-num">${i+1}</div>
-        <div class="rank-info"><div class="rank-name">${s.staff}</div><div class="rank-sub">${s.orders} lifetime orders</div></div>
-        <div class="rank-value">&#8373;${parseFloat(s.revenue).toFixed(2)}</div>
-      </div>`).join('');
-  }catch(e){
-    el.innerHTML = `<div class="empty">Could not load: ${e.message}</div>`;
-  }
+  const { data, error } = await supabaseClient.rpc('get_staff_list', { p_password: REV_PW });
+  if(error){ document.getElementById('staffListBody').innerHTML = '<tr><td colspan="3" class="empty">'+esc(error.message)+'</td></tr>'; return; }
+  document.getElementById('staffListBody').innerHTML = (data||[]).length ? data.map(r=>`
+    <tr class="clickable" onclick="openStaffModal('${esc(r.staff)}')"><td><b>${esc(r.staff)}</b></td><td style="color:var(--gold);font-family:'Space Mono',monospace">${fmt(r.revenue)}</td><td>${r.orders}</td></tr>
+  `).join('') : '<tr><td colspan="3" class="empty">No staff sales recorded yet.</td></tr>';
 }
 
-function showStaffList(){
-  document.getElementById('staffListView').style.display = 'block';
-  document.getElementById('staffDetailView').style.display = 'none';
-}
-
-async function openStaffDetail(staffName){
-  document.getElementById('staffListView').style.display = 'none';
-  document.getElementById('staffDetailView').style.display = 'block';
-  const el = document.getElementById('staffDetailBody');
-  el.innerHTML = '<div class="loading">Loading...</div>';
+const PERIOD_LABELS = { today:'Today', week:'Last 7 Days', month:'Last 30 Days', quarter:'Last 90 Days', half_year:'Last 6 Months', year:'Last Year', year2:'Last 2 Years', year3:'Last 3 Years' };
+async function openStaffModal(staff){
+  document.getElementById('staffModalTitle').textContent = staff;
+  document.getElementById('staffModalBody').innerHTML = '<div class="loading">Loading…</div>';
+  document.getElementById('staffModal').classList.add('show');
   try{
-    const [detailRes, periodsRes] = await Promise.all([
-      supabaseClient.rpc('get_staff_detail', { p_password: revenuePassword, p_staff: staffName }),
-      supabaseClient.rpc('get_staff_periods', { p_password: revenuePassword, p_staff: staffName })
+    const [periodsRes, detailRes] = await Promise.all([
+      supabaseClient.rpc('get_staff_periods', { p_password: REV_PW, p_staff: staff }),
+      supabaseClient.rpc('get_staff_detail', { p_password: REV_PW, p_staff: staff })
     ]);
-    if(detailRes.error) throw new Error(detailRes.error.message);
     if(periodsRes.error) throw new Error(periodsRes.error.message);
-    const data = detailRes.data;
-    const periodsData = periodsRes.data;
-    const bestDay = data.bestDay || {};
-    const bestWeek = data.bestWeek || {};
-    const bestMonth = data.bestMonth || {};
-    const recent = (data.recentDays||[]).slice().reverse();
-    const maxRev = Math.max(1, ...recent.map(d=>parseFloat(d.revenue)));
+    if(detailRes.error) throw new Error(detailRes.error.message);
+    const periods = periodsRes.data.periods || [];
+    const detail = detailRes.data || {};
+    let html = '<div class="scroll-table"><table><thead><tr><th>Period</th><th>Revenue</th><th>Orders</th><th>Items</th></tr></thead><tbody>';
+    periods.forEach(p => { html += `<tr><td>${esc(PERIOD_LABELS[p.key]||p.key)}</td><td style="color:var(--gold);font-family:'Space Mono',monospace">${fmt(p.revenue)}</td><td>${p.orders}</td><td>${p.items}</td></tr>`; });
+    html += '</tbody></table></div>';
+    html += `<div class="metrics-grid" style="margin-top:16px">
+      <div class="metric-card gold"><div class="metric-label">Lifetime Revenue</div><div class="metric-value">${fmt(detail.lifetimeRevenue)}</div></div>
+      <div class="metric-card teal"><div class="metric-label">Lifetime Orders</div><div class="metric-value">${detail.lifetimeOrders||0}</div></div>
+    </div>`;
+    if(detail.bestDay) html += `<div style="font-size:12px;color:var(--text-dim);margin-top:6px">Best day: <b style="color:var(--gold)">${esc(detail.bestDay.date)}</b> — ${fmt(detail.bestDay.revenue)}</div>`;
+    if(detail.bestWeek) html += `<div style="font-size:12px;color:var(--text-dim)">Best week starting: <b style="color:var(--gold)">${esc(detail.bestWeek.weekStart)}</b> — ${fmt(detail.bestWeek.revenue)}</div>`;
+    if(detail.bestMonth) html += `<div style="font-size:12px;color:var(--text-dim)">Best month: <b style="color:var(--gold)">${esc(detail.bestMonth.month)}</b> — ${fmt(detail.bestMonth.revenue)}</div>`;
+    document.getElementById('staffModalBody').innerHTML = html;
+  }catch(e){ document.getElementById('staffModalBody').innerHTML = '<div class="empty">'+esc(e.message)+'</div>'; }
+}
+function closeStaffModal(){ document.getElementById('staffModal').classList.remove('show'); }
 
-    const PERIOD_LABELS = {today:'Today', week:'This Week', month:'This Month', quarter:'Quarter', half_year:'6 Months', year:'1 Year', year2:'2 Years', year3:'3 Years'};
-    const periodList = periodsData.periods || [];
-    const maxPeriodRev = Math.max(1, ...periodList.map(p => parseFloat(p.revenue)||0));
-    const periodRows = periodList.map(p => `
-      <div class="bar-row">
-        <div class="bar-label">${PERIOD_LABELS[p.key]||p.key}</div>
-        <div class="bar-track"><div class="bar-fill" style="width:${Math.max(2, (parseFloat(p.revenue)||0)/maxPeriodRev*100)}%"></div></div>
-        <div class="bar-value">&#8373;${parseFloat(p.revenue).toFixed(2)}</div>
-      </div>`).join('');
+// ---------------- PASSWORD CHANGE ----------------
+function openPwModal(){ document.getElementById('pwModal').classList.add('show'); document.getElementById('pwResult').textContent=''; }
+async function changePassword(){
+  const cur = document.getElementById('pwCurrent').value;
+  const nw = document.getElementById('pwNew').value;
+  const result = document.getElementById('pwResult');
+  if(!nw || nw.length < 6){ result.innerHTML = '<span style="color:var(--red)">New password should be at least 6 characters.</span>'; return; }
+  try{
+    const { data, error } = await supabaseClient.rpc('set_revenue_password', { p_current_password: cur, p_new_password: nw });
+    if(error) throw new Error(error.message);
+    REV_PW = nw;
+    try{ sessionStorage.setItem('revenue_pw', nw); }catch(e){}
+    result.innerHTML = '<span style="color:var(--green)">Password updated.</span>';
+    setTimeout(()=>document.getElementById('pwModal').classList.remove('show'), 900);
+  }catch(e){ result.innerHTML = '<span style="color:var(--red)">'+esc(e.message)+'</span>'; }
+}
 
-    el.innerHTML = `
-      <div class="staff-detail-card">
-        <div style="font-size:18px;font-weight:800;color:var(--teal);margin-bottom:4px">${data.staff}</div>
-        <div style="font-size:12px;color:var(--text-dim)">Lifetime: &#8373;${parseFloat(data.lifetimeRevenue||0).toFixed(2)} &middot; ${data.lifetimeOrders||0} orders &middot; ${data.lifetimeItems||0} items sold</div>
+// ---------------- COCKTAILS (unchanged data source) ----------------
+async function loadCocktails(){
+  const { data, error } = await supabaseClient.rpc('get_bar_costing_overview');
+  if(error){ console.log('costing error', error.message); return; }
+  const bar = (data||{}).bar || {};
+  const ck = (data||{}).cocktails || {};
+  document.getElementById('ckToday').textContent = fmt(ck.todayRevenue);
+  document.getElementById('ckAll').textContent = fmt(ck.allTimeRevenue);
+  const top = bar.topSellers || [];
+  document.getElementById('costingBody').innerHTML = top.length ? top.map(t=>`
+    <tr><td>${esc(t.item)}</td><td>${t.qty}</td><td style="color:var(--gold)">${fmt(t.revenue)}</td><td style="color:var(--red)">${fmt(t.cogsUsed)}</td><td style="color:var(--green);font-weight:700">${fmt(t.margin)}</td></tr>`).join('')
+    : '<tr><td colspan="5" class="empty">No sales logged yet, or ingredient costs aren\'t set on Bar Stock yet.</td></tr>';
+  const ckTop = ck.topCocktails || [];
+  document.getElementById('cocktailTopBody').innerHTML = ckTop.length ? ckTop.map(t=>`
+    <tr><td>${esc(t.item)}</td><td><span class="pill morning">${esc(t.category)}</span></td><td>${t.qty}</td><td style="color:var(--gold)">${fmt(t.revenue)}</td><td style="color:var(--red)">${fmt(t.cost)}</td><td style="color:var(--green);font-weight:700">${fmt(t.margin)}</td></tr>`).join('')
+    : '<tr><td colspan="6" class="empty">No cocktail sales logged yet.</td></tr>';
+}
+
+// ---------------- SHIFT SUMMARIES ----------------
+async function loadShiftSummaries(){
+  const { data, error } = await supabaseClient.rpc('get_shift_summaries_for_manager', { p_limit: 30 });
+  if(error){ document.getElementById('summariesBody').innerHTML = '<div class="empty">'+esc(error.message)+'</div>'; return; }
+  document.getElementById('summariesBody').innerHTML = (data||[]).length ? data.map(s => `
+    <div class="summary-item">
+      <div class="si-head">
+        <span><b>${esc(s.business_date)}</b> <span class="pill ${esc(s.shift_period)}">${esc(s.shift_period)||'—'}</span> &mdash; ${esc(s.generated_by)||'unknown'}</span>
+        <span>${fmt(s.total_revenue)} &middot; ${s.items_sold||0} items &middot; ${s.orders_count||0} orders</span>
       </div>
-      <div class="metrics-grid">
-        <div class="metric-card"><div class="metric-label">BEST DAY</div><div class="metric-value" style="font-size:20px">&#8373;${parseFloat(bestDay.revenue||0).toFixed(2)}</div><div style="font-size:11px;color:var(--text-dim);margin-top:4px">${bestDay.date||'—'}</div></div>
-        <div class="metric-card"><div class="metric-label">BEST WEEK</div><div class="metric-value" style="font-size:20px">&#8373;${parseFloat(bestWeek.revenue||0).toFixed(2)}</div><div style="font-size:11px;color:var(--text-dim);margin-top:4px">week of ${bestWeek.weekStart||'—'}</div></div>
-        <div class="metric-card"><div class="metric-label">BEST MONTH</div><div class="metric-value" style="font-size:20px">&#8373;${parseFloat(bestMonth.revenue||0).toFixed(2)}</div><div style="font-size:11px;color:var(--text-dim);margin-top:4px">${bestMonth.month||'—'}</div></div>
-      </div>
-      <div class="card">
-        <div class="card-title">REVENUE BY PERIOD <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(as of right now, each period counted from today backward)</span></div>
-        ${periodRows}
-      </div>
-      <div class="card">
-        <div class="card-title">LAST 14 DAYS</div>
-        <div class="chart-wrap"><div class="trend-bars">
-          ${recent.length ? recent.map(d => `
-            <div class="trend-col">
-              <div class="tcol-value">${parseFloat(d.revenue)>0 ? '\u20b5'+parseFloat(d.revenue).toFixed(0) : ''}</div>
-              <div class="tcol-bar" style="height:${Math.max(2, parseFloat(d.revenue)/maxRev*130)}px"></div>
-              <div class="tcol-label">${d.date.slice(5)}</div>
-            </div>`).join('') : '<div class="empty">No recent activity.</div>'}
-        </div></div>
-      </div>`;
-  }catch(e){
-    el.innerHTML = `<div class="empty">Could not load: ${e.message}</div>`;
-  }
+      <pre>${esc(s.summary_text)}</pre>
+    </div>`).join('') : '<div class="empty">No shift summaries saved yet.</div>';
+}
+
+// ---------------- LOAD ALL ----------------
+async function loadAll(){
+  document.getElementById('lastRefresh').textContent = 'Refreshing...';
+  renderRangeChips('overviewRangeChips', overviewRange, 'setOverviewRange');
+  renderRangeChips('staffRangeChips', staffRange, 'setStaffRange');
+  setTrendBucket(trendBucket);
+  await Promise.all([ loadOverview(), loadStaffPerf(), loadStaffList(), loadCocktails(), loadShiftSummaries() ]);
+  document.getElementById('lastRefresh').textContent = 'Updated ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
 }
 </script>
 </body>
