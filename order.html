@@ -147,9 +147,48 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 .mw-social-link{font-size:12px;color:var(--teal);text-decoration:none;padding:6px 12px;border:1px solid var(--teal);border-radius:20px;}
 .mw-contact-line{font-size:13px;color:var(--text-dim);margin-top:6px;}
 .mw-contact-line a{color:var(--teal);text-decoration:none;}
+
+/* ===== Big, hard-to-miss error toast ===== */
+.error-toast{position:fixed;top:14px;left:50%;transform:translateX(-50%) translateY(-40px);z-index:300;background:#3a0d0d;border:2px solid var(--red);color:#fff;padding:16px 46px 16px 18px;border-radius:14px;font-size:15px;font-weight:700;line-height:1.4;max-width:92vw;width:520px;box-shadow:0 12px 34px rgba(0,0,0,0.55);opacity:0;pointer-events:none;transition:opacity .25s ease, transform .25s ease;}
+.error-toast.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto;}
+.error-toast.show .et-inner{animation:toastShake .5s ease;}
+.error-toast .et-inner{display:flex;gap:10px;align-items:flex-start;}
+.error-toast .et-icon{font-size:22px;flex-shrink:0;line-height:1;}
+.error-toast .et-close{position:absolute;top:8px;right:10px;cursor:pointer;font-size:20px;color:#f5b5b5;line-height:1;padding:4px;}
+@keyframes toastShake{
+  0%,100%{transform:translateX(0);}
+  20%{transform:translateX(-6px);}
+  40%{transform:translateX(6px);}
+  60%{transform:translateX(-4px);}
+  80%{transform:translateX(4px);}
+}
+.field-error{animation:fieldPulse 0.55s ease 3;border-radius:12px;}
+@keyframes fieldPulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,0);}
+  50%{box-shadow:0 0 0 9px rgba(239,68,68,0.35);}
+}
+
+/* ===== First-time guided onboarding ===== */
+.welcome-steps{display:flex;flex-direction:column;gap:14px;margin-bottom:16px;}
+.ws-step{display:flex;gap:12px;align-items:flex-start;}
+.ws-step .ws-num{flex-shrink:0;width:26px;height:26px;border-radius:50%;background:var(--gold);color:var(--black);font-weight:800;font-size:13px;display:flex;align-items:center;justify-content:center;}
+.ws-step b{font-size:13px;color:var(--text);display:block;margin-bottom:2px;}
+.ws-step span{font-size:12px;color:var(--text-dim);line-height:1.5;}
+.guide-glow{position:relative;animation:guidePulse 1.4s ease-in-out infinite;border-radius:14px;}
+@keyframes guidePulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(245,166,35,0.55);}
+  50%{box-shadow:0 0 0 12px rgba(245,166,35,0);}
+}
+.guide-hint{background:var(--gold);color:var(--black);font-size:12px;font-weight:800;padding:7px 14px;border-radius:20px;display:inline-block;margin-bottom:8px;animation:hintBounce 1s ease-in-out infinite;}
+@keyframes hintBounce{0%,100%{transform:translateY(0);}50%{transform:translateY(-3px);}}
 </style>
 </head>
 <body>
+
+<div class="error-toast" id="errorToast">
+  <div class="et-inner"><span class="et-icon">&#9888;&#65039;</span><span class="et-msg" id="errorToastMsg"></span></div>
+  <span class="et-close" onclick="hideErrorToast()">&times;</span>
+</div>
 
 <div class="header">
   <div style="display:flex;align-items:center;justify-content:center;gap:10px">
@@ -209,7 +248,7 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
     <div class="subtotal-row"><span>Total</span><span id="modalTotal">GHS 0.00</span></div>
 
     <div class="field-label">How will you pay?</div>
-    <div class="pay-options">
+    <div class="pay-options" id="payOptions">
       <div class="pay-option" id="payCash" onclick="selectPayment('Cash')">
         <div class="po-icon">&#128181;</div><div class="po-label">Cash</div>
       </div>
@@ -236,6 +275,20 @@ body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min
 <div class="modal-overlay" id="confirmModal">
   <div class="modal-sheet">
     <div class="confirm-screen" id="confirmContent"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="welcomeModal">
+  <div class="modal-sheet">
+    <div class="modal-title"><span>&#128075; First time ordering here?</span></div>
+    <div style="font-size:13px;color:var(--text-dim);line-height:1.6;margin-bottom:14px">It only takes 3 quick steps — we'll highlight each one for you as you go.</div>
+    <div class="welcome-steps">
+      <div class="ws-step"><span class="ws-num">1</span><div><b>Pick your area</b><span>Tap the area you're sitting in, e.g. Terrace, Bar, VIP, Pool.</span></div></div>
+      <div class="ws-step"><span class="ws-num">2</span><div><b>Pick your table number</b><span>So staff know exactly where to bring your order.</span></div></div>
+      <div class="ws-step"><span class="ws-num">3</span><div><b>Tap items to add them</b><span>Browse the menu below and tap anything you want — then hit VIEW ORDER to check out.</span></div></div>
+    </div>
+    <button class="btn" onclick="dismissWelcomeAndStartGuide()">GOT IT — LET'S ORDER</button>
+    <button class="btn secondary" onclick="dismissWelcomeSkip()">I'VE ORDERED HERE BEFORE</button>
   </div>
 </div>
 
@@ -285,6 +338,106 @@ function genClientId(){
   return 'cid-' + Date.now() + '-' + Math.random().toString(36).slice(2);
 }
 
+/* ===================================================================
+   BIG ERROR POPUPS
+   Replaces the old tiny red text: shows a large, animated toast at the
+   top of the screen AND (optionally) pulses a red glow around the
+   specific field that needs fixing, scrolling it into view.
+   =================================================================== */
+let errorToastTimer = null;
+function showError(msg, targetId){
+  const errLine = document.getElementById('submitError');
+  if(errLine) errLine.textContent = msg;
+
+  const toast = document.getElementById('errorToast');
+  const toastMsg = document.getElementById('errorToastMsg');
+  toastMsg.textContent = msg;
+  toast.classList.remove('show');
+  void toast.offsetWidth; // restart animation
+  toast.classList.add('show');
+  clearTimeout(errorToastTimer);
+  errorToastTimer = setTimeout(() => toast.classList.remove('show'), 5000);
+
+  if(targetId){
+    const el = document.getElementById(targetId);
+    if(el){
+      el.scrollIntoView({behavior:'smooth', block:'center'});
+      el.classList.remove('field-error');
+      void el.offsetWidth;
+      el.classList.add('field-error');
+      setTimeout(() => el.classList.remove('field-error'), 1900);
+    }
+  }
+}
+function hideErrorToast(){
+  clearTimeout(errorToastTimer);
+  document.getElementById('errorToast').classList.remove('show');
+}
+
+/* ===================================================================
+   FIRST-TIME GUIDED ORDERING
+   On a guest's first visit (tracked per-device in localStorage) we show
+   a short welcome modal, then walk them through the flow by glowing
+   each section in turn: area -> table number -> menu. The guide ends
+   the moment they add their first item to the cart.
+   =================================================================== */
+const GUIDE_KEY = 'whgh_guide_done_v1';
+let guideActive = false;
+
+function shouldShowGuide(){
+  try{ return !localStorage.getItem(GUIDE_KEY); }catch(e){ return false; }
+}
+function markGuideDone(){
+  try{ localStorage.setItem(GUIDE_KEY, '1'); }catch(e){}
+}
+function showWelcomeModal(){
+  document.getElementById('welcomeModal').classList.add('show');
+}
+function dismissWelcomeAndStartGuide(){
+  document.getElementById('welcomeModal').classList.remove('show');
+  guideActive = true;
+  guideStep('location');
+}
+function dismissWelcomeSkip(){
+  document.getElementById('welcomeModal').classList.remove('show');
+  markGuideDone();
+  guideActive = false;
+}
+function clearGuide(){
+  document.querySelectorAll('.guide-glow').forEach(el => el.classList.remove('guide-glow'));
+  document.querySelectorAll('.guide-hint').forEach(el => el.remove());
+}
+function addGuideHint(targetEl, text){
+  const hint = document.createElement('div');
+  hint.className = 'guide-hint';
+  hint.textContent = text;
+  targetEl.parentNode.insertBefore(hint, targetEl);
+}
+function guideStep(step){
+  if(!guideActive) return;
+  clearGuide();
+  if(step === 'location'){
+    const box = document.getElementById('locationBox');
+    box.classList.add('guide-glow');
+    addGuideHint(box, '\uD83D\uDC49 Step 1 of 3 — tap your area below');
+    box.scrollIntoView({behavior:'smooth', block:'center'});
+  }else if(step === 'detail'){
+    const box = document.getElementById('locationDetailBox');
+    box.classList.add('guide-glow');
+    addGuideHint(box, '\uD83D\uDC49 Step 2 of 3 — pick your table number');
+    box.scrollIntoView({behavior:'smooth', block:'center'});
+  }else if(step === 'menu'){
+    const box = document.getElementById('menuArea');
+    box.classList.add('guide-glow');
+    addGuideHint(box, '\uD83D\uDC49 Step 3 of 3 — tap items below to add them to your order');
+    box.scrollIntoView({behavior:'smooth', block:'start'});
+  }else if(step === 'done'){
+    clearGuide();
+    guideActive = false;
+    markGuideDone();
+  }
+}
+
 function init(){
   const params = new URLSearchParams(window.location.search);
   const loc = params.get('location');
@@ -307,6 +460,7 @@ function init(){
       if(detailSelect) detailSelect.value = legacyTable;
     }
     resumePendingOrder();
+    if(shouldShowGuide()) showWelcomeModal();
   });
 }
 
@@ -390,7 +544,12 @@ async function loadVenueData(afterLoad){
 function renderLocationOptions(){
   const grid = document.getElementById('locationGrid');
   grid.innerHTML = '';
-  locationTypes.forEach(loc => {
+  // 'Table' is removed here on purpose — every specific area (Terrace, Bar,
+  // VIP, etc.) already has its own table-number picker, so a separate
+  // generic "Table" option is redundant and confuses first-time guests.
+  // It's still supported internally for old QR codes (see init()/legacy
+  // ?table= handling) — it's just not shown as a button any more.
+  locationTypes.filter(loc => loc !== 'Table').forEach(loc => {
     const el = document.createElement('div');
     el.className = 'loc-option' + (locationType===loc ? ' selected' : '');
     el.textContent = loc;
@@ -419,7 +578,7 @@ function selectLocation(loc, skipDetailReset){
     detailSelect.innerHTML = '<option value="">Select a table...</option>' +
       Array.from({length:tableCount}, (_,i)=>i+1).map(n=>`<option value="${n}">Table ${n}</option>`).join('');
     detailSelect.value = locationDetail || '';
-    detailSelect.onchange = () => { locationDetail = detailSelect.value; };
+    detailSelect.onchange = () => { locationDetail = detailSelect.value; if(guideActive && locationDetail) guideStep('menu'); };
   }else if(loc === 'Room Number'){
     detailBox.style.display = 'block';
     detailLabel.textContent = 'Room Number';
@@ -427,9 +586,14 @@ function selectLocation(loc, skipDetailReset){
     detailInput.style.display = 'block';
     detailInput.placeholder = 'e.g. 204';
     detailInput.value = locationDetail;
-    detailInput.oninput = () => { locationDetail = detailInput.value.trim(); };
+    detailInput.oninput = () => { locationDetail = detailInput.value.trim(); if(guideActive && locationDetail) guideStep('menu'); };
   }else{
     detailBox.style.display = 'none';
+  }
+
+  if(guideActive){
+    if(tableCount || loc === 'Room Number') guideStep('detail');
+    else guideStep('menu');
   }
 }
 
@@ -502,7 +666,7 @@ function renderMenu(){
     if(m.available === false){
       // Unclickable — tapping an out-of-stock card does nothing.
     }else{
-      el.onclick = () => { cart[m.item] = (cart[m.item]||0) + 1; updateMenuCardQty(m.item); updateCartBar(); };
+      el.onclick = () => { cart[m.item] = (cart[m.item]||0) + 1; updateMenuCardQty(m.item); updateCartBar(); if(guideActive) guideStep('done'); };
       grid.appendChild(el);
       updateMenuCardQtyEl(el, m.item);
       return;
@@ -652,43 +816,41 @@ function renderCartModal(){
 }
 
 async function submitOrder(){
-  if(!locationType){ document.getElementById('submitError').textContent = 'Please choose where this order is for, above the menu.'; closeCartModal(); window.scrollTo({top:0, behavior:'smooth'}); return; }
+  if(!locationType){ closeCartModal(); showError('Please choose where this order is for, above the menu.', 'locationBox'); return; }
   if(locationTableRanges[locationType] && !locationDetail){
-    document.getElementById('submitError').textContent = 'Please choose a table number above the menu.';
-    closeCartModal(); window.scrollTo({top:0, behavior:'smooth'}); return;
+    closeCartModal(); showError('Please choose a table number above the menu.', 'locationDetailBox'); return;
   }
   if(locationType === 'Room Number' && !locationDetail){
-    document.getElementById('submitError').textContent = 'Please add the room number above the menu.';
-    closeCartModal(); window.scrollTo({top:0, behavior:'smooth'}); return;
+    closeCartModal(); showError('Please add the room number above the menu.', 'locationDetailBox'); return;
   }
   const orderFingerprint = JSON.stringify({ locationType, locationDetail, cart, payment: selectedPayment });
   const lastFingerprint = sessionStorage.getItem('whgh_last_order_fingerprint');
   const lastFingerprintTime = parseInt(sessionStorage.getItem('whgh_last_order_time') || '0', 10);
   if(lastFingerprint === orderFingerprint && (Date.now() - lastFingerprintTime) < 90000){
-    document.getElementById('submitError').textContent = 'This exact order was just sent — check your confirmation, or change your cart before sending again.';
+    showError('This exact order was just sent — check your confirmation, or change your cart before sending again.', 'cartRows');
     return;
   }
 
   const custName = document.getElementById('custName').value.trim();
   const phone = document.getElementById('custPhone').value.trim();
-  if(!phone){ document.getElementById('submitError').textContent = 'Please enter your phone number or membership number.'; return; }
+  if(!phone){ showError('Please enter your phone number or membership number.', 'custPhone'); return; }
   if(!lookedUpCustomer){
     const digitsOnly = phone.replace(/[\s-]/g,'');
     const isPlausiblePhone = /^0\d{9}$/.test(digitsOnly) || /^(\+233|233)\d{9}$/.test(digitsOnly);
     const isPlausibleMemberId = /^[A-Za-z]{2,}\d+$/.test(phone);
     if(!isPlausiblePhone && !isPlausibleMemberId){
-      document.getElementById('submitError').textContent = 'Please enter a real Ghana phone number (e.g. 0241234567) or a valid membership ID (e.g. THWGH12).';
+      showError('Please enter a real Ghana phone number (e.g. 0241234567) or a valid membership ID (e.g. THWGH12).', 'custPhone');
       return;
     }
   }
-  if(!custName){ document.getElementById('submitError').textContent = 'Please enter your name.'; return; }
+  if(!custName){ showError('Please enter your name.', 'custName'); return; }
   if(!lookedUpCustomer && (custName.length <= 3 || !/[A-Za-z]/.test(custName))){
-    document.getElementById('submitError').textContent = 'Please enter your real name (more than 3 letters).';
+    showError('Please enter your real name (more than 3 letters).', 'custName');
     return;
   }
-  if(!selectedPayment){ document.getElementById('submitError').textContent = 'Choose Cash or MoMo first.'; return; }
+  if(!selectedPayment){ showError('Choose Cash or MoMo first.', 'payOptions'); return; }
   const names = Object.keys(cart).filter(k => cart[k] > 0);
-  if(names.length === 0){ document.getElementById('submitError').textContent = 'Your cart is empty.'; return; }
+  if(names.length === 0){ showError('Your cart is empty.', 'cartRows'); return; }
 
   let submittedCustId = null;
   let submittedCustPoints = null;
@@ -726,6 +888,7 @@ async function submitOrder(){
   btn.disabled = true;
   btn.textContent = 'Sending order...';
   document.getElementById('submitError').textContent = '';
+  hideErrorToast();
 
   const outcomes = [];
   for(const sub of subOrders){
@@ -757,7 +920,7 @@ async function submitOrder(){
     renderMenu();
     renderCartModal();
     const already = (succeeded.length + queued.length) > 0 ? ' The rest of your order already went through — you only need to retry this part.' : '';
-    document.getElementById('submitError').textContent = failed.map(o => (o.payload.label + ': ' + (o.result.error || 'Failed'))).join(' — ') + already;
+    showError(failed.map(o => (o.payload.label + ': ' + (o.result.error || 'Failed'))).join(' — ') + already, 'cartRows');
     btn.disabled = false;
     btn.textContent = selectedPayment === 'MoMo' ? 'SUBMIT ORDER — PAY BY MOMO' : 'SUBMIT ORDER — PAY CASH ON DELIVERY/PICKUP';
     return;
