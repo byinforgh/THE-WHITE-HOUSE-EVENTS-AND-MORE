@@ -401,7 +401,7 @@ label.f{ display:block; font-size:10px; color:var(--muted); font-weight:700; let
       <button class="refresh-btn" onclick="loadAll()">&#8635; Refresh</button>
     </div>
   </div>
-  <div class="note-box gold" id="actingAsNote" style="display:none;margin:0 20px 10px">Select your name above once — it fills in "reported by" / "taken by" / "staff" fields automatically across this dashboard, and everything you log here tallies onto your profile on the Manager Dashboard.</div>
+  <div class="note-box gold" id="actingAsNote" style="display:none;margin:0 20px 10px">Select your name above once — it fills in "reported by" / "taken by" / "staff" fields automatically across this dashboard.</div>
 
   <div class="main">
 
@@ -443,7 +443,7 @@ label.f{ display:block; font-size:10px; color:var(--muted); font-weight:700; let
 
     <!-- ============ ROOMS ============ -->
     <div class="tab-content" id="tab-rooms">
-      <div class="note-box teal">Room 1–25 are seeded once <b>reception_schema.sql</b> is run in Supabase. Tap a room to change its status, log the guest, or add a note. Compound areas (Pool, Bar, Event Grounds, etc.) live under <b>Breakdowns</b> and <b>Cleaning</b>, not here.</div>
+      <div class="note-box teal">Tap a room to change its status, log the guest, or add a note. Compound areas (Pool, Bar, Event Grounds, etc.) live under <b>Breakdowns</b> and <b>Cleaning</b>, not here.</div>
       <div class="filter-row" id="roomFilters"></div>
       <div class="room-grid" id="roomGrid"><div class="loading">Loading rooms…</div></div>
     </div>
@@ -534,7 +534,7 @@ label.f{ display:block; font-size:10px; color:var(--muted); font-weight:700; let
 
     <!-- ============ STAFF ON SHIFT ============ -->
     <div class="tab-content" id="tab-staff">
-      <div class="note-box teal">Shared staff roster — the same one used by the Bar Dashboard and Manager Dashboard. Check in here to start a reception shift; your activity (bookings taken, tasks completed, cleaning checks) tallies onto your profile on the Manager Dashboard automatically.</div>
+      <div class="note-box teal">Check in here at the start of your reception shift, and check out when you finish.</div>
       <div class="two-col">
         <div class="card">
           <div class="card-title"><span class="live-dot"></span> On Shift Now</div>
@@ -715,7 +715,7 @@ label.f{ display:block; font-size:10px; color:var(--muted); font-weight:700; let
       <div class="card">
         <div class="guide-section">
           <h3>How This Dashboard Works</h3>
-          <div class="guide-tier"><b>Step 1, every shift:</b> tap "Who are you?" at the top and select your name. First time ever, you'll set a 4+ digit PIN — remember it, you'll need it every time you select your name after that. This is what credits bookings, tasks, cleaning checks and notes to you, and it's what your Staff Profile on the Manager Dashboard is built from.</div>
+          <div class="guide-tier"><b>Step 1, every shift:</b> tap "Who are you?" at the top and select your name. First time ever, you'll set a 4+ digit PIN — remember it, you'll need it every time you select your name after that. This is what credits bookings, tasks, cleaning checks and notes to you.</div>
           <div class="guide-tier"><b>Today</b> is your home screen: today's bookings, open tasks, open breakdowns, VIP follow-ups, and who's currently in-house/booked/walk-in, all in one place. Tap any card to jump to the full tab.</div>
           <div class="guide-tier"><b>Rooms</b> shows every room's live status (Vacant / Booked / Occupied / Cleaning / Maintenance / Out of Service). Tap a room to change its status or add a note.</div>
           <div class="guide-tier"><b>Bookings</b>: add a new booking here. For a Room booking, assign the room and record deposit/payment right in the form if you can — if not, use the "Room / Payment" button on any booking later. Check In moves a guest from Booked into the room; Check Out sends the room to Cleaning automatically.</div>
@@ -1015,7 +1015,7 @@ function updateNavBadges(){
 }
 
 // ---------------------------------------------------------------------------
-// FACILITIES (Supabase: same project/tables as facilities-dashboard.html)
+// FACILITIES
 // ---------------------------------------------------------------------------
 async function loadFacilities(){
   const note = document.getElementById('facStatusNote');
@@ -1025,7 +1025,7 @@ async function loadFacilities(){
     state.tickets = (data||[]).map(mapTicket_);
     state.facilitiesOnline = true;
     note.className = 'note-box teal';
-    note.innerHTML = 'Connected to the Facilities system: the same Supabase tables used by the Facilities Dashboard. Tickets reported here appear there instantly, and vice versa.';
+    note.innerHTML = 'Connected. Any breakdown you report here is seen by the Facilities team right away.';
   }catch(e){
     state.tickets = [];
     state.facilitiesOnline = false;
@@ -1114,7 +1114,7 @@ function renderRooms(){
   let rooms = state.rooms;
   if(state.roomFilter!=='All') rooms = rooms.filter(r=>r.status===state.roomFilter);
   const grid = document.getElementById('roomGrid');
-  if(!state.rooms.length){ grid.innerHTML = '<div class="empty">No rooms found yet: run reception_schema.sql in Supabase to seed Room 1–25.</div>'; return; }
+  if(!state.rooms.length){ grid.innerHTML = '<div class="empty">No rooms found yet — check with management.</div>'; return; }
   if(!rooms.length){ grid.innerHTML = '<div class="empty">No rooms match this filter.</div>'; return; }
   grid.innerHTML = rooms.map(r => `
     <div class="room-card ${statusStripe(r.status)}" onclick="openRoomModal('${esc(r.room_number)}')">
@@ -1155,7 +1155,7 @@ async function submitRoomUpdate(){
     result.innerHTML = '<span style="color:var(--green);font-weight:700">&#10003; Saved</span>';
     showToast(activeRoom.room_number + ' updated');
     setTimeout(()=>{ closeRoomModal(); loadAll(); }, 500);
-  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not save: has reception_schema.sql been run yet?')+'</span>'; }
+  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not save — please try again or check with management.')+'</span>'; }
 }
 
 // ---------------------------------------------------------------------------
@@ -1475,7 +1475,7 @@ async function submitVipInterest(){
     showToast('VIP interest logged');
     document.getElementById('vipQuery').value=''; document.getElementById('vipName').value='';
     loadAll();
-  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not log: has reception_schema.sql been run yet?')+'</span>'; }
+  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not log — please try again or check with management.')+'</span>'; }
 }
 
 // ---------------------------------------------------------------------------
@@ -1820,7 +1820,7 @@ async function submitCleaningLog(){
     showToast(zone + ' checked');
     ['clLocation','clScore','clIssues','clManager'].forEach(id=>document.getElementById(id).value='');
     loadAll();
-  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not save: has reception_schema.sql been run yet?')+'</span>'; }
+  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not save — please try again or check with management.')+'</span>'; }
 }
 
 // ---------------------------------------------------------------------------
@@ -1938,7 +1938,7 @@ async function submitTask(){
     showToast('Task added');
     ['tsTitle','tsDescription','tsAssignedTo','tsDue'].forEach(id=>document.getElementById(id).value='');
     loadAll();
-  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not add: has reception_schema.sql been run yet?')+'</span>'; }
+  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not add — please try again or check with management.')+'</span>'; }
 }
 
 // ---------------------------------------------------------------------------
@@ -2015,7 +2015,7 @@ async function submitNote(){
     showToast('Note added');
     document.getElementById('ntBody').value = '';
     loadAll();
-  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not save: has the latest reception_schema.sql been run?')+'</span>'; }
+  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not save — please try again or check with management.')+'</span>'; }
 }
 
 // ---------------------------------------------------------------------------
@@ -2069,7 +2069,7 @@ async function submitRecognitionPost(){
     showToast('Added to recognition board');
     ['rpTitle','rpGuestName','rpMessage'].forEach(id=>document.getElementById(id).value='');
     loadAll();
-  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not save: has the latest reception_schema.sql been run?')+'</span>'; }
+  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not save — please try again or check with management.')+'</span>'; }
 }
 async function retireRecognitionPost(id){
   try{
