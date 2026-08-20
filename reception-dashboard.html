@@ -620,7 +620,9 @@ label.f{ display:block; font-size:10px; color:var(--muted); font-weight:700; let
           <div id="clResultMsg" class="result-msg"></div>
         </div>
         <div class="card">
-          <div class="card-title">&#128203; Today's Checks</div>
+          <div class="card-title">&#9888; Unresolved Fails <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(any date — clear once fixed)</span></div>
+          <div id="cleaningUnresolved"></div>
+          <div class="card-title" style="margin-top:18px">&#128203; Today's Checks</div>
           <div id="cleaningToday"></div>
           <div class="card-title" style="margin-top:18px">Zones Not Yet Checked Today</div>
           <div id="cleaningMissing"></div>
@@ -868,7 +870,7 @@ const ZONE_REMINDERS = {
 let state = {
   rooms: [], bookings: [], guests: [], tickets: [], tasks: [], cleaningLogs: [],
   staff: [], staffRoster: [], shiftLog: [], notes: [], recognitionPosts: [],
-  roomFilter: 'All', bookingFilter: 'All', ticketFilter: 'Open', taskFilter: 'active', noteFilter: 'all',
+  roomFilter: 'All', bookingFilter: 'All', ticketFilter: 'Open', taskFilter: 'active', noteFilter: 'all', showTaskArchive: false,
   facilitiesOnline: false,
   actingAs: (function(){ try{ return localStorage.getItem('reception_acting_as') || ''; }catch(e){ return ''; } })()
 };
@@ -1162,7 +1164,7 @@ async function submitRoomUpdate(){
 // BOOKINGS
 // ---------------------------------------------------------------------------
 function renderBookingFilters(){
-  const statuses = ['All','pending','confirmed','completed','cancelled'];
+  const statuses = ['All','pending','confirmed','completed','cancelled','Archived'];
   document.getElementById('bookingFilters').innerHTML = statuses.map(s=>
     `<button class="filter-chip ${state.bookingFilter===s?'active':''}" onclick="setBookingFilter('${s}')">${s}</button>`).join('');
 }
@@ -1171,7 +1173,12 @@ function setBookingFilter(s){ state.bookingFilter=s; renderBookingFilters(); ren
 function renderBookings(){
   const q = (document.getElementById('bookingSearch').value||'').toLowerCase();
   let rows = state.bookings;
-  if(state.bookingFilter!=='All') rows = rows.filter(b=>(b.status||'pending')===state.bookingFilter);
+  if(state.bookingFilter==='Archived'){
+    rows = rows.filter(b=>b.archived);
+  } else {
+    rows = rows.filter(b=>!b.archived);
+    if(state.bookingFilter!=='All') rows = rows.filter(b=>(b.status||'pending')===state.bookingFilter);
+  }
   if(q) rows = rows.filter(b => (b.guest_name||'').toLowerCase().includes(q) || (b.guest_phone||'').includes(q) || (b.room_type||'').toLowerCase().includes(q));
   const body = document.getElementById('bookingsBody');
   if(!rows.length){ body.innerHTML = '<tr><td colspan="7" class="empty">No bookings match</td></tr>'; return; }
@@ -1182,14 +1189,32 @@ function renderBookings(){
       <td style="font-size:10px;color:var(--text-dim)">${b.check_in?fmtDate(b.check_in):fmtDate(b.created_at)}</td>
       <td style="text-align:center">${b.party_size||'—'}</td>
       <td style="text-align:center">${b.deposit_paid ? '<span class="pill done">Paid'+(b.payment_method?' · '+esc(b.payment_method):'')+'</span>' : '<span class="pill pending">Unpaid</span>'}</td>
-      <td><span class="pill ${(b.status||'pending').toLowerCase()}">${esc(b.status||'pending')}</span></td>
+      <td><span class="pill ${(b.status||'pending').toLowerCase()}">${esc(b.status||'pending')}</span>${b.archived?'<br><span style="font-size:9px;color:var(--muted)">ARCHIVED</span>':''}</td>
       <td style="white-space:nowrap">
-        ${(b.status||'pending')!=='cancelled' && (b.status||'pending')!=='completed' ? `<button class="btn small ghost" onclick="openBookingModal('${b.id}')">Room / Payment</button>` : ''}
-        ${b.room_number && b.status!=='completed' && b.status!=='cancelled' ? `<button class="btn small teal" onclick="checkinBookingRow('${b.id}')">Check In</button>` : ''}
-        ${b.status==='confirmed' ? `<button class="btn small teal" onclick="checkoutBookingRow('${b.id}')">Check Out</button>` : ''}
-        ${b.status!=='completed' && b.status!=='cancelled' ? `<button class="btn small ghost" onclick="cancelBookingRow('${b.id}')">Cancel</button>` : ''}
+        ${!b.archived && (b.status||'pending')!=='cancelled' && (b.status||'pending')!=='completed' ? `<button class="btn small ghost" onclick="openBookingModal('${b.id}')">Room / Payment</button>` : ''}
+        ${!b.archived && b.room_number && b.status!=='completed' && b.status!=='cancelled' ? `<button class="btn small teal" onclick="checkinBookingRow('${b.id}')">Check In</button>` : ''}
+        ${!b.archived && b.status==='confirmed' ? `<button class="btn small teal" onclick="checkoutBookingRow('${b.id}')">Check Out</button>` : ''}
+        ${!b.archived && b.status!=='completed' && b.status!=='cancelled' ? `<button class="btn small ghost" onclick="cancelBookingRow('${b.id}')">Cancel</button>` : ''}
+        ${!b.archived && (b.status==='completed' || b.status==='cancelled') ? `<button class="btn small ghost" onclick="archiveBookingRow('${b.id}')">Archive</button>` : ''}
+        ${b.archived ? `<button class="btn small ghost" onclick="unarchiveBookingRow('${b.id}')">Restore</button>` : ''}
       </td>
     </tr>`).join('');
+}
+async function archiveBookingRow(id){
+  const by = getBookingAddedBy() || prompt('Your name, for the record?');
+  if(!by) return;
+  try{
+    const { error } = await supabaseClient.rpc('archive_booking', { p_booking_id: id, p_by: by });
+    if(error) throw new Error(error.message);
+    showToast('Booking archived'); loadAll();
+  }catch(e){ showToast('Could not archive: ' + (e.message||'error')); }
+}
+async function unarchiveBookingRow(id){
+  try{
+    const { error } = await supabaseClient.rpc('unarchive_booking', { p_booking_id: id });
+    if(error) throw new Error(error.message);
+    showToast('Booking restored'); loadAll();
+  }catch(e){ showToast('Could not restore: ' + (e.message||'error')); }
 }
 
 async function setBookingStatus(id, status){
@@ -1760,6 +1785,22 @@ function renderCleaning(){
   populateClLocationDropdown();
   const todayStr = new Date().toISOString().slice(0,10);
   const todays = state.cleaningLogs.filter(c => c.log_date === todayStr);
+
+  // All unresolved fails, regardless of date — previously only today's fails had
+  // a Clear button, so a fail logged on an earlier day could never be cleared
+  // from this screen even after the issue was actually fixed.
+  const unresolvedEl = document.getElementById('cleaningUnresolved');
+  const allUnresolved = state.cleaningLogs.filter(c => c.result==='Fail' && !c.corrected)
+    .sort((a,b)=> new Date(a.created_at) - new Date(b.created_at));
+  unresolvedEl.innerHTML = allUnresolved.length ? allUnresolved.map(c => `
+    <div style="padding:9px 0;border-bottom:1px solid var(--border-soft);font-size:12.5px;display:flex;justify-content:space-between;gap:8px;align-items:center;background:rgba(201,63,63,0.06);border-radius:6px;padding-left:8px;padding-right:8px">
+      <span>${esc(c.zone)}${c.location?': '+esc(c.location):''} <span style="color:var(--text-dim)">(${esc(c.staff_name)||'—'} · ${c.log_date})</span>${c.issues_found?'<br><span style="color:var(--text-dim)">'+esc(c.issues_found)+'</span>':''}</span>
+      <span style="display:flex;align-items:center;gap:6px">
+        <span class="pill urgent">${esc(c.result)}${c.score?' · '+c.score+'/5':''} · OPEN</span>
+        <button class="btn small teal" onclick="resolveCleaningRow('${c.id}')">Clear</button>
+      </span>
+    </div>`).join('') : '<div class="empty" style="color:var(--green)">Nothing outstanding.</div>';
+
   const el = document.getElementById('cleaningToday');
   el.innerHTML = todays.length ? todays.map(c => {
     const outstanding = c.result==='Fail' && !c.corrected;
@@ -1862,9 +1903,18 @@ function renderTasks(){
         ${t.status!=='done' && t.status!=='cancelled' ? `<button class="btn small ghost" onclick="cancelTaskRow('${t.id}')">Cancel</button>` : ''}
       </div>
     </div>`;
-  el.innerHTML = active.map(rowHtml).join('') +
-    (archived.length ? `<div style="margin-top:18px;padding-top:10px;border-top:1px solid var(--border-soft);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Archive</div>` + archived.map(rowHtml).join('') : '');
+  if(state.taskFilter==='all'){
+    const archiveToggleHtml = archived.length ? `
+      <div style="margin-top:18px;padding-top:10px;border-top:1px solid var(--border-soft)">
+        <button class="btn small ghost" onclick="toggleTaskArchive()">${state.showTaskArchive ? 'Hide' : 'View'} Archive (${archived.length})</button>
+      </div>` : '';
+    el.innerHTML = active.map(rowHtml).join('') + archiveToggleHtml +
+      (state.showTaskArchive && archived.length ? `<div style="margin-top:10px">` + archived.map(rowHtml).join('') + `</div>` : '');
+  } else {
+    el.innerHTML = rows.map(rowHtml).join('');
+  }
 }
+function toggleTaskArchive(){ state.showTaskArchive = !state.showTaskArchive; renderTasks(); }
 async function cancelTaskRow(id){
   if(!confirm('Cancel this task? It stays in the archive but is marked cancelled, not done.')) return;
   if(!state.actingAs){ showToast('Select "Who are you?" at the top first.'); return; }
@@ -2104,6 +2154,7 @@ function openPresentMode(){
 }
 loadAll();
 loadTaskTemplates();
+supabaseClient.rpc('auto_archive_old_bookings').catch(()=>{});
 setInterval(loadAll, 60000);
 </script>
 </body>
