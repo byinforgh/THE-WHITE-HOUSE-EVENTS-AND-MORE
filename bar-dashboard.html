@@ -411,6 +411,11 @@ tr.low-row{background:#1a0a0a;}
     <div class="order-cards-grid" id="foodOrdersBody"><div class="empty">Loading food orders...</div></div>
   </div>
 
+  <div class="card" id="recentCompletedCard">
+    <div class="card-title">&#9203; RECENTLY COMPLETED <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(how long each stage took, most recent first)</span></div>
+    <div id="recentCompletedBody"><div class="empty">Loading...</div></div>
+  </div>
+
   <div class="low-stock-banner" id="lowStockBanner">
     <div class="low-stock-banner-title">&#9888; LOW STOCK — RESTOCK NEEDED</div>
     <div id="lowStockPills"></div>
@@ -440,7 +445,7 @@ tr.low-row{background:#1a0a0a;}
     <div>
       <div class="card">
         <div class="card-title">&#128100; CUSTOMER LOOKUP <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(one shared customer base — bar, bookings, and landing-page sign-ups all live here)</span></div>
-        <input class="search-input" id="custPhoneInput" placeholder="Phone number, or ID like THWGH1 / GH1 / 1" onkeydown="if(event.key==='Enter')lookupCustomer()">
+        <input class="search-input" id="custPhoneInput" placeholder="Name, phone number, or ID like THWGH1 / GH1 / 1" onkeydown="if(event.key==='Enter')lookupCustomer()">
         <div class="restock-grid">
           <button class="btn" onclick="lookupCustomer()" style="margin:0">LOOK UP</button>
           <button class="btn" id="scanBtn" onclick="openScanner()" style="margin:0;background:var(--teal);color:#0a0a0a">&#128247; SCAN QR/ID CARD</button>
@@ -1114,6 +1119,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 let lastFoundCustomer = null;
+let rewardsCache = null;
 async function lookupCustomer(prefillQuery){
   const input = document.getElementById('custPhoneInput');
   if(prefillQuery !== undefined) input.value = prefillQuery;
@@ -1129,20 +1135,102 @@ async function lookupCustomer(prefillQuery){
     const { data: supaId, error: supaErr } = await supabaseClient.rpc('find_customer_flexible', { p_query: query });
     if(supaErr) throw new Error(supaErr.message);
     if(supaId){
-      const { data: cust, error: custErr } = await supabaseClient.from('bar_customers').select('*').eq('customer_id', supaId).single();
-      if(custErr) throw new Error(custErr.message);
-      lastFoundCustomer = {
-        custId: cust.customer_id, name: cust.name, loyaltyPoints: cust.loyalty_points,
-        totalVisits: cust.total_visits, lastVisit: cust.last_visit ? toDate(cust.last_visit).toLocaleDateString('en-GB') : ''
-      };
-      const membershipLine = cust.membership_status === 'VIP' ? '<br>Membership: <b style="color:var(--gold)">VIP</b>' : '';
-      resultEl.innerHTML = `<b>${lastFoundCustomer.custId}</b> — ${lastFoundCustomer.name}${membershipLine}<br>Loyalty points: ${lastFoundCustomer.loyaltyPoints}<br>Total visits: ${lastFoundCustomer.totalVisits}<br>Last visit: ${lastFoundCustomer.lastVisit||'—'}<button class="btn" style="margin-top:10px" onclick="generateCustomerQR()">&#127915; GENERATE QR ID CARD</button>`;
+      await selectCustomerById(supaId);
+      return;
+    }
+    // No exact phone/ID match — try matching by name instead, since staff
+    // most often want to search "who they're serving" by name.
+    const { data: nameMatches, error: nameErr } = await supabaseClient.rpc('search_customers_by_name', { p_query: query });
+    if(nameErr) throw new Error(nameErr.message);
+    if(nameMatches && nameMatches.length === 1){
+      await selectCustomerById(nameMatches[0].customer_id);
+    }else if(nameMatches && nameMatches.length > 1){
+      resultEl.innerHTML = `<div style="margin-bottom:6px;color:var(--muted);font-size:12px">${nameMatches.length} matches — tap one:</div>` +
+        nameMatches.map(c => `<div class="rank-row" style="cursor:pointer" onclick="selectCustomerById('${c.customer_id}')">
+          <div class="rank-info"><div class="rank-name">${c.name}</div><div class="rank-sub">${c.customer_id} · ${c.phone_number||'no phone on file'}</div></div>
+          <div class="rank-value">${c.loyalty_points} pts</div>
+        </div>`).join('');
     }else{
       resultEl.innerHTML = "No customer found matching that — they'll be registered next time they order.";
     }
   }catch(e){
     resultEl.innerHTML = '<span style="color:var(--red)">Error: ' + (e.message||'connection failed') + '. Check your internet connection and try again.</span>';
     showApiError(e.message || 'Customer lookup failed.');
+  }
+}
+
+async function selectCustomerById(customerId){
+  const resultEl = document.getElementById('customerResult');
+  resultEl.classList.add('show');
+  resultEl.innerHTML = 'Loading...';
+  try{
+    const { data: cust, error: custErr } = await supabaseClient.from('bar_customers').select('*').eq('customer_id', customerId).single();
+    if(custErr) throw new Error(custErr.message);
+    lastFoundCustomer = {
+      custId: cust.customer_id, name: cust.name, loyaltyPoints: cust.loyalty_points,
+      totalVisits: cust.total_visits, lastVisit: cust.last_visit ? toDate(cust.last_visit).toLocaleDateString('en-GB') : '',
+      membershipStatus: cust.membership_status
+    };
+    await renderCustomerCard();
+  }catch(e){
+    resultEl.innerHTML = '<span style="color:var(--red)">Error: ' + (e.message||'connection failed') + '</span>';
+    showApiError(e.message || 'Customer lookup failed.');
+  }
+}
+
+async function renderCustomerCard(){
+  const resultEl = document.getElementById('customerResult');
+  if(!lastFoundCustomer) return;
+  const c = lastFoundCustomer;
+  const membershipLine = c.membershipStatus === 'VIP' ? '<br>Membership: <b style="color:var(--gold)">VIP</b>' : '';
+  if(rewardsCache === null){
+    try{
+      const { data, error } = await supabaseClient.from('rewards').select('*').eq('active', true).order('points_required');
+      if(error) throw new Error(error.message);
+      rewardsCache = data || [];
+    }catch(e){ rewardsCache = []; }
+  }
+  const rewardsHtml = rewardsCache.length ? `
+    <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-soft, #333)">
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Claim a reward</div>
+      ${rewardsCache.map(r => {
+        const canAfford = c.loyaltyPoints >= r.points_required;
+        return `<button class="btn small ${canAfford?'teal':'ghost'}" style="margin:0 6px 6px 0" ${canAfford?'':'disabled'}
+          onclick="claimReward('${r.reward_name.replace(/'/g,"\\'")}', ${r.points_required})">
+          ${r.reward_name} — ${r.points_required} pts</button>`;
+      }).join('')}
+    </div>` : '';
+  resultEl.innerHTML = `<b>${c.custId}</b> — ${c.name}${membershipLine}<br>Loyalty points: <b id="custPointsLive">${c.loyaltyPoints}</b><br>Total visits: ${c.totalVisits}<br>Last visit: ${c.lastVisit||'—'}
+    <button class="btn" style="margin-top:10px" onclick="generateCustomerQR()">&#127915; GENERATE QR ID CARD</button>
+    ${rewardsHtml}
+    <div id="claimResultMsg" style="margin-top:8px;font-size:12px"></div>`;
+}
+
+async function claimReward(rewardName, pointsRequired){
+  if(!lastFoundCustomer) return;
+  const staffList = getServingStaff();
+  if(staffList.length === 0){ alert('Check in a staff member first — rewards are logged against whoever is on duty.'); return; }
+  let givenBy = staffList[0].initials;
+  if(staffList.length > 1){
+    const options = staffList.map(s=>s.initials).join(', ');
+    const chosen = prompt('Which staff member is giving this reward? (' + options + ')', givenBy);
+    if(!chosen) return;
+    givenBy = chosen.trim();
+  }
+  if(!confirm(`Give "${rewardName}" to ${lastFoundCustomer.name} for ${pointsRequired} points?`)) return;
+  const msgEl = document.getElementById('claimResultMsg');
+  if(msgEl) msgEl.innerHTML = 'Processing...';
+  try{
+    const { data, error } = await supabaseClient.rpc('redeem_customer_reward', {
+      p_query: lastFoundCustomer.custId, p_reward_name: rewardName, p_given_by: givenBy, p_notes: null
+    });
+    if(error) throw new Error(error.message);
+    lastFoundCustomer.loyaltyPoints = data.newTotal;
+    if(msgEl) msgEl.innerHTML = '<span style="color:var(--green);font-weight:700">&#10003; Redeemed — new balance ' + data.newTotal + ' pts</span>';
+    await renderCustomerCard();
+  }catch(e){
+    if(msgEl) msgEl.innerHTML = '<span style="color:var(--red)">' + (e.message||'Could not redeem') + '</span>';
+    else showApiError(e.message || 'Could not redeem reward.');
   }
 }
 
@@ -2000,7 +2088,9 @@ function shapeSupabaseOrderRow(r){
     orderId: r.order_id, locationType: r.location_type, locationDetail: r.location_detail || '',
     items: r.items_json || [], total: parseFloat(r.total_ghs) || 0, payment: r.payment_method,
     status: r.status, momoRef: r.momo_reference || '', customerName: r.customer_name,
-    phone: r.customer_phone, handledBy: r.handled_by || '', timestamp: r.created_at, notes: r.notes || ''
+    phone: r.customer_phone, handledBy: r.handled_by || '', timestamp: r.created_at, notes: r.notes || '',
+    preparingAt: r.preparing_at || null, deliveredAt: r.delivered_at || null,
+    paidAt: r.paid_at || null, cancelledAt: r.cancelled_at || null
   };
 }
 
@@ -2037,6 +2127,7 @@ async function loadTableOrders(){
     const recentFinal = shaped.filter(o => o.status === 'Paid' || o.status === 'Cancelled').slice(0, 15);
     await attachComboStatus(active, 'canteen_orders');
     tableOrdersData = { success: true, active: active, recentFinal: recentFinal };
+    renderRecentCompleted();
 
     const currentIds = new Set(active.map(o=>o.orderId));
     let hasNewPlaced = false;
@@ -2084,6 +2175,55 @@ function orderAge(timestamp){
 function locationLabel(o){
   const loc = o.locationType === 'Table' ? ('Table ' + (o.locationDetail || '?')) : (o.locationType + (o.locationDetail ? ' — ' + o.locationDetail : ''));
   return loc;
+}
+
+function fmtDuration(startIso, endIso){
+  if(!startIso || !endIso) return null;
+  const ms = toDate(endIso).getTime() - toDate(startIso).getTime();
+  if(isNaN(ms) || ms < 0) return null;
+  const mins = Math.round(ms / 60000);
+  if(mins < 1) return '<1 min';
+  if(mins < 60) return mins + ' min';
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return h + 'h ' + (m ? m + 'm' : '');
+}
+function fmtDateTime(iso){
+  const d = toDate(iso);
+  if(!d || isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-GB', {day:'2-digit', month:'short'}) + ', ' + d.toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+}
+
+function renderRecentCompleted(){
+  const el = document.getElementById('recentCompletedBody');
+  if(!el) return;
+  const combined = [...(tableOrdersData.recentFinal||[]), ...(foodOrdersData.recentFinal||[])]
+    .sort((a,b) => (toDate(b.timestamp)?.getTime()||0) - (toDate(a.timestamp)?.getTime()||0))
+    .slice(0, 15);
+  if(!combined.length){ el.innerHTML = '<div class="empty">Nothing completed yet.</div>'; return; }
+  el.innerHTML = combined.map(o => {
+    if(o.status === 'Cancelled'){
+      const total = fmtDuration(o.timestamp, o.cancelledAt);
+      return `<div class="rank-row">
+        <div class="rank-info"><div class="rank-name">${locationLabel(o)} <span style="color:var(--red);font-weight:400">CANCELLED</span></div>
+        <div class="rank-sub">Placed ${fmtDateTime(o.timestamp)}${total?' · open '+total+' before cancelled':''}</div></div>
+        <div class="rank-value">GHS ${o.total.toFixed(2)}</div>
+      </div>`;
+    }
+    const toPrep = fmtDuration(o.timestamp, o.preparingAt);
+    const toDelivered = fmtDuration(o.preparingAt, o.deliveredAt);
+    const toPaid = fmtDuration(o.deliveredAt, o.paidAt);
+    const total = fmtDuration(o.timestamp, o.paidAt);
+    const stages = [
+      toPrep ? 'Placed&rarr;Preparing: '+toPrep : null,
+      toDelivered ? 'Preparing&rarr;Delivered: '+toDelivered : null,
+      toPaid ? 'Delivered&rarr;Paid: '+toPaid : null
+    ].filter(Boolean).join(' · ');
+    return `<div class="rank-row">
+      <div class="rank-info"><div class="rank-name">${locationLabel(o)}</div>
+      <div class="rank-sub">Placed ${fmtDateTime(o.timestamp)}${stages?'<br>'+stages:''}</div></div>
+      <div class="rank-value">${total?total+' total':''}<br><span style="font-size:10px;color:var(--muted)">GHS ${o.total.toFixed(2)}</span></div>
+    </div>`;
+  }).join('');
 }
 
 function activeOrdersSignature(active){
@@ -2140,7 +2280,9 @@ function renderTableOrders(){
     const momoHtml = o.payment === 'MoMo' ? `<div style="font-size:13px;font-weight:800;color:var(--gold);background:#2a2006;border:1px solid var(--gold-dim);border-radius:6px;padding:8px 10px;margin:6px 0">&#128241; PAY BY MOMO — check ${barData.momoNumber||'(number not set)'}${barData.momoName?' ('+barData.momoName+')':''} for GHS ${o.total.toFixed(2)}</div>` : '';
     return `<div class="order-card ${statusClass(o.status)}${isNew && o.status==='Placed' ? ' is-new':''}${isProcessing?' is-processing':''}" data-timestamp="${o.timestamp}">
       <div class="order-card-top">
-        <div><span class="order-card-table">${locationLabel(o)}</span> &nbsp; <span class="order-status-pill ${statusPillClass(o.status)}">${o.status}</span></div>
+        <div><span class="order-card-table">${locationLabel(o)}</span> &nbsp; <span class="order-status-pill ${statusPillClass(o.status)}">${o.status}</span>
+          <div style="font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;margin-top:2px">Placed ${fmtDateTime(o.timestamp)}</div>
+        </div>
         <div class="order-card-age">${orderAge(o.timestamp)}</div>
       </div>
       <div class="order-items-list">${itemsHtml}</div>
@@ -2223,7 +2365,7 @@ function scheduleNext(fn, baseMs, jitterMs){
   }, delay);
 }
 
-let foodOrdersData = { active: [] };
+let foodOrdersData = { active: [], recentFinal: [] };
 let seenFoodActiveOrderIds = new Set();
 let foodOrdersFirstLoad = true;
 let lastFoodActiveSignature = null;
@@ -2241,8 +2383,10 @@ async function loadFoodOrders(){
 
     const shaped = data.map(shapeSupabaseOrderRow);
     const active = shaped.filter(o => o.status !== 'Paid' && o.status !== 'Cancelled');
+    const recentFinal = shaped.filter(o => o.status === 'Paid' || o.status === 'Cancelled').slice(0, 15);
     await attachComboStatus(active, 'table_orders');
-    foodOrdersData = { active };
+    foodOrdersData = { active, recentFinal };
+    renderRecentCompleted();
 
     const currentIds = new Set(active.map(o=>o.orderId));
     let hasNewPlaced = false;
@@ -2317,7 +2461,9 @@ function renderFoodOrders(){
     const comboHtml = o.comboStatus ? `<div style="font-size:11px;color:var(--gold);background:#1a1500;border:1px solid var(--gold-dim);border-radius:6px;padding:6px 10px;margin:6px 0">&#127864; ${o.comboLabel} also ordered — bar: <b>${o.comboStatus}</b> (${o.comboRefId})</div>` : '';
     return `<div class="order-card ${statusClass(o.status)}${isNew && o.status==='Placed' ? ' is-new':''}${isProcessing?' is-processing':''}" data-timestamp="${o.timestamp}">
       <div class="order-card-top">
-        <div><span class="order-card-table">${locationLabel(o)}</span> &nbsp; <span class="order-status-pill ${statusPillClass(o.status)}">${o.status}</span></div>
+        <div><span class="order-card-table">${locationLabel(o)}</span> &nbsp; <span class="order-status-pill ${statusPillClass(o.status)}">${o.status}</span>
+          <div style="font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;margin-top:2px">Placed ${fmtDateTime(o.timestamp)}</div>
+        </div>
         <div class="order-card-age">${orderAge(o.timestamp)}</div>
       </div>
       <div class="order-items-list">${itemsHtml}</div>
