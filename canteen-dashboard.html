@@ -376,6 +376,11 @@ function orderAge(timestamp){
   if(mins === 1) return '1 min ago';
   return mins + ' min ago';
 }
+function fmtDateTime(iso){
+  const d = new Date(iso);
+  if(!d || isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-GB', {day:'2-digit', month:'short'}) + ', ' + d.toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+}
 function locationLabel(o){
   if(o.locationType === 'Table') return 'Table ' + (o.locationDetail || '?');
   return o.locationType + (o.locationDetail ? ` <small>${o.locationDetail}</small>` : '');
@@ -428,7 +433,9 @@ function renderCanteenOrders(){
 
     return `<div class="order-card ${statusClass(o.status)}${isNew && o.status==='Placed' ? ' is-new':''}${isProcessing?' is-processing':''}" data-timestamp="${o.timestamp}">
       <div class="order-card-top">
-        <div><span class="order-card-loc">${locationLabel(o)}</span> &nbsp; <span class="order-status-pill ${statusPillClass(o.status)}">${o.status}</span></div>
+        <div><span class="order-card-loc">${locationLabel(o)}</span> &nbsp; <span class="order-status-pill ${statusPillClass(o.status)}">${o.status}</span>
+          <div style="font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;margin-top:2px">Placed ${fmtDateTime(o.timestamp)}</div>
+        </div>
         <div class="order-card-age">${orderAge(o.timestamp)}</div>
       </div>
       <div class="order-items-list">${itemsHtml}</div>
