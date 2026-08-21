@@ -401,7 +401,7 @@ async function changePassword(){
 
 // ---------------- COCKTAILS (unchanged data source) ----------------
 async function loadCocktails(){
-  const { data, error } = await supabaseClient.rpc('get_bar_costing_overview');
+  const { data, error } = await supabaseClient.rpc('get_bar_costing_overview_gated', { p_password: REV_PW });
   if(error){ console.log('costing error', error.message); return; }
   const bar = (data||{}).bar || {};
   const ck = (data||{}).cocktails || {};
@@ -419,7 +419,7 @@ async function loadCocktails(){
 
 // ---------------- SHIFT SUMMARIES ----------------
 async function loadShiftSummaries(){
-  const { data, error } = await supabaseClient.rpc('get_shift_summaries_for_manager', { p_limit: 30 });
+  const { data, error } = await supabaseClient.rpc('get_shift_summaries_for_manager_gated', { p_password: REV_PW, p_limit: 30 });
   if(error){ document.getElementById('summariesBody').innerHTML = '<div class="empty">'+esc(error.message)+'</div>'; return; }
   document.getElementById('summariesBody').innerHTML = (data||[]).length ? data.map(s => `
     <div class="summary-item">
