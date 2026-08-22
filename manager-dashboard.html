@@ -226,6 +226,34 @@ textarea{min-height:60px;resize:vertical;}
 .confirm-box .ok-badge{font-size:44px;margin-bottom:8px;}
 .confirm-box h3{color:var(--green);font-size:16px;margin-bottom:6px;}
 .order-id{font-family:'Space Mono',monospace;font-size:12px;color:var(--text-dim);margin-top:6px;}
+
+/* ---- Clickable elements (drill-down) ---- */
+.clickable{cursor:pointer;transition:transform .1s, border-color .15s;}
+.clickable:hover{border-color:var(--gold);}
+.metric-card.clickable:hover{transform:translateY(-2px);}
+.metric-card .metric-hint{position:absolute;top:12px;right:14px;font-size:9px;color:var(--muted);letter-spacing:0.5px;}
+.dept-status-card.clickable:hover, .staff-card.clickable:hover, .supplier-card.clickable:hover{background:#1c1c1f;}
+.list-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border-soft);font-size:12.5px;}
+.list-row:last-child{border-bottom:none;}
+.list-row.clickable:hover{background:#17171a;margin:0 -8px;padding:9px 8px;border-radius:6px;}
+
+/* ---- Modal ---- */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:1000;align-items:flex-start;justify-content:center;overflow-y:auto;padding:30px 14px;}
+.modal-overlay.active{display:flex;}
+.modal-box{background:var(--card);border:1px solid var(--border);border-top:3px solid var(--gold);border-radius:12px;max-width:640px;width:100%;margin-top:20px;box-shadow:0 20px 60px rgba(0,0,0,0.5);}
+.modal-head{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border);}
+.modal-title{font-size:14px;font-weight:800;letter-spacing:0.5px;color:var(--gold);text-transform:uppercase;}
+.modal-close{background:none;border:none;color:var(--text-dim);font-size:26px;cursor:pointer;line-height:1;padding:0 4px;}
+.modal-close:hover{color:var(--red);}
+.modal-body{padding:18px 20px 22px;max-height:75vh;overflow-y:auto;}
+.modal-body .card{background:var(--surface);}
+.modal-section-label{font-size:9.5px;font-weight:800;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;margin:16px 0 8px;}
+.modal-section-label:first-child{margin-top:0;}
+.action-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
+.action-row .btn{width:auto;padding:9px 14px;font-size:11px;flex:1;min-width:110px;}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--gold);color:var(--black);padding:12px 22px;border-radius:8px;font-size:12.5px;font-weight:800;opacity:0;pointer-events:none;transition:all .25s;z-index:1100;box-shadow:0 8px 24px rgba(0,0,0,0.4);}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+.toast.error{background:var(--red);color:#fff;}
 </style>
 </head>
 <body>
@@ -543,18 +571,26 @@ textarea{min-height:60px;resize:vertical;}
   <div class="section" id="sec-barcanteen">
     <div class="metrics-grid" id="barMetrics"><div class="loading">Loading...</div></div>
     <div class="card">
+      <div class="card-title">&#128203; ACTIVE ORDERS <span class="ct-note">tap an order to update its status or mark it paid</span></div>
+      <div id="barActiveOrders" class="scroll-table" style="max-height:360px"><div class="empty">Loading...</div></div>
+    </div>
+    <div class="card">
       <div class="card-title">&#9888; LOW STOCK ITEMS</div>
       <div id="barLowStock"><div class="empty">Loading...</div></div>
     </div>
-    <div style="font-size:11px;color:var(--muted);margin-top:-8px;margin-bottom:16px">Read-only — edit stock, recipes, and orders on the Bar/Canteen dashboards directly, or use the Stock &amp; Procurement / Guest Order tabs here.</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:-8px;margin-bottom:16px">For full menu/recipe editing, use the Bar or Canteen dashboards directly — orders and stock here are fully live.</div>
   </div>
 
   <!-- FACILITIES (read-only + compliance) -->
   <div class="section" id="sec-facilities">
     <div class="metrics-grid" id="facMetrics"><div class="loading">Loading...</div></div>
+    <div class="card">
+      <div class="card-title">&#128295; ALL TICKETS <span class="ct-note">tap any ticket to view, assign, verify, or close it</span></div>
+      <div id="facTicketList" class="scroll-table" style="max-height:380px"><div class="empty">Loading...</div></div>
+    </div>
     <div class="two-col">
       <div class="card">
-        <div class="card-title">&#127959; PROJECTS</div>
+        <div class="card-title">&#127959; PROJECTS <span class="ct-note">tap to update status</span></div>
         <div id="facProjects"><div class="empty">Loading...</div></div>
       </div>
       <div class="card">
@@ -562,12 +598,12 @@ textarea{min-height:60px;resize:vertical;}
         <div id="facByCategory"><div class="empty">Loading...</div></div>
       </div>
     </div>
-    <div style="font-size:11px;color:var(--muted);margin-top:-8px;margin-bottom:16px">Read-only — edit tickets and projects on the Facilities dashboard directly. See Daily Operations for cleaning compliance.</div>
   </div>
 
   <!-- RECEPTION (read-only) -->
   <div class="section" id="sec-reception">
     <div class="metrics-grid" id="recMetrics"><div class="loading">Loading...</div></div>
+
     <div class="two-col">
       <div class="card">
         <div class="card-title">&#128197; TODAY'S BOOKINGS</div>
@@ -702,6 +738,19 @@ textarea{min-height:60px;resize:vertical;}
     </div>
   </div>
 </div>
+
+<!-- DRILL-DOWN / EDIT MODAL (generic, reused by every tab) -->
+<div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal-box">
+    <div class="modal-head">
+      <div class="modal-title" id="modalTitle">—</div>
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
@@ -715,6 +764,39 @@ const STAFF_COLUMNS = 'id, initials, full_name, department, role, pay_type, pay_
 
 let data = {};
 let receiptFile = null;
+
+// ---------- MODAL / TOAST (used by every drill-down and edit action) ----------
+function openModal(title, html){
+  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modalBody').innerHTML = html;
+  document.getElementById('modalOverlay').classList.add('active');
+}
+function closeModal(){ document.getElementById('modalOverlay').classList.remove('active'); }
+document.addEventListener('keydown', e => { if(e.key === 'Escape') closeModal(); });
+
+function showToast(msg, isError){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (isError ? ' error' : '');
+  clearTimeout(window._toastTimer);
+  window._toastTimer = setTimeout(()=>{ t.classList.remove('show'); }, 3200);
+}
+
+// Jump to a tab from inside a modal (or from an alert row) and close the modal behind you
+function jumpToTab(sec){
+  closeModal();
+  const btn = document.querySelector('.tab[data-sec="'+sec+'"]');
+  if(btn) switchSection(sec, btn);
+}
+// Jump to Expenses pre-filtered by a search term (category, supplier, item...)
+function jumpToExpensesFiltered(term){
+  jumpToTab('expenses');
+  setTimeout(()=>{ const el = document.getElementById('expenseSearch'); if(el){ el.value = term; renderExpensesTable(); el.scrollIntoView({behavior:'smooth', block:'center'}); } }, 60);
+}
+function jumpToStockFiltered(term){
+  jumpToTab('stock');
+  setTimeout(()=>{ const el = document.getElementById('stockSearch'); if(el){ el.value = term; renderStockTable(); el.scrollIntoView({behavior:'smooth', block:'center'}); } }, 60);
+}
 
 function switchSection(sec, btn){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
@@ -746,7 +828,7 @@ async function loadData(){
   try{
     const [staffRes, expensesRes, budgetsRes, ticketsRes, projectsRes, custRes, shiftLogRes, settingsRes,
            costingRes, spendRes, payrollRes, payrollEstRes, summariesRes, bookingsRes, roomsRes, recTasksRes, activityRes,
-           stockRes, restockLogRes, venueSettingsRes, recipesRes, foodRes, rewardsRes, cleaningRes] = await Promise.all([
+           stockRes, restockLogRes, venueSettingsRes, recipesRes, foodRes, rewardsRes, cleaningRes, tableOrdersRes, canteenOrdersRes] = await Promise.all([
       supabaseClient.from('staff').select(STAFF_COLUMNS).order('slot'),
       supabaseClient.from('expenses').select('*').order('created_at', { ascending: false }).limit(300),
       supabaseClient.from('budgets').select('*'),
@@ -770,11 +852,13 @@ async function loadData(){
       supabaseClient.from('bar_recipes').select('item_name, category, price_ghs'),
       supabaseClient.from('food_menu').select('item_name, category, price_ghs'),
       supabaseClient.from('rewards').select('*').eq('active', true),
-      supabaseClient.from('cleaning_logs').select('*').order('created_at', { ascending: false }).limit(300)
+      supabaseClient.from('cleaning_logs').select('*').order('created_at', { ascending: false }).limit(300),
+      supabaseClient.from('table_orders').select('*').order('created_at', { ascending: false }).limit(150),
+      supabaseClient.from('canteen_orders').select('*').order('created_at', { ascending: false }).limit(150)
     ]);
     [staffRes, expensesRes, budgetsRes, ticketsRes, projectsRes, custRes, shiftLogRes, settingsRes,
      costingRes, spendRes, payrollRes, payrollEstRes, summariesRes, bookingsRes, roomsRes, recTasksRes, activityRes,
-     stockRes, restockLogRes, venueSettingsRes, recipesRes, foodRes, rewardsRes, cleaningRes].forEach(r => { if(r.error) throw new Error(r.error.message); });
+     stockRes, restockLogRes, venueSettingsRes, recipesRes, foodRes, rewardsRes, cleaningRes, tableOrdersRes, canteenOrdersRes].forEach(r => { if(r.error) throw new Error(r.error.message); });
 
     const staff = staffRes.data.map(s => ({
       staffId: s.id, fullName: s.full_name, department: s.department, role: s.role,
@@ -810,7 +894,12 @@ async function loadData(){
         if(!urgents.length) return 0;
         return Math.max(...urgents.map(t => (now.getTime() - new Date(t.created_at).getTime())/3600000));
       })(),
-      projects: (projectsRes.data||[]).map(p => ({ title: p.title, status: p.status }))
+      projects: (projectsRes.data||[]).map(p => ({ id: p.id, title: p.title, status: p.status })),
+      ticketList: facTickets.slice().sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).map(t => ({
+        id: t.id, title: t.title || t.description || '(no title)', description: t.description || '', category: t.category || 'Other',
+        urgency: t.urgency || 'Normal', status: t.status || 'open', verified: t.verified || null, location: t.location || '',
+        assignedInitials: t.assigned_initials || '', createdAt: t.created_at
+      }))
     };
 
     const customers = custRes.data || [];
@@ -819,7 +908,7 @@ async function loadData(){
       totalCustomers: customers.length,
       newToday: customers.filter(c => c.first_visit && new Date(c.first_visit).toLocaleDateString('en-GB') === todayStr).length,
       totalPointsLive: customers.reduce((s,c)=>s+(parseFloat(c.loyalty_points)||0),0),
-      topMembers: customers.slice().sort((a,b)=>(b.loyalty_points||0)-(a.loyalty_points||0)).slice(0,10).map(c=>({name:c.name, points:c.loyalty_points||0})),
+      topMembers: customers.slice().sort((a,b)=>(b.loyalty_points||0)-(a.loyalty_points||0)).slice(0,15).map(c=>({name:c.name, points:c.loyalty_points||0, custId:c.customer_id, phone:c.phone_number, status:c.membership_status||'Standard'})),
       vipRequests: customers.filter(c => (c.notes||'').indexOf('VIP REQUESTED') !== -1 && c.membership_status !== 'VIP')
         .map(c => ({ name: c.name, phone: c.phone_number, custId: c.customer_id }))
     };
@@ -836,6 +925,22 @@ async function loadData(){
     const bar = Object.assign({}, (costingRes.data||{}).bar || {});
     bar.crmError = null;
     const cocktails = (costingRes.data||{}).cocktails || {};
+
+    // ---- Active orders (Bar & Canteen drill-down) ----
+    function shapeOrderRow(r, kind){
+      return {
+        orderId: r.order_id, table: kind === 'bar' ? 'table_orders' : 'canteen_orders',
+        locationType: r.location_type, locationDetail: r.location_detail || '',
+        items: r.items_json || [], total: parseFloat(r.total_ghs)||0, payment: r.payment_method,
+        status: r.status, customerName: r.customer_name, phone: r.customer_phone,
+        handledBy: r.handled_by || '', timestamp: r.created_at, notes: r.notes || ''
+      };
+    }
+    const tableOrdersShaped = (tableOrdersRes.data||[]).map(r=>shapeOrderRow(r,'bar'));
+    const canteenOrdersShaped = (canteenOrdersRes.data||[]).map(r=>shapeOrderRow(r,'canteen'));
+    const activeOrders = tableOrdersShaped.concat(canteenOrdersShaped)
+      .filter(o => o.status !== 'Paid' && o.status !== 'Cancelled')
+      .sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
 
     // ---- Full stock (Stock & Procurement tab) ----
     const stock = (stockRes.data||[]).map(s => ({
@@ -906,7 +1011,7 @@ async function loadData(){
     const cleaning = {
       today: cleaningToday.map(c => ({ zone: c.zone, location: c.location, staffName: c.staff_name, score: c.score, result: c.result, issuesFound: c.issues_found, corrected: !!c.corrected, timestamp: c.created_at })),
       zonesChecked: cleaningZonesChecked.size, zonesTotal: ZONE_LIST.length, zonesMissing: cleaningZonesMissing,
-      openFails: cleaningOpenFails.map(c => ({ zone: c.zone, location: c.location, issuesFound: c.issues_found, timestamp: c.created_at }))
+      openFails: cleaningOpenFails.map(c => ({ id: c.id, zone: c.zone, location: c.location, issuesFound: c.issues_found, timestamp: c.created_at }))
     };
 
     // ---- ALERTS: things nobody's watching for unless the manager happens to look ----
@@ -973,7 +1078,7 @@ async function loadData(){
       menu, locationTypes, locationTableRanges,
       momoNumber: venueSettings.momo_number || '', momoName: venueSettings.momo_name || '',
       rewards: rewardsRes.data || [],
-      cleaning
+      cleaning, activeOrders
     };
 
     clearApiError();
@@ -986,27 +1091,34 @@ async function loadData(){
   }
 }
 function renderAll(){
-  renderOverview();
-  renderDailyOps();
-  populateExpenseCategories();
-  renderExpensesTable();
-  renderExpenseCategoryBreakdown();
-  renderStaffList();
-  renderStaffProfiles();
-  populateStaffSelects();
-  renderPayrollTable();
-  renderBudgets();
-  renderCosting();
-  renderCocktails();
-  renderBarCanteen();
-  renderFacilities();
-  renderReception();
-  renderMembers();
-  renderShifts();
-  renderSummaries();
-  renderSettings();
-  renderStock();
-  populateRestockBySelect();
+  safeRender('renderOverview', renderOverview);
+  safeRender('renderDailyOps', renderDailyOps);
+  safeRender('populateExpenseCategories', populateExpenseCategories);
+  safeRender('renderExpensesTable', renderExpensesTable);
+  safeRender('renderExpenseCategoryBreakdown', renderExpenseCategoryBreakdown);
+  safeRender('renderStaffList', renderStaffList);
+  safeRender('renderStaffProfiles', renderStaffProfiles);
+  safeRender('populateStaffSelects', populateStaffSelects);
+  safeRender('renderPayrollTable', renderPayrollTable);
+  safeRender('renderBudgets', renderBudgets);
+  safeRender('renderCosting', renderCosting);
+  safeRender('renderCocktails', renderCocktails);
+  safeRender('renderBarCanteen', renderBarCanteen);
+  safeRender('renderFacilities', renderFacilities);
+  safeRender('renderReception', renderReception);
+  safeRender('renderMembers', renderMembers);
+  safeRender('renderShifts', renderShifts);
+  safeRender('renderSummaries', renderSummaries);
+  safeRender('renderSettings', renderSettings);
+  safeRender('renderStock', renderStock);
+  safeRender('populateRestockBySelect', populateRestockBySelect);
+}
+function safeRender(name, fn){
+  try{ fn(); }
+  catch(e){
+    console.log('Render error in ' + name + ':', e);
+    showApiError('Something went wrong rendering "' + name.replace('render','') + '" — the rest of the dashboard still loaded. Press Refresh to try again. (' + e.message + ')');
+  }
 }
 
 // ---------- OVERVIEW ----------
@@ -1018,21 +1130,21 @@ function renderOverview(){
   const alertsEl = document.getElementById('overviewAlerts');
   if(alertsEl){
     alertsEl.innerHTML = alerts.length ? `<div style="margin-bottom:16px">` + alerts.slice(0,6).map(a =>
-      `<div class="alert-row ${a.level==='urgent'?'urgent':'warn'}">&#9888; ${a.text}</div>`
+      `<div class="alert-row ${a.level==='urgent'?'urgent':'warn'} clickable" onclick="jumpToTab('dailyops')">&#9888; ${a.text}</div>`
     ).join('') + (alerts.length > 6 ? `<div style="font-size:11px;color:var(--muted)">+ ${alerts.length-6} more — see Daily Operations tab.</div>` : '') + `</div>` : '';
   }
   const opsDot = document.getElementById('opsAlertDot');
   if(opsDot) opsDot.style.display = alerts.length ? 'inline-block' : 'none';
 
   document.getElementById('overviewMetrics').innerHTML = `
-    <div class="metric-card gold"><div class="metric-label">BAR/CANTEEN REVENUE TODAY</div><div class="metric-value">${fmt(bar.todayRevenue)}</div><div class="metric-sub">${bar.todayItemCount||0} items sold</div></div>
-    <div class="metric-card red"><div class="metric-label">SPEND THIS MONTH</div><div class="metric-value">${fmt(totalExpensesThisMonth)}</div><div class="metric-sub">across all categories</div></div>
-    <div class="metric-card purple"><div class="metric-label">MONTHLY PAYROLL (EST)</div><div class="metric-value" style="font-size:20px">${fmt(data.totalMonthlyPayrollGrossEstimate)}</div><div class="metric-sub">active monthly-paid staff</div></div>
-    <div class="metric-card teal"><div class="metric-label">MEMBERS</div><div class="metric-value">${mem.totalCustomers||0}</div><div class="metric-sub">${mem.newToday||0} new today</div></div>
-    <div class="metric-card red"><div class="metric-label">OPEN FACILITIES TICKETS</div><div class="metric-value">${fac.openTickets||0}</div><div class="metric-sub">${fac.urgentOpen||0} urgent</div></div>
-    <div class="metric-card green"><div class="metric-label">ON SHIFT NOW</div><div class="metric-value">${(data.onShift||[]).length}</div><div class="metric-sub">staff checked in</div></div>
-    <div class="metric-card pink"><div class="metric-label">STOCK NEEDING REORDER</div><div class="metric-value">${(data.reorderList||[]).length}</div><div class="metric-sub">at/below par level</div></div>
-    <div class="metric-card gold"><div class="metric-label">GROSS MARGIN (ALL-TIME)</div><div class="metric-value" style="font-size:20px">${fmt(bar.allTimeMargin)}</div><div class="metric-sub">revenue minus true COGS used</div></div>`;
+    <div class="metric-card gold clickable" onclick="openBarRevenueModal()"><div class="metric-hint">tap for detail &#8250;</div><div class="metric-label">BAR/CANTEEN REVENUE TODAY</div><div class="metric-value">${fmt(bar.todayRevenue)}</div><div class="metric-sub">${bar.todayItemCount||0} items sold</div></div>
+    <div class="metric-card red clickable" onclick="openSpendModal()"><div class="metric-hint">tap for detail &#8250;</div><div class="metric-label">SPEND THIS MONTH</div><div class="metric-value">${fmt(totalExpensesThisMonth)}</div><div class="metric-sub">across all categories</div></div>
+    <div class="metric-card purple clickable" onclick="openPayrollModal()"><div class="metric-hint">tap for detail &#8250;</div><div class="metric-label">MONTHLY PAYROLL (EST)</div><div class="metric-value" style="font-size:20px">${fmt(data.totalMonthlyPayrollGrossEstimate)}</div><div class="metric-sub">active monthly-paid staff</div></div>
+    <div class="metric-card teal clickable" onclick="openMembersModal()"><div class="metric-hint">tap for detail &#8250;</div><div class="metric-label">MEMBERS</div><div class="metric-value">${mem.totalCustomers||0}</div><div class="metric-sub">${mem.newToday||0} new today</div></div>
+    <div class="metric-card red clickable" onclick="openTicketsModal()"><div class="metric-hint">tap for detail &#8250;</div><div class="metric-label">OPEN FACILITIES TICKETS</div><div class="metric-value">${fac.openTickets||0}</div><div class="metric-sub">${fac.urgentOpen||0} urgent</div></div>
+    <div class="metric-card green clickable" onclick="openOnShiftModal()"><div class="metric-hint">tap for detail &#8250;</div><div class="metric-label">ON SHIFT NOW</div><div class="metric-value">${(data.onShift||[]).length}</div><div class="metric-sub">staff checked in</div></div>
+    <div class="metric-card pink clickable" onclick="jumpToStockFiltered('')"><div class="metric-hint">tap for detail &#8250;</div><div class="metric-label">STOCK NEEDING REORDER</div><div class="metric-value">${(data.reorderList||[]).length}</div><div class="metric-sub">at/below par level</div></div>
+    <div class="metric-card gold clickable" onclick="openMarginModal()"><div class="metric-hint">tap for detail &#8250;</div><div class="metric-label">GROSS MARGIN (ALL-TIME)</div><div class="metric-value" style="font-size:20px">${fmt(bar.allTimeMargin)}</div><div class="metric-sub">revenue minus true COGS used</div></div>`;
 
   // ---- Today vs Month money snapshot ----
   const payrollMonthly = data.totalMonthlyPayrollGrossEstimate || 0;
@@ -1077,6 +1189,86 @@ function buildDailyChecklist(){
     { title:'Large expenses have receipts', status: bigNoReceipt.length ? 'pending':'done', detail: bigNoReceipt.length ? `${bigNoReceipt.length} expense(s) of GHS 100+ with no receipt attached.` : 'All large expenses have receipts on file.' }
   ];
 }
+
+// ---------- OVERVIEW DRILL-DOWN MODALS ----------
+function openBarRevenueModal(){
+  const bar = data.bar || {};
+  const top = (bar.topSellers||[]).slice(0,8);
+  openModal('Bar / Canteen — Today', `
+    <div class="metrics-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">
+      <div class="metric-card gold"><div class="metric-label">REVENUE TODAY</div><div class="metric-value" style="font-size:20px">${fmt(bar.todayRevenue)}</div></div>
+      <div class="metric-card teal"><div class="metric-label">ITEMS SOLD</div><div class="metric-value" style="font-size:20px">${bar.todayItemCount||0}</div></div>
+      <div class="metric-card red"><div class="metric-label">LOW STOCK</div><div class="metric-value" style="font-size:20px">${bar.lowStockCount||0}</div></div>
+    </div>
+    <div class="modal-section-label">Top sellers (all-time)</div>
+    ${top.length ? top.map(t=>`<div class="list-row"><span>${t.item}</span><span style="font-family:'Space Mono',monospace;color:var(--gold)">${fmt(t.revenue)}</span></div>`).join('') : '<div class="empty">No sales logged yet.</div>'}
+    <div class="modal-section-label">Active orders right now</div>
+    <div class="list-row"><span>Table orders</span><span>${bar.activeTableOrders||0}</span></div>
+    <div class="list-row"><span>Canteen orders</span><span>${bar.activeCanteenOrders||0}</span></div>
+    <div class="action-row">
+      <button class="btn ghost" onclick="jumpToTab('barcanteen')">OPEN BAR &amp; CANTEEN TAB</button>
+      <button class="btn ghost" onclick="jumpToTab('costing')">OPEN RUNNING COSTING</button>
+    </div>`);
+}
+
+function openSpendModal(){
+  const spend = data.spendByCategoryThisMonth || {};
+  const cats = Object.keys(spend).sort((a,b)=>spend[b]-spend[a]);
+  const total = cats.reduce((s,c)=>s+parseFloat(spend[c]||0),0);
+  openModal('Spend This Month — By Category', `
+    <div class="modal-section-label">Total logged this month: <span style="color:var(--gold)">${fmt(total)}</span></div>
+    ${cats.length ? cats.map(c=>`<div class="list-row clickable" onclick="jumpToExpensesFiltered('${c.replace(/'/g,"\\'")}')"><span>${c}</span><span style="font-family:'Space Mono',monospace;color:var(--gold)">${fmt(spend[c])} &#8250;</span></div>`).join('') : '<div class="empty">No spend logged this month yet.</div>'}
+    <div style="font-size:10.5px;color:var(--muted);margin-top:10px">Tap any category to open Expenses filtered to it.</div>
+    <div class="action-row"><button class="btn ghost" onclick="jumpToTab('expenses')">OPEN FULL EXPENSES TAB</button></div>`);
+}
+
+function openPayrollModal(){
+  const runs = (data.payrollRuns||[]).slice(0,12);
+  const pending = runs.filter(r=>r.status!=='Paid');
+  openModal('Payroll — Recent Runs', `
+    <div class="modal-section-label">GHS ${fmt(data.totalMonthlyPayrollGrossEstimate).replace('GHS ','')} est. gross this month &middot; ${pending.length} run(s) unpaid</div>
+    ${runs.length ? runs.map(r=>`<div class="list-row"><span>${r.name||'—'} <span style="color:var(--muted);font-size:10px">${r.periodLabel||''}</span></span><span>${fmt(r.netPay)} ${r.status==='Paid'?'<span class="pill pos">PAID</span>':`<button class="btn ghost" style="width:auto;padding:4px 10px;font-size:10px" onclick="markPaid('${r.runId}')">MARK PAID</button>`}</span></div>`).join('') : '<div class="empty">No payroll runs yet.</div>'}
+    <div class="action-row"><button class="btn ghost" onclick="jumpToTab('payroll')">OPEN PAYROLL &amp; STAFF TAB</button></div>`);
+}
+
+function openMembersModal(){
+  const mem = data.members || {};
+  const top = (mem.topMembers||[]).slice(0,10);
+  openModal('Members — Top By Points', `
+    <div class="modal-section-label">${mem.totalCustomers||0} total members &middot; ${(mem.totalPointsLive||0).toLocaleString()} points live</div>
+    ${top.length ? top.map((m,i)=>`<div class="list-row clickable" onclick="openMemberDetailModal('${(m.custId||'').replace(/'/g,"\\'")}')"><span>${i+1}. ${m.name}</span><span style="color:var(--gold);font-family:'Space Mono',monospace">${m.points} pts &#8250;</span></div>`).join('') : '<div class="empty">No members yet.</div>'}
+    <div class="action-row"><button class="btn ghost" onclick="jumpToTab('members')">OPEN MEMBERS TAB</button></div>`);
+}
+
+function openTicketsModal(){
+  const fac = data.facilities || {};
+  const open = (fac.ticketList||[]).filter(t=>t.status!=='closed').slice(0,12);
+  openModal('Facilities — Open Tickets', `
+    <div class="modal-section-label">${fac.openTickets||0} open &middot; ${fac.urgentOpen||0} urgent &middot; ${fac.verificationRate||0}% verification rate</div>
+    ${open.length ? open.map(t=>`<div class="list-row clickable" onclick="openTicketDetailModal('${t.id}')"><span>${t.urgency==='Urgent'||t.urgency==='urgent'?'&#128308; ':''}${t.title}</span><span class="pill ${t.status==='in_progress'?'warn':'neg'}">${t.status}</span></div>`).join('') : '<div class="empty">No open tickets right now.</div>'}
+    <div class="action-row"><button class="btn ghost" onclick="jumpToTab('facilities')">OPEN FACILITIES TAB</button></div>`);
+}
+
+function openOnShiftModal(){
+  const onShift = data.onShift || [];
+  openModal('On Shift Right Now', `
+    ${onShift.length ? onShift.map(s=>`<div class="list-row"><span>&#9679; ${s.name}</span><span style="color:var(--muted);font-size:11px">${s.department}</span></div>`).join('') : '<div class="empty">Nobody checked in right now.</div>'}
+    <div class="action-row"><button class="btn ghost" onclick="jumpToTab('shifts')">OPEN SHIFTS TAB</button></div>`);
+}
+
+function openMarginModal(){
+  const bar = data.bar || {};
+  const top = (bar.topSellers||[]).slice(0,10);
+  openModal('Gross Margin — Top Sellers', `
+    <div class="metrics-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">
+      <div class="metric-card gold"><div class="metric-label">REVENUE</div><div class="metric-value" style="font-size:18px">${fmt(bar.allTimeRevenue)}</div></div>
+      <div class="metric-card red"><div class="metric-label">COGS USED</div><div class="metric-value" style="font-size:18px">${fmt(bar.allTimeCOGSUsed)}</div></div>
+      <div class="metric-card green"><div class="metric-label">MARGIN</div><div class="metric-value" style="font-size:18px">${fmt(bar.allTimeMargin)}</div></div>
+    </div>
+    ${top.length ? top.map(t=>`<div class="list-row"><span>${t.item}</span><span style="color:var(--green);font-family:'Space Mono',monospace">${fmt(t.margin)}</span></div>`).join('') : '<div class="empty">No sales logged yet.</div>'}
+    <div class="action-row"><button class="btn ghost" onclick="jumpToTab('costing')">OPEN RUNNING COSTING TAB</button></div>`);
+}
+
 // ---------- DAILY OPERATIONS ----------
 const DEPARTMENTS = ['Bar','Canteen','Facilities','Front of House','Management','Security'];
 function renderDailyOps(){
@@ -1087,10 +1279,10 @@ function renderDailyOps(){
   const bigNoReceipt = (data.expenses||[]).filter(e => e.amount >= 100 && !e.receiptUrl);
 
   document.getElementById('opsMetrics').innerHTML = `
-    <div class="metric-card red"><div class="metric-label">LIVE ALERTS</div><div class="metric-value">${alerts.length}</div><div class="metric-sub">${alerts.filter(a=>a.level==='urgent').length} urgent</div></div>
-    <div class="metric-card teal"><div class="metric-label">TICKET VERIFICATION RATE</div><div class="metric-value">${fac.verificationRate||0}%</div><div class="metric-sub">of closed tickets signed off</div></div>
-    <div class="metric-card purple"><div class="metric-label">STAFF WITH NO ACTIVITY</div><div class="metric-value">${unusedStaff.length}</div><div class="metric-sub">on the roster today</div></div>
-    <div class="metric-card gold"><div class="metric-label">STOCK NEEDING REORDER</div><div class="metric-value">${(data.reorderList||[]).length}</div><div class="metric-sub">${(data.staleStock||[]).length} stale items</div></div>`;
+    <div class="metric-card red clickable" onclick="jumpToTab('overview')"><div class="metric-hint">tap &#8250;</div><div class="metric-label">LIVE ALERTS</div><div class="metric-value">${alerts.length}</div><div class="metric-sub">${alerts.filter(a=>a.level==='urgent').length} urgent</div></div>
+    <div class="metric-card teal clickable" onclick="jumpToTab('facilities')"><div class="metric-hint">tap &#8250;</div><div class="metric-label">TICKET VERIFICATION RATE</div><div class="metric-value">${fac.verificationRate||0}%</div><div class="metric-sub">of closed tickets signed off</div></div>
+    <div class="metric-card purple clickable" onclick="openUnusedStaffModal()"><div class="metric-hint">tap &#8250;</div><div class="metric-label">STAFF WITH NO ACTIVITY</div><div class="metric-value">${unusedStaff.length}</div><div class="metric-sub">on the roster today</div></div>
+    <div class="metric-card gold clickable" onclick="jumpToStockFiltered('')"><div class="metric-hint">tap &#8250;</div><div class="metric-label">STOCK NEEDING REORDER</div><div class="metric-value">${(data.reorderList||[]).length}</div><div class="metric-sub">${(data.staleStock||[]).length} stale items</div></div>`;
 
   document.getElementById('opsDeptStatus').innerHTML = DEPARTMENTS.map(dept => {
     const staffInDept = (data.staff||[]).filter(s => s.department === dept && s.status === 'Active');
@@ -1100,19 +1292,19 @@ function renderDailyOps(){
     const lastIn = (data.shiftLog||[]).filter(l => l.department === dept && l.action === 'Check In').sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp))[0];
     const checkedInToday = lastIn && lastIn.timestamp && lastIn.timestamp.slice(0,10) === todayISO;
     const live = onDuty.length > 0;
-    return `<div class="dept-status-card ${live?'live':(checkedInToday?'':'miss')}">
+    return `<div class="dept-status-card clickable ${live?'live':(checkedInToday?'':'miss')}" onclick="openDeptModal('${dept}')">
       <div class="dsc-name">${dept}</div>
       <div class="dsc-status">${live ? onDuty.length+' on duty now' : (checkedInToday ? 'Checked in earlier, now off' : 'No check-in today')}</div>
-      <div style="font-size:10px;color:var(--muted);margin-top:4px">${staffInDept.length} active staff on roster</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:4px">${staffInDept.length} active staff on roster &#8250;</div>
     </div>`;
   }).filter(Boolean).join('') || '<div class="empty">No staff on the roster yet.</div>';
 
-  document.getElementById('opsAlerts').innerHTML = alerts.length ? alerts.map(a=>`<div class="alert-row ${a.level==='urgent'?'urgent':'warn'}">&#9888; ${a.text}</div>`).join('') : '<div class="alert-row ok">&#10003; Nothing flagged right now — all clear.</div>';
+  document.getElementById('opsAlerts').innerHTML = alerts.length ? alerts.map(a=>`<div class="alert-row ${a.level==='urgent'?'urgent':'warn'} clickable" onclick="routeAlertClick('${a.text.replace(/'/g,"\\'")}')">&#9888; ${a.text}</div>`).join('') : '<div class="alert-row ok">&#10003; Nothing flagged right now — all clear.</div>';
 
   document.getElementById('opsUnused').innerHTML = unusedStaff.length ? unusedStaff.map(s=>`
-    <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border-soft);font-size:12px">
+    <div class="list-row clickable" onclick="openStaffEditModalByInitials('${(s.initials||'').replace(/'/g,"\\'")}')">
       <span>${s.full_name}${s.on_duty?' <span style="color:var(--green);font-size:10px">&#9679; ON DUTY</span>':''}</span>
-      <span style="color:var(--muted);font-size:11px">${s.department||'—'}</span>
+      <span style="color:var(--muted);font-size:11px">${s.department||'—'} &#8250;</span>
     </div>`).join('') : '<div class="empty">Everyone on the roster has logged some activity.</div>';
 
   const cl = data.cleaning || { zonesChecked:0, zonesTotal:8, zonesMissing:[], openFails:[] };
@@ -1121,20 +1313,69 @@ function renderDailyOps(){
     <div class="bar-row"><div class="b-label">Unresolved cleaning fails</div><div class="bar-track"><div class="bar-fill ${cl.openFails.length?'over':''}" style="width:${cl.openFails.length?100:0}%"></div></div><div class="b-value">${cl.openFails.length}</div></div>
     <div class="bar-row"><div class="b-label">Facilities ticket verification</div><div class="bar-track"><div class="bar-fill white" style="width:${fac.verificationRate||0}%"></div></div><div class="b-value">${fac.verificationRate||0}%</div></div>
     ${cl.zonesMissing.length ? `<div style="font-size:11px;color:var(--muted);margin-top:6px">Not checked yet today: ${cl.zonesMissing.join(', ')}.</div>` : '<div style="font-size:11px;color:var(--green);margin-top:6px">Every zone checked today.</div>'}
-    ${cl.openFails.length ? `<div style="font-size:11px;color:var(--red);margin-top:4px">Open fails: ${cl.openFails.map(c=>c.zone+(c.location?' — '+c.location:'')).join(', ')}.</div>` : ''}`;
+    ${cl.openFails.length ? cl.openFails.map(c=>`<div class="list-row" style="padding:6px 0"><span style="color:var(--red);font-size:11px">&#9888; ${c.zone}${c.location?' — '+c.location:''}</span><button class="btn ghost" style="width:auto;padding:4px 10px;font-size:10px" onclick="resolveCleaningIssue('${c.id}')">MARK RESOLVED</button></div>`).join('') : ''}`;
 
   document.getElementById('opsMoney').innerHTML = `
-    <div class="checklist-item"><div class="check-badge ${pendingPayroll.length?'pending':'done'}">${pendingPayroll.length?'!':'&#10003;'}</div><div class="checklist-text"><b>Payroll runs pending payment</b><span>${pendingPayroll.length ? pendingPayroll.length+' run(s) not marked paid.' : 'All payroll runs are marked paid.'}</span></div></div>
-    <div class="checklist-item"><div class="check-badge ${bigNoReceipt.length?'pending':'done'}">${bigNoReceipt.length?'!':'&#10003;'}</div><div class="checklist-text"><b>High-value expenses missing receipts</b><span>${bigNoReceipt.length ? bigNoReceipt.length+' expense(s) of GHS 100+ with no photo attached.' : 'All large expenses have receipts on file.'}</span></div></div>`;
+    <div class="checklist-item clickable" onclick="openPayrollModal()"><div class="check-badge ${pendingPayroll.length?'pending':'done'}">${pendingPayroll.length?'!':'&#10003;'}</div><div class="checklist-text"><b>Payroll runs pending payment</b><span>${pendingPayroll.length ? pendingPayroll.length+' run(s) not marked paid.' : 'All payroll runs are marked paid.'}</span></div></div>
+    <div class="checklist-item clickable" onclick="jumpToExpensesFiltered('')"><div class="check-badge ${bigNoReceipt.length?'pending':'done'}">${bigNoReceipt.length?'!':'&#10003;'}</div><div class="checklist-text"><b>High-value expenses missing receipts</b><span>${bigNoReceipt.length ? bigNoReceipt.length+' expense(s) of GHS 100+ with no photo attached.' : 'All large expenses have receipts on file.'}</span></div></div>`;
 
   const reorder = data.reorderList || []; const stale = data.staleStock || [];
   document.getElementById('opsStock').innerHTML = `
     <div class="dept-status-grid">
-      <div class="dept-status-card ${reorder.length?'miss':'live'}"><div class="dsc-name">AT/BELOW PAR</div><div class="dsc-status">${reorder.length} item(s)</div></div>
-      <div class="dept-status-card ${stale.length?'miss':'live'}"><div class="dsc-name">STALE (60+ DAYS)</div><div class="dsc-status">${stale.length} item(s)</div></div>
-      <div class="dept-status-card ${(data.bar.lowStockCount||0)?'miss':'live'}"><div class="dsc-name">LOW STOCK (BAR VIEW)</div><div class="dsc-status">${data.bar.lowStockCount||0} item(s)</div></div>
+      <div class="dept-status-card clickable ${reorder.length?'miss':'live'}" onclick="jumpToStockFiltered('')"><div class="dsc-name">AT/BELOW PAR</div><div class="dsc-status">${reorder.length} item(s)</div></div>
+      <div class="dept-status-card clickable ${stale.length?'miss':'live'}" onclick="jumpToTab('stock')"><div class="dsc-name">STALE (60+ DAYS)</div><div class="dsc-status">${stale.length} item(s)</div></div>
+      <div class="dept-status-card clickable ${(data.bar.lowStockCount||0)?'miss':'live'}" onclick="jumpToTab('barcanteen')"><div class="dsc-name">LOW STOCK (BAR VIEW)</div><div class="dsc-status">${data.bar.lowStockCount||0} item(s)</div></div>
     </div>
     ${reorder.length ? `<div style="margin-top:10px;font-size:11px;color:var(--muted)">Top of the reorder list: ${reorder.slice(0,5).map(r=>r.item).join(', ')}${reorder.length>5?' …':''}. Full list and one-tap restock in Stock &amp; Procurement.</div>` : ''}`;
+}
+
+function routeAlertClick(text){
+  if(/facilit|ticket/i.test(text)) jumpToTab('facilities');
+  else if(/stock|reorder|stale/i.test(text)) jumpToTab('stock');
+  else if(/payroll/i.test(text)) jumpToTab('payroll');
+  else if(/receipt|expense/i.test(text)) jumpToTab('expenses');
+  else if(/booking/i.test(text)) jumpToTab('reception');
+  else jumpToTab('dailyops');
+}
+
+function openUnusedStaffModal(){
+  const unusedStaff = data.unusedStaff || [];
+  openModal('Staff With Zero Activity Today', `
+    ${unusedStaff.length ? unusedStaff.map(s=>`<div class="list-row clickable" onclick="openStaffEditModalByInitials('${(s.initials||'').replace(/'/g,"\\'")}')"><span>${s.full_name}${s.on_duty?' <span style="color:var(--green);font-size:10px">&#9679; ON DUTY</span>':''}</span><span style="color:var(--muted);font-size:11px">${s.department||'—'} &#8250;</span></div>`).join('') : '<div class="empty">Everyone on the roster has logged some activity.</div>'}
+    <div class="action-row"><button class="btn ghost" onclick="jumpToTab('payroll')">OPEN PAYROLL &amp; STAFF TAB</button></div>`);
+}
+
+function openDeptModal(dept){
+  const staffInDept = (data.staff||[]).filter(s => s.department === dept && s.status === 'Active');
+  openModal(dept + ' — Staff', `
+    ${staffInDept.length ? staffInDept.map(s=>`
+      <div class="list-row">
+        <span class="clickable" onclick="openStaffEditModal('${s.staffId}')">${s.onDuty?'&#9679; ':''}${s.fullName} <span style="color:var(--muted);font-size:10px">${s.role||''}</span></span>
+        <span class="action-row" style="margin:0"><button class="btn ${s.onDuty?'danger':'teal'}" style="width:auto;padding:5px 12px;font-size:10px" onclick="quickShiftToggle('${s.staffId}','${s.fullName.replace(/'/g,"\\'")}','${dept}',${s.onDuty})">${s.onDuty?'CHECK OUT':'CHECK IN'}</button></span>
+      </div>`).join('') : '<div class="empty">No active staff assigned to this department.</div>'}
+    <div class="action-row"><button class="btn ghost" onclick="jumpToTab('shifts')">OPEN SHIFTS TAB</button></div>`);
+}
+
+async function quickShiftToggle(staffId, name, dept, currentlyOnDuty){
+  try{
+    const action = currentlyOnDuty ? 'Check Out' : 'Check In';
+    const { error: logErr } = await supabaseClient.rpc('log_staff_shift', { p_staff_id: staffId, p_name: name, p_department: dept, p_action: action, p_source: 'Manager Dashboard' });
+    if(logErr) throw new Error(logErr.message);
+    const staffRow = (data.staff||[]).find(s=>String(s.staffId)===String(staffId));
+    if(staffRow && staffRow.initials){ await supabaseClient.rpc('set_staff_on_duty', { p_initials: staffRow.initials, p_on_duty: !currentlyOnDuty }); }
+    showToast(name + ' — ' + action);
+    closeModal();
+    loadData();
+  }catch(e){ showToast(e.message||'Failed', true); }
+}
+
+async function resolveCleaningIssue(id){
+  try{
+    const { error } = await supabaseClient.rpc('resolve_cleaning_issue', { p_id: id, p_resolved_by: 'Manager Dashboard' });
+    if(error) throw new Error(error.message);
+    showToast('Marked resolved');
+    loadData();
+  }catch(e){ showToast(e.message||'Could not resolve — check the cleaning log on Reception.', true); }
 }
 // ---------- EXPENSES ----------
 function populateExpenseCategories(){
@@ -1200,7 +1441,7 @@ function renderExpenseCategoryBreakdown(){
   const spend = data.spendByCategoryThisMonth || {};
   const cats = Object.keys(spend).sort((a,b)=>spend[b]-spend[a]);
   const el = document.getElementById('expenseCategoryBreakdown');
-  el.innerHTML = cats.length ? cats.map(c=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border-soft);font-size:12px"><span>${c}</span><span style="color:var(--gold);font-family:'Space Mono',monospace">${fmt(spend[c])}</span></div>`).join('') : '<div class="empty">No spend logged this month yet.</div>';
+  el.innerHTML = cats.length ? cats.map(c=>`<div class="list-row clickable" onclick="jumpToExpensesFiltered('${c.replace(/'/g,"\\'")}')"><span>${c}</span><span style="color:var(--gold);font-family:'Space Mono',monospace">${fmt(spend[c])} &#8250;</span></div>`).join('') : '<div class="empty">No spend logged this month yet.</div>';
 }
 
 function renderExpensesTable(){
@@ -1229,8 +1470,9 @@ function renderStaffList(){
   const staff = data.staff || [];
   const el = document.getElementById('staffList');
   el.innerHTML = staff.length ? staff.map(s=>`
-    <div class="staff-card">
+    <div class="staff-card clickable" onclick="openStaffEditModal('${s.staffId}')">
       <div><div class="s-name">${s.fullName} ${s.status!=='Active'?'<span style="color:var(--red);font-size:10px">('+s.status+')</span>':''}</div><div class="s-meta">${s.initials||'—'} · ${s.department} · ${s.role||'—'} · ${s.payType} ${fmt(s.payRate)}</div></div>
+      <span style="color:var(--muted);font-size:16px">&#8250;</span>
     </div>`).join('') : '<div class="empty">No staff yet — add one below.</div>';
 }
 
@@ -1240,6 +1482,78 @@ function populateStaffSelects(){
   prSel.innerHTML = '<option value="">All active staff (one full period)</option>' + staff.map(s=>`<option value="${s.staffId}">${s.fullName} (${s.department})</option>`).join('');
   const shSel = document.getElementById('shStaff');
   shSel.innerHTML = '<option value="">Select staff...</option>' + staff.map(s=>`<option value="${s.staffId}" data-name="${s.fullName}" data-dept="${s.department}" data-initials="${s.initials||''}">${s.fullName} (${s.department})</option>`).join('');
+}
+
+// ---------- STAFF EDIT MODAL (view + edit, the operational heart of Payroll & Staff) ----------
+function openStaffEditModalByInitials(initials){
+  const s = (data.staff||[]).find(x => x.initials === initials);
+  if(!s){ showToast('Could not find that staff record.', true); return; }
+  openStaffEditModal(s.staffId);
+}
+function openStaffEditModal(staffId){
+  const s = (data.staff||[]).find(x => String(x.staffId) === String(staffId));
+  if(!s){ showToast('Could not find that staff record.', true); return; }
+  const activity = (data.staffActivity||[]).find(a => a.initials === s.initials) || {};
+  const totalActivity = (activity.bookings_taken||0)+(activity.tasks_completed||0)+(activity.cleaning_logs_submitted||0)+(activity.tickets_closed||0)+(activity.bar_orders_handled||0);
+  openModal('Staff Profile — ' + s.fullName, `
+    <div class="modal-section-label">Activity today</div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--text-dim);margin-bottom:14px">
+      <span>&#128181; ${fmt(activity.bar_revenue_handled)} bar (${activity.bar_orders_handled||0} orders)</span>
+      <span>&#128197; ${activity.bookings_taken||0} bookings</span>
+      <span>&#9989; ${activity.tasks_completed||0} tasks</span>
+      <span>&#129529; ${activity.cleaning_logs_submitted||0} cleaning</span>
+      <span>&#128295; ${activity.tickets_closed||0} tickets</span>
+      <span style="color:var(--gold)">&#8901; ${totalActivity} total</span>
+    </div>
+    <div class="modal-section-label">Edit details</div>
+    <input id="editStfName" value="${(s.fullName||'').replace(/"/g,'&quot;')}" placeholder="Full name">
+    <div class="field-grid">
+      <select id="editStfDept">${['Bar','Canteen','Facilities','Front of House','Management','Security','Other'].map(d=>`<option ${d===s.department?'selected':''}>${d}</option>`).join('')}</select>
+      <input id="editStfRole" value="${(s.role||'').replace(/"/g,'&quot;')}" placeholder="Role">
+    </div>
+    <div class="field-grid">
+      <select id="editStfPayType">${['Monthly','Daily','Weekly'].map(pt=>`<option ${pt===s.payType?'selected':''}>${pt}</option>`).join('')}</select>
+      <input id="editStfPayRate" type="number" value="${s.payRate||0}" placeholder="Pay rate GHS">
+    </div>
+    <input id="editStfPhone" value="${(s.phone||'').replace(/"/g,'&quot;')}" placeholder="Phone">
+    <select id="editStfActive">
+      <option value="true" ${s.status==='Active'?'selected':''}>Active</option>
+      <option value="false" ${s.status!=='Active'?'selected':''}>Inactive</option>
+    </select>
+    <div id="editStfResult" class="result-msg"></div>
+    <div class="action-row">
+      <button class="btn" onclick="saveStaffEdit('${s.staffId}')">&#10003; SAVE CHANGES</button>
+      <button class="btn ${s.onDuty?'danger':'teal'}" onclick="quickShiftToggle('${s.staffId}','${s.fullName.replace(/'/g,"\\'")}','${s.department}',${s.onDuty})">${s.onDuty?'CHECK OUT':'CHECK IN'} NOW</button>
+    </div>`);
+}
+
+async function saveStaffEdit(staffId){
+  const resultEl = document.getElementById('editStfResult');
+  const fullName = document.getElementById('editStfName').value.trim();
+  const department = document.getElementById('editStfDept').value;
+  const role = document.getElementById('editStfRole').value.trim();
+  const payType = document.getElementById('editStfPayType').value;
+  const payRate = document.getElementById('editStfPayRate').value;
+  const phone = document.getElementById('editStfPhone').value.trim();
+  const active = document.getElementById('editStfActive').value === 'true';
+  if(!fullName){ resultEl.innerHTML = '<span style="color:var(--red)">Full name is required.</span>'; return; }
+  resultEl.innerHTML = 'Saving...';
+  try{
+    const { error } = await supabaseClient.rpc('update_staff_full', {
+      p_staff_id: staffId, p_full_name: fullName, p_department: department, p_role: role || null,
+      p_pay_type: payType, p_pay_rate: payRate ? parseFloat(payRate) : 0, p_phone: phone || null, p_active: active
+    });
+    if(error) throw new Error(error.message);
+    resultEl.innerHTML = '<span style="color:var(--green)">&#10003; Saved.</span>';
+    showToast('Staff record updated');
+    setTimeout(closeModal, 700);
+    loadData();
+  }catch(e){
+    const msg = (e.message||'').includes('update_staff_full') || (e.message||'').toLowerCase().includes('does not exist')
+      ? 'This dashboard needs a small one-time Supabase addition to save edits — the update_staff_full function. Ask whoever manages your database to add it (see the note that came with this update).'
+      : (e.message || 'Could not save.');
+    resultEl.innerHTML = '<span style="color:var(--red)">'+msg+'</span>';
+  }
 }
 
 // ---------- STAFF PROFILE (bar + reception activity tally) ----------
@@ -1258,7 +1572,8 @@ function renderStaffProfiles(){
     const catHtml = catEntries.length ? catEntries.map(([cat,cnt]) => `<span class="onshift-pill" style="border-color:var(--teal);color:var(--teal)">${TASK_CATEGORY_ICON[cat]||''} ${cat}: ${cnt}</span>`).join('') : '';
     const totalActivity = (s.bookings_taken||0) + (s.tasks_completed||0) + (s.cleaning_logs_submitted||0) + (s.tickets_closed||0) + (s.bar_orders_handled||0);
     return `
-    <div class="metric-card ${s.on_duty?'green':''}" style="text-align:left;cursor:default">
+    <div class="metric-card clickable ${s.on_duty?'green':''}" style="text-align:left" onclick="openStaffEditModalByInitials('${(s.initials||'').replace(/'/g,"\\'")}')">
+      <div class="metric-hint">edit &#8250;</div>
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
         <div>
           <div style="font-weight:800;font-size:14px">${s.full_name}${s.on_duty?' <span style="color:var(--green);font-size:10px">&#9679; ON DUTY</span>':''}</div>
@@ -1348,10 +1663,10 @@ function renderBudgets(){
   el.innerHTML = budgets.length ? budgets.map(b=>{
     const pct = b.target > 0 ? Math.min(100, (b.actual / b.target) * 100) : (b.actual>0?100:0);
     const over = b.actual > b.target && b.target > 0;
-    return `<div class="bar-row">
+    return `<div class="bar-row clickable" onclick="jumpToExpensesFiltered('${b.category.replace(/'/g,"\\'")}')">
       <div class="b-label">${b.category}</div>
       <div class="bar-track"><div class="bar-fill ${over?'over':'white'}" style="width:${pct}%"></div></div>
-      <div class="b-value">${fmt(b.actual)} / ${fmt(b.target)}</div>
+      <div class="b-value">${fmt(b.actual)} / ${fmt(b.target)} &#8250;</div>
     </div>`;
   }).join('') : '<div class="empty">No budget categories yet.</div>';
 }
@@ -1401,8 +1716,58 @@ function renderBarCanteen(){
     <div class="metric-card red"><div class="metric-label">LOW STOCK ITEMS</div><div class="metric-value">${bar.lowStockCount||0}</div></div>
     <div class="metric-card teal"><div class="metric-label">ACTIVE TABLE ORDERS</div><div class="metric-value">${bar.activeTableOrders||0}</div></div>
     <div class="metric-card purple"><div class="metric-label">ACTIVE CANTEEN ORDERS</div><div class="metric-value">${bar.activeCanteenOrders||0}</div></div>`;
+
+  const orders = data.activeOrders || [];
+  document.getElementById('barActiveOrders').innerHTML = orders.length ? orders.map(o=>`
+    <div class="list-row clickable" onclick="openOrderDetailModal('${o.table}','${o.orderId}')">
+      <span>${o.table==='table_orders'?'&#127860;':'&#127858;'} ${o.locationType||''}${o.locationDetail?(' '+o.locationDetail):''} <span style="color:var(--muted);font-size:10px">${o.customerName||'walk-in'}</span></span>
+      <span>${fmt(o.total)} <span class="pill ${o.status==='Placed'?'warn':'mono'}">${o.status}</span></span>
+    </div>`).join('') : '<div class="empty">No active orders right now.</div>';
+
   const low = bar.lowStockItems || [];
   document.getElementById('barLowStock').innerHTML = low.length ? low.map(i=>`<span class="onshift-pill" style="border-color:var(--red);color:var(--red);background:#2a0a0a">${i.item||i}</span>`).join('') : '<div class="empty">Nothing low right now.</div>';
+}
+
+function openOrderDetailModal(table, orderId){
+  const o = (data.activeOrders||[]).find(x=>x.table===table && String(x.orderId)===String(orderId));
+  if(!o){ showToast('Order not found — it may have just been updated.', true); return; }
+  const items = Array.isArray(o.items) ? o.items : [];
+  openModal('Order — ' + (o.locationType||'') + ' ' + (o.locationDetail||''), `
+    <div class="modal-section-label">${o.customerName||'Walk-in guest'}${o.phone?' · '+o.phone:''}</div>
+    <div class="scroll-table" style="max-height:200px;margin-bottom:12px">
+      ${items.length ? items.map(it=>`<div class="list-row"><span>${it.qty||1}&times; ${it.name||it.item||'item'}</span><span style="font-family:'Space Mono',monospace">${fmt((it.price||0)*(it.qty||1))}</span></div>`).join('') : '<div class="empty">No item detail on this order.</div>'}
+    </div>
+    <div class="subtotal-row" style="border-top:1px solid var(--border);padding-top:10px"><span>Total</span><span>${fmt(o.total)}</span></div>
+    <div class="modal-section-label">Update status</div>
+    <div class="action-row">
+      <button class="btn ghost" onclick="setOrderStatus('${o.table}','${o.orderId}','Placed')">PLACED</button>
+      <button class="btn teal" onclick="setOrderStatus('${o.table}','${o.orderId}','Preparing')">PREPARING</button>
+      <button class="btn ghost" onclick="setOrderStatus('${o.table}','${o.orderId}','Ready')">READY</button>
+      <button class="btn danger" onclick="setOrderStatus('${o.table}','${o.orderId}','Cancelled')">CANCEL</button>
+    </div>
+    <div class="modal-section-label">Payment</div>
+    <div class="action-row"><button class="btn" onclick="markOrderPaid('${o.table}','${o.orderId}')">&#10003; MARK PAID</button></div>
+    <div id="orderModalResult" class="result-msg"></div>`);
+}
+async function setOrderStatus(table, orderId, status){
+  const resultEl = document.getElementById('orderModalResult');
+  try{
+    const { error } = await supabaseClient.rpc('set_location_order_status', { p_table: table, p_order_id: orderId, p_new_status: status, p_staff: 'Manager', p_reason: null });
+    if(error) throw new Error(error.message);
+    showToast('Order marked ' + status);
+    closeModal();
+    loadData();
+  }catch(e){ if(resultEl) resultEl.innerHTML = '<span style="color:var(--red)">'+(e.message||'Failed')+'</span>'; else showToast(e.message||'Failed', true); }
+}
+async function markOrderPaid(table, orderId){
+  const resultEl = document.getElementById('orderModalResult');
+  try{
+    const { error } = await supabaseClient.rpc('mark_location_order_paid', { p_table: table, p_order_id: orderId, p_staff: 'Manager', p_momo: null });
+    if(error) throw new Error(error.message);
+    showToast('Order marked paid');
+    closeModal();
+    loadData();
+  }catch(e){ if(resultEl) resultEl.innerHTML = '<span style="color:var(--red)">'+(e.message||'Failed')+'</span>'; else showToast(e.message||'Failed', true); }
 }
 
 // ---------- FACILITIES ----------
@@ -1413,12 +1778,87 @@ function renderFacilities(){
     <div class="metric-card gold"><div class="metric-label">NEEDS VERIFICATION</div><div class="metric-value">${fac.unverified||0}</div><div class="metric-sub">guest-submitted</div></div>
     <div class="metric-card teal"><div class="metric-label">CLEANING TICKETS OPEN</div><div class="metric-value">${fac.cleaningOpen||0}</div></div>
     <div class="metric-card green"><div class="metric-label">VERIFICATION RATE</div><div class="metric-value">${fac.verificationRate||0}%</div></div>`;
+
+  const tickets = fac.ticketList || [];
+  document.getElementById('facTicketList').innerHTML = tickets.length ? tickets.slice(0,60).map(t=>`
+    <div class="list-row clickable" onclick="openTicketDetailModal('${t.id}')">
+      <span>${(t.urgency||'').toLowerCase()==='urgent'?'&#128308; ':''}${t.title} <span style="color:var(--muted);font-size:10px">${t.category}</span></span>
+      <span class="pill ${t.status==='closed'?'pos':(t.status==='in_progress'?'warn':'neg')}">${t.status}</span>
+    </div>`).join('') : '<div class="empty">No tickets logged yet.</div>';
+
   const projects = fac.projects || [];
-  document.getElementById('facProjects').innerHTML = projects.length ? projects.map(p=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border-soft);font-size:12px"><span>${p.title}</span><span class="pill warn">${p.status}</span></div>`).join('') : '<div class="empty">No projects logged yet.</div>';
+  document.getElementById('facProjects').innerHTML = projects.length ? projects.map(p=>`<div class="list-row clickable" onclick="openProjectModal('${p.id}')"><span>${p.title}</span><span class="pill warn">${p.status} &#8250;</span></div>`).join('') : '<div class="empty">No projects logged yet.</div>';
   const byCat = fac.byCategory || {};
   const cats = Object.keys(byCat).sort((a,b)=>byCat[b].open-byCat[a].open);
   document.getElementById('facByCategory').innerHTML = cats.length ? cats.map(c=>`
     <div class="bar-row"><div class="b-label">${c}</div><div class="bar-track"><div class="bar-fill ${byCat[c].open?'over':''}" style="width:${byCat[c].total?Math.min(100,(byCat[c].open/byCat[c].total)*100):0}%"></div></div><div class="b-value">${byCat[c].open} open / ${byCat[c].total} total</div></div>`).join('') : '<div class="empty">No tickets logged yet.</div>';
+}
+
+function openTicketDetailModal(ticketId){
+  const t = (data.facilities.ticketList||[]).find(x=>String(x.id)===String(ticketId));
+  if(!t){ showToast('Ticket not found.', true); return; }
+  openModal('Ticket — ' + t.title, `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <span class="pill mono">${t.category}</span>
+      <span class="pill ${(t.urgency||'').toLowerCase()==='urgent'?'neg':'mono'}">${t.urgency}</span>
+      <span class="pill ${t.status==='closed'?'pos':'warn'}">${t.status}</span>
+      ${t.verified ? `<span class="pill ${t.verified==='YES'?'pos':'neg'}">VERIFIED: ${t.verified}</span>` : ''}
+    </div>
+    ${t.location ? `<div style="font-size:12px;color:var(--text-dim);margin-bottom:8px"><b>Location:</b> ${t.location}</div>` : ''}
+    ${t.description ? `<div style="font-size:12.5px;margin-bottom:12px">${t.description}</div>` : ''}
+    <div style="font-size:10.5px;color:var(--muted);margin-bottom:14px">Logged ${new Date(t.createdAt).toLocaleString('en-GB')}${t.assignedInitials?' · assigned to '+t.assignedInitials:''}</div>
+    <div class="modal-section-label">Update status</div>
+    <div class="action-row">
+      <button class="btn ghost" onclick="setTicketStatus('${t.id}','open')">OPEN</button>
+      <button class="btn teal" onclick="setTicketStatus('${t.id}','in_progress')">IN PROGRESS</button>
+      <button class="btn" onclick="setTicketStatus('${t.id}','closed')">CLOSE</button>
+    </div>
+    <div class="modal-section-label">Verify (confirm the work was actually done)</div>
+    <div class="action-row">
+      <button class="btn ghost" onclick="verifyTicket('${t.id}','YES')">&#10003; VERIFIED DONE</button>
+      <button class="btn danger" onclick="verifyTicket('${t.id}','NO')">&#10007; NOT DONE</button>
+    </div>
+    <div id="ticketModalResult" class="result-msg"></div>`);
+}
+
+async function setTicketStatus(id, status){
+  try{
+    const { error } = await supabaseClient.rpc('fac_update_ticket_status', { p_ticket_id: id, p_status: status });
+    if(error) throw new Error(error.message);
+    showToast('Ticket updated');
+    closeModal();
+    loadData();
+  }catch(e){ showToast(e.message||'Could not update ticket.', true); }
+}
+async function verifyTicket(id, verified){
+  try{
+    const { error } = await supabaseClient.rpc('fac_verify_ticket', { p_ticket_id: id, p_verified: verified });
+    if(error) throw new Error(error.message);
+    showToast('Verification recorded');
+    closeModal();
+    loadData();
+  }catch(e){ showToast(e.message||'Could not verify ticket.', true); }
+}
+
+function openProjectModal(projectId){
+  const p = (data.facilities.projects||[]).find(x=>String(x.id)===String(projectId));
+  if(!p){ showToast('Project not found.', true); return; }
+  openModal('Project — ' + p.title, `
+    <div class="modal-section-label">Current status: <span class="pill warn">${p.status}</span></div>
+    <div class="action-row">
+      <button class="btn ghost" onclick="setProjectStatus('${p.id}','Planned')">PLANNED</button>
+      <button class="btn teal" onclick="setProjectStatus('${p.id}','In Progress')">IN PROGRESS</button>
+      <button class="btn" onclick="setProjectStatus('${p.id}','Complete')">COMPLETE</button>
+    </div>`);
+}
+async function setProjectStatus(id, status){
+  try{
+    const { error } = await supabaseClient.rpc('fac_update_project', { p_project_id: id, p_status: status });
+    if(error) throw new Error(error.message);
+    showToast('Project updated');
+    closeModal();
+    loadData();
+  }catch(e){ showToast(e.message||'Could not update project.', true); }
 }
 
 // ---------- RECEPTION ----------
@@ -1459,9 +1899,72 @@ function renderMembers(){
     <div class="metric-card green"><div class="metric-label">NEW TODAY</div><div class="metric-value">${mem.newToday||0}</div></div>
     <div class="metric-card gold"><div class="metric-label">TOTAL POINTS LIVE</div><div class="metric-value" style="font-size:20px">${(mem.totalPointsLive||0).toLocaleString()}</div></div>`;
   const top = mem.topMembers || [];
-  document.getElementById('memberTop').innerHTML = top.length ? top.map((m,i)=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border-soft);font-size:12px"><span>${i+1}. ${m.name}</span><span style="color:var(--gold);font-family:'Space Mono',monospace">${m.points} pts</span></div>`).join('') : '<div class="empty">No members yet.</div>';
+  document.getElementById('memberTop').innerHTML = top.length ? top.map((m,i)=>`<div class="list-row clickable" onclick="openMemberDetailModal('${(m.custId||'').replace(/'/g,"\\'")}')"><span>${i+1}. ${m.name} ${m.status==='VIP'?'<span class="pill cocktail" style="margin-left:6px">VIP</span>':''}</span><span style="color:var(--gold);font-family:'Space Mono',monospace">${m.points} pts &#8250;</span></div>`).join('') : '<div class="empty">No members yet.</div>';
   const vip = mem.vipRequests || [];
-  document.getElementById('memberVipRequests').innerHTML = vip.length ? vip.map(v=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border-soft);font-size:12px"><span>${v.name} · ${v.phone||'—'}</span><span class="pill warn">${v.custId}</span></div>`).join('') : '<div class="empty">No VIP requests pending.</div>';
+  document.getElementById('memberVipRequests').innerHTML = vip.length ? vip.map(v=>`<div class="list-row clickable" onclick="openMemberDetailModal('${(v.custId||'').replace(/'/g,"\\'")}')"><span>${v.name} · ${v.phone||'—'}</span><span class="pill warn">${v.custId} &#8250;</span></div>`).join('') : '<div class="empty">No VIP requests pending.</div>';
+}
+
+function openMemberDetailModal(custId){
+  const all = (data.members||{}).topMembers || [];
+  const m = all.find(x=>x.custId===custId) || { custId, name:'Guest', points:0, phone:'', status:'Standard' };
+  const rewards = data.rewards || [];
+  openModal('Member — ' + (m.name||'Guest'), `
+    <div class="modal-section-label">${custId} &middot; ${m.phone||'no phone on file'} &middot; <span class="pill ${m.status==='VIP'?'cocktail':'mono'}">${m.status||'Standard'}</span></div>
+    <div class="metric-card gold" style="margin-bottom:14px"><div class="metric-label">CURRENT POINTS</div><div class="metric-value">${m.points||0}</div></div>
+    <div class="modal-section-label">Adjust points</div>
+    <div class="field-grid">
+      <input id="mdPoints" type="number" placeholder="Points (e.g. 50 or -20)">
+      <input id="mdReason" placeholder="Reason (optional)">
+    </div>
+    <button class="btn ghost" onclick="modalAdjustPoints('${custId.replace(/'/g,"\\'")}')">APPLY POINTS CHANGE</button>
+    <div class="modal-section-label">Redeem a reward</div>
+    <select id="mdReward"><option value="">Choose a reward...</option>${rewards.map(r=>`<option value="${(r.name||r.reward_name||'').replace(/"/g,'&quot;')}">${r.name||r.reward_name} ${r.points_cost?('('+r.points_cost+' pts)'):''}</option>`).join('')}</select>
+    <button class="btn teal" onclick="modalRedeemReward('${custId.replace(/'/g,"\\'")}')">REDEEM SELECTED REWARD</button>
+    <div class="modal-section-label">Membership status</div>
+    <div class="action-row">
+      <button class="btn ghost" onclick="modalSetStatus('${custId.replace(/'/g,"\\'")}','Standard')">STANDARD</button>
+      <button class="btn purple" onclick="modalSetStatus('${custId.replace(/'/g,"\\'")}','VIP')">MAKE VIP</button>
+    </div>
+    <div id="memberModalResult" class="result-msg"></div>`);
+}
+async function modalAdjustPoints(custId){
+  const points = document.getElementById('mdPoints').value;
+  const reason = document.getElementById('mdReason').value.trim();
+  const resultEl = document.getElementById('memberModalResult');
+  if(!points){ resultEl.innerHTML = '<span style="color:var(--red)">Enter a points value.</span>'; return; }
+  resultEl.innerHTML = 'Applying...';
+  try{
+    const { data: result, error } = await supabaseClient.rpc('add_customer_points', { p_query: custId, p_points: parseFloat(points), p_reason: reason || null, p_entered_by: 'Manager Dashboard' });
+    if(error) throw new Error(error.message);
+    resultEl.innerHTML = '<span style="color:var(--green)">&#10003; New total: '+result.newTotal+' pts</span>';
+    showToast('Points updated');
+    loadData();
+  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">'+(e.message||'Failed')+'</span>'; }
+}
+async function modalRedeemReward(custId){
+  const reward = document.getElementById('mdReward').value;
+  const resultEl = document.getElementById('memberModalResult');
+  if(!reward){ resultEl.innerHTML = '<span style="color:var(--red)">Choose a reward first.</span>'; return; }
+  resultEl.innerHTML = 'Redeeming...';
+  try{
+    const { data: result, error } = await supabaseClient.rpc('redeem_customer_reward', { p_query: custId, p_reward_name: reward, p_given_by: 'Manager Dashboard', p_notes: null });
+    if(error) throw new Error(error.message);
+    resultEl.innerHTML = '<span style="color:var(--green)">&#10003; Redeemed — now '+result.newTotal+' pts</span>';
+    showToast('Reward redeemed');
+    loadData();
+  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">'+(e.message||'Failed')+'</span>'; }
+}
+async function modalSetStatus(custId, status){
+  const resultEl = document.getElementById('memberModalResult');
+  resultEl.innerHTML = 'Updating...';
+  try{
+    const { error } = await supabaseClient.rpc('set_customer_membership_status', { p_query: custId, p_status: status, p_set_by: 'Manager Dashboard' });
+    if(error) throw new Error(error.message);
+    resultEl.innerHTML = '<span style="color:var(--green)">&#10003; Status set to '+status+'</span>';
+    showToast('Membership status updated');
+    setTimeout(closeModal, 700);
+    loadData();
+  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">'+(e.message||'Failed')+'</span>'; }
 }
 
 async function submitRegisterMember(){
@@ -1573,15 +2076,16 @@ function renderStock(){
     <div class="metric-card purple"><div class="metric-label">EST. REORDER COST</div><div class="metric-value" style="font-size:20px">${fmt(totalReorderCost)}</div></div>`;
 
   document.getElementById('reorderList').innerHTML = reorder.length ? reorder.map(r=>`
-    <div class="reorder-row">
+    <div class="reorder-row clickable" onclick="prefillRestock('${r.item.replace(/'/g,"\\'")}',${r.suggestedQty},${r.parLevel},${r.costPerUnit})">
       <div><div class="rr-item">${r.item}</div><div class="rr-meta">${r.currentQty}${r.unit} on hand · par ${r.parLevel}${r.unit} · suggest +${r.suggestedQty}${r.unit}</div></div>
-      <div class="rr-cost">${fmt(r.estCost)}</div>
+      <div class="rr-cost">${fmt(r.estCost)} &#8250;</div>
     </div>`).join('') : '<div class="empty">Nothing at or below par right now.</div>';
 
   document.getElementById('supplierDirectory').innerHTML = (data.suppliers||[]).length ? data.suppliers.map(s=>`
-    <div class="supplier-card">
+    <div class="supplier-card clickable" onclick="jumpToExpensesFiltered('${s.name.replace(/'/g,"\\'")}')">
       <div class="sc-name">${s.name}</div>
       <div class="sc-meta">${s.contact||'No phone on file'} · ${s.orders} order(s) · last ${s.lastDate ? new Date(s.lastDate).toLocaleDateString('en-GB') : '—'} · <span style="color:var(--gold)">${fmt(s.totalSpend)} total spend</span></div>
+      <div style="font-size:10px;color:var(--muted);margin-top:2px">tap to see this supplier's expense history &#8250;</div>
     </div>`).join('') : '<div class="empty">No suppliers on file yet — they appear here once logged against an expense.</div>';
 
   renderStockTable();
@@ -1609,6 +2113,17 @@ function renderStockTable(){
       <td style="font-family:'Space Mono',monospace">${fmt(s.costPerUnit)}</td>
       <td style="font-size:11px;color:var(--text-dim)">${s.lastRestocked}</td>
     </tr>`).join('') : '<tr><td colspan="5" class="empty">No stock items match</td></tr>';
+}
+
+function prefillRestock(item, suggestedQty, parLevel, costPerUnit){
+  document.getElementById('stkItem').value = item;
+  document.getElementById('stkQty').value = suggestedQty;
+  document.getElementById('stkPar').value = parLevel;
+  document.getElementById('stkCost').value = costPerUnit || '';
+  const el = document.getElementById('stkItem');
+  el.scrollIntoView({behavior:'smooth', block:'center'});
+  el.focus();
+  showToast('Restock form filled in for ' + item);
 }
 
 async function submitRestock(){
