@@ -516,7 +516,7 @@ textarea{min-height:60px;resize:vertical;}
         <button class="btn purple" onclick="submitAddStaff()">+ ADD STAFF MEMBER</button>
         <div id="stfResult" class="result-msg"></div>
       </div>
-      <div class="card">
+      <div class="card" id="payrollRunsCard" style="display:none">
         <div class="card-title">&#128181; RUN PAYROLL</div>
         <div style="font-size:11px;color:var(--text-dim);margin-bottom:10px">Estimates SSNIT (5.5%/13%) + PAYE per the current Settings tax bands — verify with your accountant before real filing.</div>
         <select id="prStaff"><option value="">All active staff (one full period)</option></select>
@@ -529,6 +529,13 @@ textarea{min-height:60px;resize:vertical;}
         <div id="prResult" class="result-msg"></div>
         <div class="card-title" style="margin-top:16px">RECENT PAYROLL RUNS</div>
         <div class="scroll-table" style="max-height:260px"><table><thead><tr><th>PERIOD</th><th>NAME</th><th>GROSS</th><th>SSNIT</th><th>PAYE</th><th>NET</th><th>STATUS</th></tr></thead><tbody id="payrollBody"></tbody></table></div>
+      </div>
+      <div class="card gate" id="payrollGate">
+        <div class="card-title">&#128274; PAYROLL RUNS — GHS AMOUNTS</div>
+        <p style="font-size:12px;color:var(--text-dim);margin-bottom:10px">Individual salary, SSNIT and PAYE figures are gated behind the same Revenue password. Staff master info to the left is not affected.</p>
+        <input type="password" id="payrollGatePw" placeholder="Revenue password" autocomplete="off" onkeydown="if(event.key==='Enter')checkPayrollGate()">
+        <button class="btn" onclick="checkPayrollGate()">UNLOCK</button>
+        <div class="err" id="payrollGateErr"></div>
       </div>
     </div>
   </div>
@@ -827,7 +834,7 @@ async function loadData(){
   document.getElementById('lastRefresh').textContent = 'Refreshing...';
   try{
     const [staffRes, expensesRes, budgetsRes, ticketsRes, projectsRes, custRes, shiftLogRes, settingsRes,
-           costingRes, spendRes, payrollRes, payrollEstRes, summariesRes, bookingsRes, roomsRes, recTasksRes, activityRes,
+           costingRes, spendRes, payrollEstRes, summariesRes, bookingsRes, roomsRes, recTasksRes, activityRes,
            stockRes, restockLogRes, venueSettingsRes, recipesRes, foodRes, rewardsRes, cleaningRes, tableOrdersRes, canteenOrdersRes] = await Promise.all([
       supabaseClient.from('staff').select(STAFF_COLUMNS).order('slot'),
       supabaseClient.from('expenses').select('*').order('created_at', { ascending: false }).limit(300),
@@ -839,7 +846,6 @@ async function loadData(){
       supabaseClient.from('manager_settings').select('key, value'),
       supabaseClient.rpc('get_bar_costing_overview'),
       supabaseClient.rpc('get_spend_by_category_this_month'),
-      supabaseClient.rpc('get_payroll_records', { p_limit: 30 }),
       supabaseClient.rpc('get_monthly_payroll_gross_estimate'),
       supabaseClient.rpc('get_shift_summaries_for_manager', { p_limit: 30 }),
       supabaseClient.from('bookings').select('*').order('created_at', { ascending: false }).limit(100),
@@ -857,7 +863,7 @@ async function loadData(){
       supabaseClient.from('canteen_orders').select('*').order('created_at', { ascending: false }).limit(150)
     ]);
     [staffRes, expensesRes, budgetsRes, ticketsRes, projectsRes, custRes, shiftLogRes, settingsRes,
-     costingRes, spendRes, payrollRes, payrollEstRes, summariesRes, bookingsRes, roomsRes, recTasksRes, activityRes,
+     costingRes, spendRes, payrollEstRes, summariesRes, bookingsRes, roomsRes, recTasksRes, activityRes,
      stockRes, restockLogRes, venueSettingsRes, recipesRes, foodRes, rewardsRes, cleaningRes, tableOrdersRes, canteenOrdersRes].forEach(r => { if(r.error) throw new Error(r.error.message); });
 
     const staff = staffRes.data.map(s => ({
@@ -1052,7 +1058,7 @@ async function loadData(){
     if(hourNow >= 15 && cleaning.zonesMissing.length){
       alerts.push({ level:'warn', text: cleaning.zonesMissing.length + ' cleaning zone(s) not checked yet today, and it is past 3pm: ' + cleaning.zonesMissing.join(', ') });
     }
-    const pendingPayroll = (payrollRes.data||[]).filter(r => r.status !== 'Paid');
+    const pendingPayroll = (data.payrollRuns||[]).filter(r => r.status !== 'Paid');
     if(pendingPayroll.length){
       alerts.push({ level:'warn', text: pendingPayroll.length + ' payroll run(s) not yet marked paid.' });
     }
@@ -1070,7 +1076,7 @@ async function loadData(){
       staff, expenses, budgets, facilities, members, shiftLog, onShift, settings, reception, alerts,
       staffActivity, unusedStaff,
       bar, cocktails, spendByCategoryThisMonth,
-      payrollRuns: payrollRes.data || [],
+      payrollRuns: data.payrollRuns || [], // password-gated: populated by loadPayrollGated() once unlocked, not on every refresh
       totalMonthlyPayrollGrossEstimate: payrollEstRes.data || 0,
       categories: Array.from(new Set(budgets.map(b=>b.category))),
       summaries: summariesRes.data || [],
@@ -2213,6 +2219,7 @@ function unlockRevenueTab(){
   revUnlocked = true;
   document.getElementById('revGate').style.display = 'none';
   document.getElementById('revApp').style.display = 'block';
+  if(REV_PW && document.getElementById('payrollGate').style.display !== 'none'){ unlockPayrollRuns(REV_PW); }
   document.getElementById('revRangeChips').innerHTML = REV_RANGE_DEFS.map(([k,l]) => `<button class="chip ${k===revOverviewRange?'active':''}" onclick="setRevOverviewRange('${k}')">${l}</button>`).join('');
   document.getElementById('revTrendChips').innerHTML = [['day','Daily'],['week','Weekly'],['month','Monthly']].map(([k,l]) => `<button class="chip ${k===revTrendBucket?'active':''}" onclick="setRevTrendBucket('${k}')">${l}</button>`).join('');
   document.getElementById('revStaffChips').innerHTML = REV_RANGE_DEFS.map(([k,l]) => `<button class="chip ${k===revStaffRange?'active':''}" onclick="setRevStaffRange('${k}')">${l}</button>`).join('');
@@ -2225,10 +2232,41 @@ function lockRevenueTab(){
   document.getElementById('revGatePw').value = '';
   try{ sessionStorage.removeItem('whgh_revenue_pw'); }catch(e){}
   REV_PW = null;
+  lockPayrollRuns();
 }
 // Auto-unlock if we already have a password cached this session
 if(REV_PW){
-  supabaseClient.rpc('check_revenue_password', { p_password: REV_PW }).then(({data:ok})=>{ if(ok) unlockRevenueTab(); });
+  supabaseClient.rpc('check_revenue_password', { p_password: REV_PW }).then(({data:ok})=>{ if(ok){ unlockRevenueTab(); unlockPayrollRuns(REV_PW); } });
+}
+
+// ---------- PAYROLL RUNS GATE (same password as Revenue — one credential) ----------
+async function checkPayrollGate(){
+  const pw = document.getElementById('payrollGatePw').value;
+  const errEl = document.getElementById('payrollGateErr');
+  errEl.textContent = '';
+  try{
+    const { data: ok, error } = await supabaseClient.rpc('check_revenue_password', { p_password: pw });
+    if(error){ errEl.textContent = error.message; return; }
+    if(!ok){ errEl.textContent = 'Wrong password.'; return; }
+    REV_PW = pw;
+    try{ sessionStorage.setItem('whgh_revenue_pw', pw); }catch(e){}
+    unlockPayrollRuns(pw);
+    if(!revUnlocked) unlockRevenueTab(); // same credential — unlock Revenue tab too so it isn't asked twice
+  }catch(e){ errEl.textContent = e.message || 'Could not check password.'; }
+}
+async function unlockPayrollRuns(pw){
+  document.getElementById('payrollGate').style.display = 'none';
+  document.getElementById('payrollRunsCard').style.display = 'block';
+  const { data: rows, error } = await supabaseClient.rpc('get_payroll_records_gated', { p_password: pw, p_limit: 30 });
+  if(error){ showApiError('Could not load payroll: ' + error.message); return; }
+  data.payrollRuns = rows || [];
+  safeRender('renderPayrollTable', renderPayrollTable);
+}
+function lockPayrollRuns(){
+  document.getElementById('payrollGate').style.display = 'block';
+  document.getElementById('payrollRunsCard').style.display = 'none';
+  document.getElementById('payrollGatePw').value = '';
+  data.payrollRuns = [];
 }
 
 async function setRevOverviewRange(key){ revOverviewRange = key; unlockRevenueTab(); }
