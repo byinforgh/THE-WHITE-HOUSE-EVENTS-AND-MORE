@@ -212,6 +212,11 @@ function genClientId(){
   return 'cid-' + Date.now() + '-' + Math.random().toString(36).slice(2);
 }
 
+// Shared HTML-escaping helper — see bar-dashboard.html for why this
+// matters: any guest- or staff-typed text (customer name, room/table
+// detail, item name) must pass through this before hitting innerHTML.
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
 function updateConnStatus(){
   const el = document.getElementById('connStatus');
   if(navigator.onLine){ el.textContent = '● online'; el.className = 'conn-status online'; }
@@ -383,7 +388,7 @@ function fmtDateTime(iso){
 }
 function locationLabel(o){
   if(o.locationType === 'Table') return 'Table ' + (o.locationDetail || '?');
-  return o.locationType + (o.locationDetail ? ` <small>${o.locationDetail}</small>` : '');
+  return esc(o.locationType) + (o.locationDetail ? ` <small>${esc(o.locationDetail)}</small>` : '');
 }
 
 function renderCanteenOrders(){
@@ -403,10 +408,10 @@ function renderCanteenOrders(){
   if(active.length === 0){ el.innerHTML = '<div class="empty">No active canteen orders right now.</div>'; return; }
 
   const staffOptionsHtml = (selected) => '<option value="">Select staff...</option>' +
-    staffList.map(s => `<option value="${s.initials}" ${selected===s.initials?'selected':''}>${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
+    staffList.map(s => `<option value="${esc(s.initials)}" ${selected===s.initials?'selected':''}>${esc(s.initials)}${s.name?' — '+esc(s.name):''}</option>`).join('');
 
   el.innerHTML = active.map(o => {
-    const itemsHtml = (o.items||[]).map(i => `${i.qty} &times; ${i.item}`).join(', ');
+    const itemsHtml = (o.items||[]).map(i => `${i.qty} &times; ${esc(i.item)}`).join(', ');
     const isNew = o.status === 'Placed' && !canteenOrdersFirstLoad;
     const isProcessing = processingOrderIds.has(o.orderId);
     const selectedStaff = orderStaffSelections[o.orderId] || '';
@@ -439,7 +444,7 @@ function renderCanteenOrders(){
         <div class="order-card-age">${orderAge(o.timestamp)}</div>
       </div>
       <div class="order-items-list">${itemsHtml}</div>
-      <div class="order-items-list" style="margin-top:-4px;color:var(--text-dim)">${o.customerName || 'no name given'}</div>
+      <div class="order-items-list" style="margin-top:-4px;color:var(--text-dim)">${esc(o.customerName) || 'no name given'}</div>
       ${comboHtml}
       <div class="order-card-footer">
         <span class="order-total">GHS ${o.total.toFixed(2)}</span>
@@ -539,10 +544,10 @@ function renderRecentOrders(){
   el.innerHTML = recent.map(o=>{
     const t = new Date(o.timestamp);
     const timeStr = isNaN(t.getTime()) ? '—' : t.toLocaleString('en-GB',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
-    const itemsStr = (o.items||[]).map(i=>`${i.qty}x ${i.item}`).join(', ');
+    const itemsStr = (o.items||[]).map(i=>`${i.qty}x ${esc(i.item)}`).join(', ');
     const statusColor = o.status === 'Paid' ? 'var(--green)' : 'var(--red)';
-    const whereStr = o.locationType === 'Table' ? ('Table ' + (o.locationDetail||'?')) : (o.locationType + (o.locationDetail?' — '+o.locationDetail:''));
-    return `<tr><td style="font-family:'Space Mono',monospace;font-size:11px">${timeStr}</td><td>${whereStr}</td><td style="font-size:11px">${o.customerName||'—'}</td><td style="font-size:11px;color:var(--text-dim)">${itemsStr}</td><td style="color:var(--gold);font-weight:700">&#8373;${o.total.toFixed(2)}</td><td style="color:${statusColor};font-weight:700">${o.status}</td><td>${o.handledBy||'—'}</td></tr>`;
+    const whereStr = o.locationType === 'Table' ? ('Table ' + esc(o.locationDetail||'?')) : (esc(o.locationType) + (o.locationDetail?' — '+esc(o.locationDetail):''));
+    return `<tr><td style="font-family:'Space Mono',monospace;font-size:11px">${timeStr}</td><td>${whereStr}</td><td style="font-size:11px">${esc(o.customerName)||'—'}</td><td style="font-size:11px;color:var(--text-dim)">${itemsStr}</td><td style="color:var(--gold);font-weight:700">&#8373;${o.total.toFixed(2)}</td><td style="color:${statusColor};font-weight:700">${esc(o.status)}</td><td>${esc(o.handledBy)||'—'}</td></tr>`;
   }).join('');
 }
 
@@ -726,7 +731,7 @@ function renderQuickSellPanel(){
 
   const staffSel = document.getElementById('qsStaff');
   staffSel.innerHTML = '<option value="">Select staff...</option>' +
-    staffList.map(s => `<option value="${s.initials}">${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
+    staffList.map(s => `<option value="${esc(s.initials)}">${esc(s.initials)}${s.name?' — '+esc(s.name):''}</option>`).join('');
   if(staffList.some(s=>s.initials===prevStaff)) staffSel.value = prevStaff;
 
   document.getElementById('qsCustomer').value = prevCustomer;
