@@ -17,6 +17,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{--black:#0a0a0a;--surface:#111111;--card:#181818;--border:#2a2a2a;--gold:#f5a623;--gold-dim:#c9861a;--teal:#3fb6a8;--red:#ef4444;--green:#22c55e;--purple:#8b5cf6;--text:#f2f2f2;--text-dim:#b5b5b5;--muted:#888;}
+.toast{position:fixed;bottom:24px;right:24px;background:var(--gold);color:var(--black);padding:12px 18px;border-radius:6px;font-size:12.5px;font-weight:700;letter-spacing:0.5px;opacity:0;transform:translateY(20px);transition:all .3s;z-index:999;pointer-events:none;max-width:340px;}
+.toast.show{opacity:1;transform:translateY(0);}
+.toast.err{background:var(--red);color:#fff;}
 *{margin:0;padding:0;box-sizing:border-box;}
 body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min-height:100vh;}
 .header{background:var(--surface);border-bottom:1px solid var(--border);padding:16px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;flex-wrap:wrap;gap:10px;}
@@ -244,6 +247,17 @@ let facData = {tickets: [], openSorted: [], assets: [], projects: [], staff: [],
 // in a staff member's browser.
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
+function showToast(msg, isErr){
+  const t = document.getElementById('toast');
+  if(!t){ return; }
+  t.textContent = msg;
+  t.classList.toggle('err', !!isErr);
+  t.classList.add('show');
+  clearTimeout(t._hideTimer);
+  t._hideTimer = setTimeout(()=>t.classList.remove('show'), 3200);
+}
+
+
 function showApiError(msg){
   const el = document.getElementById('errorBanner');
   el.innerHTML = "<b>&#9888; Dashboard can't reach Supabase:</b> " + msg + " — check your connection and try Refresh.";
@@ -457,7 +471,7 @@ async function quickUpdateStatus(ticketId, status){
     const { error } = await supabaseClient.rpc('fac_update_ticket_status', { p_ticket_id: ticketId, p_status: status });
     if(error) throw new Error(error.message);
     loadData();
-  }catch(e){ alert(e.message || 'Could not update.'); }
+  }catch(e){ showToast(e.message || 'Could not update.', true); }
 }
 
 function toggleCompleteForm(ticketId){
@@ -485,7 +499,7 @@ async function verifyTicket(ticketId, verified){
     const { error } = await supabaseClient.rpc('fac_verify_ticket', { p_ticket_id: ticketId, p_verified: verified });
     if(error) throw new Error(error.message);
     loadData();
-  }catch(e){ alert(e.message || 'Could not update.'); }
+  }catch(e){ showToast(e.message || 'Could not update.', true); }
 }
 
 function populateLocationList(){
@@ -560,7 +574,7 @@ async function quickProjectUpdate(projectId){
     const { error } = await supabaseClient.rpc('fac_update_project', { p_project_id: projectId, p_status: status });
     if(error) throw new Error(error.message);
     loadData();
-  }catch(e){ alert(e.message || 'Failed'); }
+  }catch(e){ showToast(e.message || 'Failed', true); }
 }
 
 async function submitProject(){
@@ -611,5 +625,6 @@ function renderStaff(){
 loadData();
 setInterval(loadData, 30000);
 </script>
+<div class="toast" id="toast"></div>
 </body>
 </html>
