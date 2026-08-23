@@ -73,8 +73,14 @@ select:focus,input:focus,textarea:focus{border-color:var(--gold);}
     <img src="logo-white.png" alt="THE WHITE HOUSE EVENTS & MORE" onerror="this.onerror=null;this.replaceWith(Object.assign(document.createElement('div'),{className:'brand-fallback',textContent:'THE WHITE HOUSE EVENTS & MORE'}));">
     <span>MEMBERS DASHBOARD</span>
   </div>
-  <div class="header-right"><span class="last-refresh" id="lastRefresh">Loading...</span><button class="refresh-btn" onclick="loadData()">&#8635; REFRESH</button></div>
+  <div class="header-right">
+    <select id="actingAsSelect" onchange="onActingAsChange()" style="background:var(--card,#181818);color:var(--text,#f2f2f2);border:1px solid var(--border,#2a2a2a);border-radius:6px;padding:6px 10px;font-size:12px;max-width:170px">
+      <option value="">Who are you?</option>
+    </select>
+    <span class="last-refresh" id="lastRefresh">Loading...</span><button class="refresh-btn" onclick="loadData()">&#8635; REFRESH</button>
+  </div>
 </div>
+<div class="note-box gold" id="actingAsNote" style="display:none;margin:10px 20px;padding:10px 14px;border:1px solid var(--gold-dim,#c9861a);border-radius:8px;font-size:12px;color:var(--text-dim,#b5b5b5)">Select your name above first — every action here (adding points, redeeming a reward, changing VIP status) needs a verified staff member attached to it, so there's a real record of who did what.</div>
 <div class="main">
 <div class="tabs">
   <button class="tab active" onclick="switchTab('today',event)">TODAY</button>
@@ -132,7 +138,7 @@ select:focus,input:focus,textarea:focus{border-color:var(--gold);}
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
       <div><label style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:1px">PARTY SIZE</label><input type="number" id="bkParty"></div>
-      <div><label style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:1px">ADDED BY</label><input type="text" id="bkAddedBy" placeholder="Your name"></div>
+      <div><label style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:1px">ADDED BY</label><input type="text" id="bkAddedBy" placeholder="Signed in via Who are you? above" disabled style="opacity:0.6"></div>
     </div>
     <label style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:1px">NOTES</label>
     <textarea id="bkNotes" style="min-height:60px"></textarea>
@@ -174,7 +180,7 @@ select:focus,input:focus,textarea:focus{border-color:var(--gold);}
       <label style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:1px;margin-top:10px;display:block">REWARD*</label>
       <select id="rdReward"></select>
       <label style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:1px;margin-top:10px;display:block">GIVEN BY</label>
-      <input type="text" id="rdGivenBy" placeholder="Your name">
+      <input type="text" id="rdGivenBy" placeholder="Signed in via Who are you? above" disabled style="opacity:0.6">
       <label style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:1px;margin-top:10px;display:block">NOTES</label>
       <input type="text" id="rdNotes">
       <button class="refresh-btn" onclick="submitRedeem()" style="background:var(--gold);color:var(--black);width:100%;margin-top:12px;padding:10px;font-weight:800">REDEEM</button>
@@ -235,8 +241,122 @@ const FOOTER_LINKS = [
   { name:'Website',         url:'https://www.thewhitehousegh.com' }
 ];
 
-let state = { customers: [], leaderboard: [], rewards: [], pointsLog: [], bookings: [], redemptions: [], totalCustomers: 0, newToday: 0, vipCount: 0, vipRequests: [] };
+let state = {
+  customers: [], leaderboard: [], rewards: [], pointsLog: [], bookings: [], redemptions: [], staff: [],
+  totalCustomers: 0, newToday: 0, vipCount: 0, vipRequests: [],
+  actingAs: (function(){ try{ return localStorage.getItem('members_acting_as') || ''; }catch(e){ return ''; } })(),
+  actingAsExpires: (function(){ try{ return parseInt(localStorage.getItem('members_acting_as_expires')||'0',10) || 0; }catch(e){ return 0; } })()
+};
 let activityFilter = 'all';
+
+// Shared HTML-escaping helper — customer/member names, reward names,
+// and activity feed lines all come from data a customer or staff
+// member typed at some point, so every one of them must go through
+// this before being placed into innerHTML.
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// ---------------------------------------------------------------------------
+// ACTING AS — same PIN-gated "who's using this dashboard right now"
+// pattern as reception-dashboard.html. This dashboard moves real value
+// (loyalty points, reward redemptions, VIP status), so nothing here
+// should be able to fire without a verified staff identity attached.
+// The identity expires after 4 hours of the tab being open so a PIN
+// entered once on a shared device doesn't silently authenticate
+// whoever picks up the tablet next, hours or days later.
+// ---------------------------------------------------------------------------
+const ACTING_AS_TTL_MS = 4 * 60 * 60 * 1000;
+
+function checkActingAsExpiry(){
+  if(state.actingAs && state.actingAsExpires && Date.now() > state.actingAsExpires){
+    clearActingAs();
+  }
+}
+function clearActingAs(){
+  state.actingAs = ''; state.actingAsExpires = 0;
+  try{ localStorage.removeItem('members_acting_as'); localStorage.removeItem('members_acting_as_expires'); }catch(e){}
+  const sel = document.getElementById('actingAsSelect');
+  if(sel) sel.value = '';
+  const note = document.getElementById('actingAsNote');
+  if(note) note.style.display = 'block';
+  reflectActingAsInForms();
+}
+function setActingAs(initials){
+  state.actingAs = initials || '';
+  state.actingAsExpires = initials ? (Date.now() + ACTING_AS_TTL_MS) : 0;
+  try{
+    localStorage.setItem('members_acting_as', state.actingAs);
+    localStorage.setItem('members_acting_as_expires', String(state.actingAsExpires));
+  }catch(e){}
+  const sel = document.getElementById('actingAsSelect');
+  if(sel) sel.value = state.actingAs;
+  const note = document.getElementById('actingAsNote');
+  if(note) note.style.display = state.actingAs ? 'none' : 'block';
+  reflectActingAsInForms();
+}
+function reflectActingAsInForms(){
+  const staffMember = (state.staff||[]).find(s=>s.initials===state.actingAs);
+  const label = state.actingAs ? (staffMember ? staffMember.full_name : state.actingAs) : '';
+  ['bkAddedBy','rdGivenBy'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.value = label;
+  });
+}
+function populateActingAsDropdown(){
+  const sel = document.getElementById('actingAsSelect');
+  if(!sel) return;
+  const prev = state.actingAs || '';
+  const roster = (state.staff||[]).slice().sort((a,b)=>(a.full_name||'').localeCompare(b.full_name||''));
+  sel.innerHTML = '<option value="">Who are you?</option>' +
+    roster.map(s => `<option value="${esc(s.initials)}">${esc(s.full_name)}</option>`).join('');
+  sel.value = prev;
+  const note = document.getElementById('actingAsNote');
+  if(note) note.style.display = prev ? 'none' : 'block';
+  reflectActingAsInForms();
+}
+async function onActingAsChange(){
+  const sel = document.getElementById('actingAsSelect');
+  const chosen = sel.value;
+  if(!chosen){ clearActingAs(); return; }
+  const staffMember = (state.staff||[]).find(s=>s.initials===chosen);
+  const displayName = staffMember ? staffMember.full_name : chosen;
+  try{
+    const { data: hasPin, error: hasErr } = await supabaseClient.rpc('staff_has_pin', { p_initials: chosen });
+    if(hasErr) throw new Error(hasErr.message);
+    if(!hasPin){
+      const p1 = prompt('First time selecting your name, ' + displayName + '. Set a PIN (4+ digits) so nobody else can add points or redeem rewards under your name:');
+      if(!p1){ sel.value = state.actingAs || ''; return; }
+      const p2 = prompt('Confirm your PIN:');
+      if(p1 !== p2){ showToast('PINs did not match — try again'); sel.value = state.actingAs || ''; return; }
+      const { data: setOk, error: setErr } = await supabaseClient.rpc('set_staff_pin', { p_initials: chosen, p_new_pin: p1 });
+      if(setErr || !setOk){ showToast('Could not set PIN — try again'); sel.value = state.actingAs || ''; return; }
+      showToast('PIN set for ' + displayName);
+      setActingAs(chosen);
+    } else {
+      const pin = prompt('Enter your PIN, ' + displayName + ':');
+      if(pin === null){ sel.value = state.actingAs || ''; return; }
+      const { data: ok, error: verErr } = await supabaseClient.rpc('verify_staff_pin', { p_initials: chosen, p_pin: pin });
+      if(verErr){ showToast('Could not verify PIN right now'); sel.value = state.actingAs || ''; return; }
+      if(!ok){ showToast('Wrong PIN'); sel.value = state.actingAs || ''; return; }
+      setActingAs(chosen);
+    }
+  }catch(e){
+    showToast('PIN check failed: ' + (e.message||'try again'));
+    sel.value = state.actingAs || '';
+  }
+}
+// requireActingAs(): every value-moving action below calls this first.
+// Returns the verified initials, or null (and shows a toast) if nobody
+// is signed in — the caller should stop right there.
+function requireActingAs(){
+  checkActingAsExpiry();
+  if(!state.actingAs){
+    showToast('Select who you are first (top right) — PIN required before this action.');
+    const note = document.getElementById('actingAsNote');
+    if(note) note.style.display = 'block';
+    return null;
+  }
+  return state.actingAs;
+}
 
 function renderFooterLinks(){
   document.getElementById('footerLinks').innerHTML = FOOTER_LINKS.map(l =>
@@ -279,17 +399,25 @@ function shapeCustomer(r){
 async function loadData(){
   document.getElementById('lastRefresh').textContent = 'Refreshing...';
   try{
-    const [custRes, rewardsRes, pointsRes, bookingsRes, redemptionsRes] = await Promise.all([
+    const [custRes, rewardsRes, pointsRes, bookingsRes, redemptionsRes, staffRes] = await Promise.all([
       supabaseClient.from('bar_customers').select('*').order('first_visit', { ascending: false }),
       supabaseClient.from('rewards').select('*').eq('active', true),
       supabaseClient.from('points_log').select('*').order('created_at', { ascending: false }).limit(60),
       supabaseClient.from('bookings').select('*').order('created_at', { ascending: false }).limit(60),
-      supabaseClient.from('redemptions').select('*').order('created_at', { ascending: false }).limit(60)
+      supabaseClient.from('redemptions').select('*').order('created_at', { ascending: false }).limit(60),
+      supabaseClient.from('staff').select('initials, full_name').eq('active', true).order('full_name')
     ]);
     [custRes, rewardsRes, pointsRes, bookingsRes, redemptionsRes].forEach(r => { if(r.error) throw new Error(r.error.message); });
+    if(staffRes.error) console.log('staff:', staffRes.error.message);
 
     const customers = custRes.data.map(shapeCustomer);
     const todayStr = new Date().toLocaleDateString('en-GB');
+    // v1.1: keep actingAs/actingAsExpires across every refresh instead of
+    // wiping them by replacing the whole state object — loadData() runs
+    // every 60s, and losing "who's using this dashboard" every minute
+    // would make the PIN gate below unusable.
+    const keepActingAs = state.actingAs;
+    const keepActingAsExpires = state.actingAsExpires;
     state = {
       customers,
       totalCustomers: customers.length,
@@ -301,8 +429,13 @@ async function loadData(){
       rewards: rewardsRes.data.map(r => ({ name: r.reward_name, points: r.points_required, category: r.category, active: r.active ? 'YES':'NO', notes: r.notes })),
       pointsLog: pointsRes.data.map(p => ({ timestamp: new Date(p.created_at).toLocaleString('en-GB'), custId: p.customer_id, name: p.name, change: p.points_change, reason: p.reason, source: p.source, enteredBy: p.entered_by })),
       bookings: bookingsRes.data.map(b => ({ timestamp: new Date(b.created_at).toLocaleString('en-GB'), custId: '', name: b.guest_name, phone: b.guest_phone, service: b.room_type, bookingDate: b.check_in, partySize: b.party_size, notes: b.notes, addedBy: '', source: b.source })),
-      redemptions: redemptionsRes.data.map(r => ({ timestamp: new Date(r.created_at).toLocaleString('en-GB'), custId: r.customer_id, name: r.name, reward: r.reward_name, pointsSpent: r.points_spent, givenBy: r.given_by, notes: r.notes }))
+      redemptions: redemptionsRes.data.map(r => ({ timestamp: new Date(r.created_at).toLocaleString('en-GB'), custId: r.customer_id, name: r.name, reward: r.reward_name, pointsSpent: r.points_spent, givenBy: r.given_by, notes: r.notes })),
+      staff: staffRes.data || [],
+      actingAs: keepActingAs,
+      actingAsExpires: keepActingAsExpires
     };
+    checkActingAsExpiry();
+    populateActingAsDropdown();
     document.getElementById('lastRefresh').textContent = 'Updated: ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
     renderToday();
     if(document.getElementById('tab-rewards').classList.contains('active')){ renderRewards(); renderVIPRequests(); }
@@ -323,7 +456,7 @@ function renderToday(){
   const top5 = (state.leaderboard||[]).slice(0,5);
   document.getElementById('topFive').innerHTML = top5.length ? top5.map((c,i)=>`
     <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #1a1a1a">
-      <div style="display:flex;align-items:center;gap:10px"><span class="rank-badge rank-${i+1<=3?i+1:'x'}">${i+1}</span><span style="font-size:12px;font-weight:700">${c.fullName}</span>${c.membershipStatus==='VIP'?' '+membershipBadge('VIP'):''}</div>
+      <div style="display:flex;align-items:center;gap:10px"><span class="rank-badge rank-${i+1<=3?i+1:'x'}">${i+1}</span><span style="font-size:12px;font-weight:700">${esc(c.fullName)}</span>${c.membershipStatus==='VIP'?' '+membershipBadge('VIP'):''}</div>
       <span class="pts">${c.totalPoints||0} pts</span>
     </div>`).join('') : '<div class="empty">No members yet</div>';
   const acts = buildActivityFeed().slice(0,8);
@@ -336,7 +469,7 @@ function renderLeaderboard(){
     <div class="reward-item">
       <div style="display:flex;align-items:center;gap:14px">
         <span class="rank-badge rank-${i+1<=3?i+1:'x'}">${i+1}</span>
-        <div style="font-weight:700;font-size:13px">${c.fullName}</div>
+        <div style="font-weight:700;font-size:13px">${esc(c.fullName)}</div>
         ${c.membershipStatus==='VIP'?membershipBadge('VIP'):''}
       </div>
       <span class="pts" style="font-size:16px">${c.totalPoints||0} pts</span>
@@ -350,14 +483,14 @@ function renderCustomers(){
     (c.phone||'').includes(q) || (c.businessName||'').toLowerCase().includes(q));
   document.getElementById('customersBody').innerHTML = filtered.length ? filtered.map(c => `
     <tr>
-      <td style="font-family:'Space Mono',monospace;color:var(--gold);font-size:11px">${c.custId}</td>
-      <td><strong>${c.fullName}</strong>${c.businessName?'<br><span style="font-size:10px;color:var(--text-dim)">'+c.businessName+'</span>':''}</td>
-      <td style="font-size:11px">${c.service||'—'}</td>
+      <td style="font-family:'Space Mono',monospace;color:var(--gold);font-size:11px">${esc(c.custId)}</td>
+      <td><strong>${esc(c.fullName)}</strong>${c.businessName?'<br><span style="font-size:10px;color:var(--text-dim)">'+esc(c.businessName)+'</span>':''}</td>
+      <td style="font-size:11px">${esc(c.service)||'—'}</td>
       <td><span class="badge-source ${c.source==='Bar'?'src-bar':(c.source||'').indexOf('Bar')===0?'src-bar':'src-landing'}">${c.source||'—'}</span></td>
       <td>${membershipBadge(c.membershipStatus)}</td>
       <td style="text-align:center">${c.totalVisits||0}</td>
       <td class="pts">${c.totalPoints||0}</td>
-      <td style="font-size:10px;color:var(--text-dim)">${c.lastActivity||'—'}</td>
+      <td style="font-size:10px;color:var(--text-dim)">${esc(c.lastActivity)||'—'}</td>
       <td style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="refresh-btn" style="padding:4px 10px;font-size:10px" onclick="quickAdjust('${c.custId}')">+/-</button>
         ${c.membershipStatus==='VIP'
@@ -391,10 +524,10 @@ function renderVIPRequests(){
     return;
   }
   el.innerHTML = reqs.map(r => `
-    <div class="vip-request-row" data-cust="${r.custId}">
+    <div class="vip-request-row" data-cust="${esc(r.custId)}">
       <div>
-        <div class="vr-name">${r.name || r.custId}</div>
-        <div class="vr-meta">${r.custId}${r.phone ? ' · ' + r.phone : ''}</div>
+        <div class="vr-name">${esc(r.name) || esc(r.custId)}</div>
+        <div class="vr-meta">${esc(r.custId)}${r.phone ? ' · ' + esc(r.phone) : ''}</div>
       </div>
       <div style="display:flex;gap:8px">
         <button class="small-btn ghost" onclick="dismissVIPRequestRow('${r.custId}')">DISMISS</button>
@@ -413,26 +546,28 @@ function confirmVIPFromRequest(custId){
 }
 
 async function submitMembershipStatus(){
+  const actingAs = requireActingAs();
+  if(!actingAs) return;
   const custId = document.getElementById('msCustId').value.trim();
   const status = document.getElementById('msStatus').value;
   const result = document.getElementById('msResult');
   if(!custId){ result.innerHTML = '<span class="err-msg">Member ID or phone is required.</span>'; return; }
   result.innerHTML = '<span style="color:var(--muted)">Applying...</span>';
   try{
-    const { data, error } = await supabaseClient.rpc('set_customer_membership_status', { p_query: custId, p_status: status, p_set_by: 'Dashboard' });
+    const { data, error } = await supabaseClient.rpc('set_customer_membership_status', { p_query: custId, p_status: status, p_set_by: actingAs });
     if(error) throw new Error(error.message);
-    result.innerHTML = '<span style="color:var(--green);font-weight:700">✓ '+data.custId+' is now '+data.membershipStatus+'</span>';
+    result.innerHTML = '<span style="color:var(--green);font-weight:700">✓ '+esc(data.custId)+' is now '+esc(data.membershipStatus)+'</span>';
     showToast(data.custId + ' set to ' + data.membershipStatus);
     document.getElementById('msCustId').value = '';
     loadData();
-  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not update')+'</span>'; }
+  }catch(e){ result.innerHTML = '<span class="err-msg">'+esc(e.message||'Could not update')+'</span>'; }
 }
 
 function renderRewards(){
   const rewards = (state.rewards||[]).filter(r => (r.active||'YES').toUpperCase()==='YES');
   document.getElementById('rewardsList').innerHTML = rewards.length ? rewards.map(r=>`
-    <div class="reward-item"><div><div style="font-weight:700;font-size:13px">${r.name}</div><div style="font-size:10px;color:var(--text-dim)">${r.category||'—'}</div></div><span class="pts">${r.points} pts</span></div>`).join('') : '<div class="empty">No active rewards — add rows to the "rewards" table in Supabase</div>';
-  document.getElementById('rdReward').innerHTML = rewards.map(r=>`<option value="${r.name}">${r.name} — ${r.points} pts</option>`).join('');
+    <div class="reward-item"><div><div style="font-weight:700;font-size:13px">${esc(r.name)}</div><div style="font-size:10px;color:var(--text-dim)">${esc(r.category)||'—'}</div></div><span class="pts">${r.points} pts</span></div>`).join('') : '<div class="empty">No active rewards — add rows to the "rewards" table in Supabase</div>';
+  document.getElementById('rdReward').innerHTML = rewards.map(r=>`<option value="${esc(r.name)}">${esc(r.name)} — ${r.points} pts</option>`).join('');
 }
 
 function buildActivityFeed(){
@@ -445,7 +580,7 @@ function buildActivityFeed(){
 }
 function renderActivityRow(a){
   const color = a.type==='points'?'var(--gold)':a.type==='booking'?'var(--teal)':'var(--purple)';
-  return `<div class="activity-row"><div><span style="color:${color};font-weight:700">${a.name||'—'}</span> — ${a.detail}</div><div style="color:var(--text-dim);white-space:nowrap;font-size:10px">${a.ts}</div></div>`;
+  return `<div class="activity-row"><div><span style="color:${color};font-weight:700">${esc(a.name)||'—'}</span> — ${esc(a.detail)}</div><div style="color:var(--text-dim);white-space:nowrap;font-size:10px">${esc(a.ts)}</div></div>`;
 }
 function setActivityFilter(f, btn){
   activityFilter = f;
@@ -462,6 +597,8 @@ function renderActivityFull(){
 }
 
 async function submitBooking(){
+  const actingAs = requireActingAs();
+  if(!actingAs) return;
   const name = document.getElementById('bkName').value.trim();
   const phone = document.getElementById('bkPhone').value.trim();
   const result = document.getElementById('bkResult');
@@ -474,18 +611,20 @@ async function submitBooking(){
       p_booking_date: document.getElementById('bkDate').value || null,
       p_party_size: document.getElementById('bkParty').value || '',
       p_notes: document.getElementById('bkNotes').value.trim() || null,
-      p_added_by: document.getElementById('bkAddedBy').value.trim() || 'Dashboard',
+      p_added_by: actingAs,
       p_source: 'Walk-In / Manual'
     });
     if(error) throw new Error(error.message);
-    result.innerHTML = '<span style="color:var(--green);font-weight:700">✓ Booking added — '+data.custId+'</span>';
+    result.innerHTML = '<span style="color:var(--green);font-weight:700">✓ Booking added — '+esc(data.custId)+'</span>';
     showToast('Booking added — '+data.custId);
     ['bkName','bkPhone','bkParty','bkNotes'].forEach(id=>document.getElementById(id).value='');
     loadData();
-  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not add')+'</span>'; }
+  }catch(e){ result.innerHTML = '<span class="err-msg">'+esc(e.message||'Could not add')+'</span>'; }
 }
 
 async function submitRedeem(){
+  const actingAs = requireActingAs();
+  if(!actingAs) return;
   const custId = document.getElementById('rdCustId').value.trim();
   const reward = document.getElementById('rdReward').value;
   const result = document.getElementById('rdResult');
@@ -494,18 +633,20 @@ async function submitRedeem(){
   try{
     const { data, error } = await supabaseClient.rpc('redeem_customer_reward', {
       p_query: custId, p_reward_name: reward,
-      p_given_by: document.getElementById('rdGivenBy').value.trim()||'Dashboard',
+      p_given_by: actingAs,
       p_notes: document.getElementById('rdNotes').value.trim() || null
     });
     if(error) throw new Error(error.message);
-    result.innerHTML = '<span style="color:var(--green);font-weight:700">✓ Redeemed — '+data.custId+' now has '+data.newTotal+' pts</span>';
+    result.innerHTML = '<span style="color:var(--green);font-weight:700">✓ Redeemed — '+esc(data.custId)+' now has '+data.newTotal+' pts</span>';
     showToast('Reward redeemed');
     document.getElementById('rdCustId').value=''; document.getElementById('rdNotes').value='';
     loadData();
-  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not redeem')+'</span>'; }
+  }catch(e){ result.innerHTML = '<span class="err-msg">'+esc(e.message||'Could not redeem')+'</span>'; }
 }
 
 async function submitAdjustPoints(){
+  const actingAs = requireActingAs();
+  if(!actingAs) return;
   const custId = document.getElementById('apCustId').value.trim();
   const points = document.getElementById('apPoints').value;
   const result = document.getElementById('apResult');
@@ -514,14 +655,14 @@ async function submitAdjustPoints(){
   try{
     const { data, error } = await supabaseClient.rpc('add_customer_points', {
       p_query: custId, p_points: parseFloat(points),
-      p_reason: document.getElementById('apReason').value.trim() || null, p_entered_by: 'Dashboard'
+      p_reason: document.getElementById('apReason').value.trim() || null, p_entered_by: actingAs
     });
     if(error) throw new Error(error.message);
-    result.innerHTML = '<span style="color:var(--green);font-weight:700">✓ '+data.custId+' now has '+data.newTotal+' pts</span>';
+    result.innerHTML = '<span style="color:var(--green);font-weight:700">✓ '+esc(data.custId)+' now has '+data.newTotal+' pts</span>';
     showToast('Points updated');
     document.getElementById('apPoints').value=''; document.getElementById('apReason').value='';
     loadData();
-  }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not update')+'</span>'; }
+  }catch(e){ result.innerHTML = '<span class="err-msg">'+esc(e.message||'Could not update')+'</span>'; }
 }
 
 loadData();
