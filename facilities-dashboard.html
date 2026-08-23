@@ -1,630 +1,373 @@
 <!DOCTYPE html>
 <html lang="en">
-<!--
-  THE WHITE HOUSE EVENTS & MORE — FACILITIES DASHBOARD (v2.0, Supabase)
-  v2.0: MIGRATED OFF the old Facilities Google Apps Script onto the same
-  Supabase project as every other dashboard (facilities_tickets,
-  facilities_assets, facilities_projects, staff), via fac_submit_ticket,
-  fac_update_ticket_status, fac_verify_ticket, fac_add_project,
-  fac_update_project. Tickets logged here now show up live on
-  facilities-report.html, reception-dashboard.html, and the
-  manager-dashboard.html Facilities tab — one shared source of truth.
--->
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>The White House Events & More — Facilities Dashboard</title>
-<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>THE WHITE HOUSE EVENTS & MORE — Get Your Member ID</title>
 <style>
-:root{--black:#0a0a0a;--surface:#111111;--card:#181818;--border:#2a2a2a;--gold:#f5a623;--gold-dim:#c9861a;--teal:#3fb6a8;--red:#ef4444;--green:#22c55e;--purple:#8b5cf6;--text:#f2f2f2;--text-dim:#b5b5b5;--muted:#888;}
-.toast{position:fixed;bottom:24px;right:24px;background:var(--gold);color:var(--black);padding:12px 18px;border-radius:6px;font-size:12.5px;font-weight:700;letter-spacing:0.5px;opacity:0;transform:translateY(20px);transition:all .3s;z-index:999;pointer-events:none;max-width:340px;}
-.toast.show{opacity:1;transform:translateY(0);}
-.toast.err{background:var(--red);color:#fff;}
-*{margin:0;padding:0;box-sizing:border-box;}
-body{background:var(--black);color:var(--text);font-family:'Syne',sans-serif;min-height:100vh;}
-.header{background:var(--surface);border-bottom:1px solid var(--border);padding:16px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;flex-wrap:wrap;gap:10px;}
-.logo{font-size:18px;font-weight:800;letter-spacing:1px;color:var(--gold);}
-.logo span{color:var(--text-dim);font-weight:400;font-size:11px;display:block;letter-spacing:2px;margin-top:2px;}
-.brand-logo{height:38px;width:auto;border-radius:6px;display:block;}
-.header-left{display:flex;align-items:center;gap:12px;}
-.header-right{display:flex;align-items:center;gap:14px;}
-.last-refresh{font-size:11px;color:var(--muted);font-family:'Space Mono',monospace;}
-.refresh-btn{background:var(--border);border:none;color:var(--text);padding:8px 16px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:700;letter-spacing:1px;font-family:'Syne',sans-serif;}
-.refresh-btn:hover{background:var(--gold);color:var(--black);}
-.main{padding:20px 24px;max-width:1300px;margin:0 auto;}
-.error-banner{display:none;background:#2a1a0a;border:1px solid var(--gold-dim);border-radius:8px;padding:14px 18px;margin-bottom:20px;font-size:12px;line-height:1.6;color:#ffdca8;}
-.error-banner.active{display:block;}
-.urgent-banner{display:none;background:#2a0a0a;border:1px solid var(--red);border-radius:8px;padding:16px 20px;margin-bottom:20px;}
-.urgent-banner.active{display:block;}
-.urgent-banner-title{color:var(--red);font-weight:800;font-size:13px;letter-spacing:1px;margin-bottom:8px;}
-.urgent-pill{display:inline-block;background:#3a1010;border:1px solid var(--red);color:#ffb3b3;padding:5px 12px;border-radius:20px;font-size:12px;margin:3px 4px 0 0;font-family:'Space Mono',monospace;cursor:pointer;}
-.metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px;}
-.metric-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:18px;position:relative;overflow:hidden;cursor:pointer;transition:border-color .15s;}
-.metric-card:hover{border-color:var(--muted);}
-.metric-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;}
-.metric-card.gold::before{background:var(--gold);}.metric-card.teal::before{background:var(--teal);}.metric-card.red::before{background:var(--red);}.metric-card.green::before{background:var(--green);}.metric-card.purple::before{background:var(--purple);}
-.metric-label{font-size:10px;font-weight:700;letter-spacing:2px;color:var(--muted);margin-bottom:8px;}
-.metric-value{font-size:30px;font-weight:800;font-family:'Space Mono',monospace;line-height:1;}
-.metric-card.gold .metric-value{color:var(--gold);}.metric-card.teal .metric-value{color:var(--teal);}.metric-card.red .metric-value{color:var(--red);}.metric-card.green .metric-value{color:var(--green);}.metric-card.purple .metric-value{color:var(--purple);}
-.metric-sub{font-size:11px;color:var(--text-dim);margin-top:6px;}
-.tab-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;}
-.tab-pill{background:var(--surface);border:1px solid var(--border);color:var(--text-dim);padding:9px 16px;border-radius:20px;font-size:12px;font-weight:700;letter-spacing:0.5px;cursor:pointer;font-family:'Syne',sans-serif;transition:all .15s;}
-.tab-pill:hover{border-color:var(--gold);color:var(--text);}
-.tab-pill.active{background:var(--gold);color:var(--black);border-color:var(--gold);}
-.tab-pill .tab-count{opacity:0.7;margin-left:4px;}
-.section{display:none;}
-.section.active{display:block;}
-.card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:18px;margin-bottom:16px;}
-.card-title{font-size:11px;font-weight:700;letter-spacing:2px;color:var(--muted);margin-bottom:14px;text-transform:uppercase;}
-/* v1.1: font-size raised from 13px to 16px — iOS Safari auto-zooms
-   the page when focusing any input under 16px. */
-.search-input,.select-input,textarea.ta{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 14px;color:var(--text);font-size:16px;font-family:'Syne',sans-serif;width:100%;margin-bottom:10px;outline:none;}
-.search-input:focus,.select-input:focus,textarea.ta:focus{border-color:var(--gold);}
-textarea.ta{min-height:64px;resize:vertical;}
-.btn{background:var(--gold);color:var(--black);border:none;padding:10px 18px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:800;letter-spacing:1px;font-family:'Syne',sans-serif;width:100%;}
-.btn:hover{background:var(--gold-dim);}
-.btn.teal{background:var(--teal);color:#0a0a0a;}
-.btn.red{background:var(--red);color:#fff;}
-.btn.ghost{background:var(--border);color:var(--text);}
-.field-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
-.empty{text-align:center;padding:24px;color:var(--muted);font-size:12px;}
-.loading{text-align:center;padding:24px;color:var(--muted);font-size:12px;font-family:'Space Mono',monospace;}
-.ticket-card{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--muted);border-radius:6px;padding:14px 16px;margin-bottom:10px;}
-.ticket-card.priority-Urgent{border-left-color:var(--red);}
-.ticket-card.priority-High{border-left-color:var(--gold);}
-.ticket-card.priority-Medium{border-left-color:var(--teal);}
-.ticket-card.priority-Low{border-left-color:var(--muted);}
-.ticket-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;}
-.ticket-loc{font-size:14px;font-weight:800;}
-.ticket-meta{font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;margin-top:2px;}
-.ticket-desc{font-size:12px;color:var(--text-dim);margin:8px 0;line-height:1.5;}
-.priority-tag{font-size:9px;font-weight:800;letter-spacing:1px;padding:3px 9px;border-radius:12px;font-family:'Space Mono',monospace;flex-shrink:0;}
-.priority-tag.Urgent{background:#3a1010;color:var(--red);border:1px solid var(--red);}
-.priority-tag.High{background:#2a1f06;color:var(--gold);border:1px solid var(--gold);}
-.priority-tag.Medium{background:#062a26;color:var(--teal);border:1px solid var(--teal);}
-.priority-tag.Low{background:#1e1e1e;color:var(--muted);border:1px solid var(--border);}
-.unverified-tag{font-size:9px;font-weight:800;letter-spacing:1px;padding:3px 9px;border-radius:12px;background:#1a1500;color:var(--gold);border:1px solid var(--gold-dim);margin-left:6px;}
-.ticket-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;}
-.ticket-actions .btn{width:auto;padding:8px 14px;font-size:11px;}
-.resolution-box{background:#0e1a0e;border:1px solid var(--green);border-radius:6px;padding:10px 12px;margin-top:8px;font-size:11px;color:#b9f0c0;}
-.inline-form{margin-top:10px;display:none;}
-.inline-form.show{display:block;}
-.two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
-@media(max-width:900px){.two-col{grid-template-columns:1fr;}.field-grid{grid-template-columns:1fr;}}
-.asset-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;}
-.asset-card{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-size:12px;}
-.asset-card.planned{border-style:dashed;opacity:0.75;}
-.asset-name{font-weight:700;}
-.asset-meta{font-size:10px;color:var(--muted);margin-top:3px;font-family:'Space Mono',monospace;}
-.project-card{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--purple);border-radius:6px;padding:14px 16px;margin-bottom:10px;}
-.status-chip{font-size:9px;font-weight:800;letter-spacing:1px;padding:3px 9px;border-radius:12px;font-family:'Space Mono',monospace;}
-.status-chip.Planned{background:#1e1e1e;color:var(--muted);border:1px solid var(--border);}
-.status-chip.Ongoing{background:#1a1500;color:var(--gold);border:1px solid var(--gold-dim);}
-.status-chip.Complete{background:#0e1a0e;color:var(--green);border:1px solid var(--green);}
-.staff-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;}
-.staff-card{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--purple);border-radius:6px;padding:12px 14px;}
-.staff-card .staff-initials{color:var(--purple);font-weight:800;font-family:'Space Mono',monospace;font-size:13px;}
-.result-msg{font-size:12px;margin-top:8px;}
+  @import url('https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Space+Mono:wght@400;700&display=swap');
+  :root{
+    --bg:#0a0a0a; --panel:#141210; --gold:#f5c842; --gold-dim:#c9a233;
+    --teal:#3fb6a8; --cream:#faf6ec; --text:#f2ede0; --muted:#a89f8c;
+    --line:#2a271f; --radius:18px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(circle at 15% 0%, rgba(245,200,66,0.10), transparent 45%),
+      radial-gradient(circle at 90% 100%, rgba(63,182,168,0.10), transparent 45%),
+      var(--bg);
+    color:var(--text); font-family:'Space Mono', monospace; min-height:100vh;
+    display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  .card{ width:100%; max-width:480px; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:28px 24px 24px; position:relative; overflow:hidden; }
+  .card::before{ content:""; position:absolute; top:0; left:0; right:0; height:4px; background:linear-gradient(90deg,var(--gold),var(--teal)); }
+  .brand{ display:flex; align-items:center; gap:12px; margin-bottom:22px; }
+  .brand img{ height:48px; width:auto; display:block; }
+  .brand-fallback{ font-family:'Syne',sans-serif; font-weight:800; font-size:20px; color:var(--cream); letter-spacing:1px; }
+  .brand .tagline{ font-family:'Space Mono',monospace; font-size:11px; color:var(--muted); letter-spacing:1px; text-transform:uppercase; }
+  .progress{ display:flex; gap:6px; margin-bottom:22px; }
+  .progress .seg{ flex:1; height:4px; border-radius:2px; background:var(--line); transition:background .3s; }
+  .progress .seg.done{ background:var(--gold); }
+  h1{ font-family:'Syne',sans-serif; font-weight:800; font-size:22px; line-height:1.25; margin:0 0 6px; color:var(--cream); }
+  p.sub{ color:var(--muted); font-size:13px; line-height:1.5; margin:0 0 20px;}
+  label{ display:block; font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--gold); margin:16px 0 6px; }
+  label.req::after{ content:" *"; color:var(--teal); }
+  input[type=text], input[type=tel], input[type=email], select, textarea{
+    width:100%; background:#1c1a15; border:1px solid var(--line); color:var(--text);
+    font-family:'Space Mono',monospace; font-size:16px; padding:14px; border-radius:10px; outline:none;
+  }
+  input:focus, select:focus, textarea:focus{ border-color:var(--gold); }
+  textarea{ resize:vertical; min-height:70px; }
+  .hp{ position:absolute; left:-9999px; top:-9999px; }
+  .choice{ display:block; width:100%; text-align:left; background:#1c1a15; border:1px solid var(--line); color:var(--text); font-family:'Space Mono',monospace; font-size:15px; line-height:1.4; padding:16px; border-radius:12px; margin-bottom:12px; cursor:pointer; transition:border-color .15s, background .15s; }
+  .choice b{ color:var(--gold); font-family:'Syne',sans-serif; }
+  .choice:active, .choice.tapped{ border-color:var(--gold); background:#221f16; }
+  .chip-row{ display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; }
+  .chip{ background:#1c1a15; border:1px solid var(--line); color:var(--text-dim,var(--muted)); font-family:'Space Mono',monospace; font-size:12px; padding:9px 14px; border-radius:20px; cursor:pointer; transition:border-color .15s,background .15s,color .15s; }
+  .chip.on{ border-color:var(--teal); background:rgba(63,182,168,0.14); color:var(--teal); }
+  .btn{ display:inline-flex; align-items:center; justify-content:center; gap:8px; width:100%; padding:16px; border-radius:12px; border:none; font-family:'Syne',sans-serif; font-weight:700; font-size:15px; cursor:pointer; margin-top:8px; }
+  .btn-primary{ background:var(--gold); color:#141210; }
+  .btn-primary:disabled{ opacity:.4; cursor:not-allowed; }
+  .btn-ghost{ background:transparent; color:var(--muted); border:1px solid var(--line); }
+  .btn-teal{ background:var(--teal); color:#0a0a0a; }
+  .row{ display:flex; gap:10px; margin-top:14px; }
+  .row .btn{ margin-top:0; }
+  .step{ display:none; }
+  .step.active{ display:block; animation:fade .25s ease; }
+  @keyframes fade{ from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);} }
+  .badge{ display:inline-block; background:rgba(245,200,66,0.12); color:var(--gold); border:1px solid rgba(245,200,66,0.35); font-size:11px; padding:4px 10px; border-radius:20px; margin-bottom:12px; letter-spacing:0.5px; }
+  .success-icon{ width:56px;height:56px;border-radius:50%; background:rgba(63,182,168,0.15); border:1px solid var(--teal); display:flex;align-items:center;justify-content:center; font-size:26px; margin-bottom:14px; }
+  .idcard{ background:linear-gradient(135deg,#1c1a15,#12100c); border:1px solid var(--gold); border-radius:14px; padding:22px; text-align:center; margin:16px 0 20px; }
+  .idcard .lbl{ font-size:10px; letter-spacing:2px; color:var(--muted); text-transform:uppercase; margin-bottom:8px;}
+  .idcard .code{ font-family:'Syne',sans-serif; font-weight:800; font-size:30px; color:var(--gold); letter-spacing:1px; }
+  .idcard .pts{ margin-top:10px; font-size:13px; color:var(--teal); }
+  .muted-note{ font-size:12px; color:var(--muted); margin-top:14px; line-height:1.5; }
+  .err{ color:#e77; font-size:12px; margin-top:6px; min-height:16px; }
+  .spinner{ width:16px;height:16px;border-radius:50%; border:2px solid rgba(20,18,16,0.3); border-top-color:#141210; animation:spin .7s linear infinite; display:none; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  .follow-row{ display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
+  .follow-link{ display:inline-flex; align-items:center; gap:6px; background:#1c1a15; border:1px solid var(--line); color:var(--muted); font-family:'Space Mono',monospace; font-size:12px; padding:9px 14px; border-radius:20px; text-decoration:none; cursor:default; }
+  .follow-link.live{ color:var(--teal); border-color:var(--teal); cursor:pointer; }
 </style>
 </head>
 <body>
-<div class="header">
-  <div class="header-left">
-    <img src="logo.jpg" alt="The White House Events & More" class="brand-logo" onerror="this.style.display='none'">
-    <div class="logo">THE WHITE HOUSE EVENTS & MORE <span>FACILITIES &amp; MAINTENANCE</span></div>
-  </div>
-  <div class="header-right"><span class="last-refresh" id="lastRefresh">Loading...</span><button class="refresh-btn" onclick="loadData()">&#8635; REFRESH</button></div>
-</div>
 
-<div class="main">
-  <div class="error-banner" id="errorBanner"></div>
-  <div class="urgent-banner" id="urgentBanner">
-    <div class="urgent-banner-title">&#9888; URGENT — OPEN TICKETS NEEDING ATTENTION</div>
-    <div id="urgentPills"></div>
+<div class="card">
+  <div class="brand">
+    <img src="logo-white.png" alt="THE WHITE HOUSE EVENTS & MORE" onerror="this.onerror=null;this.replaceWith(Object.assign(document.createElement('div'),{className:'brand-fallback',textContent:'THE WHITE HOUSE EVENTS & MORE'}));">
+    <div class="tagline">Members Club · Rewards</div>
   </div>
 
-  <div class="metrics-grid" id="topMetrics"><div class="loading">Loading facilities data</div></div>
+  <div class="progress" id="progress"></div>
 
-  <div class="tab-row">
-    <button class="tab-pill active" data-sec="report" onclick="switchSection('report',this)">+ LOG A REPAIR</button>
-    <button class="tab-pill" data-sec="open" onclick="switchSection('open',this)">OPEN TICKETS <span class="tab-count" id="cntOpen"></span></button>
-    <button class="tab-pill" data-sec="unverified" onclick="switchSection('unverified',this)">UNVERIFIED (GUEST) <span class="tab-count" id="cntUnverified"></span></button>
-    <button class="tab-pill" data-sec="complete" onclick="switchSection('complete',this)">COMPLETED <span class="tab-count" id="cntComplete"></span></button>
-    <button class="tab-pill" data-sec="projects" onclick="switchSection('projects',this)">PROJECTS <span class="tab-count" id="cntProjects"></span></button>
-    <button class="tab-pill" data-sec="assets" onclick="switchSection('assets',this)">ROOMS &amp; AREAS <span class="tab-count" id="cntAssets"></span></button>
-    <button class="tab-pill" data-sec="staff" onclick="switchSection('staff',this)">MAINTENANCE STAFF</button>
-  </div>
+  <form id="regForm" autocomplete="off">
+    <input class="hp" type="text" name="website" id="website" tabindex="-1" autocomplete="off">
 
-  <!-- LOG A REPAIR -->
-  <div class="section active" id="sec-report">
-    <div class="card">
-      <div class="card-title">&#128295; LOG A REPAIR (STAFF)</div>
-      <input class="search-input" id="rptLocation" list="locationList" placeholder="Location (room or area)">
-      <datalist id="locationList"></datalist>
-      <div class="field-grid">
-        <select class="select-input" id="rptCategory">
-          <option>Electrical</option><option>Plumbing</option><option>AC/Ventilation</option>
-          <option>Furniture</option><option>Structural</option><option>Pool Equipment</option>
-          <option>IT/Internet</option><option>Kitchen Equipment</option><option>Landscaping</option>
-          <option>Security/CCTV</option><option>Other</option>
-        </select>
-        <select class="select-input" id="rptPriority">
-          <option>Low</option><option selected>Medium</option><option>High</option><option>Urgent</option>
-        </select>
+    <!-- STEP 1: contact details -->
+    <div class="step active" data-step="1">
+      <h1>Get your Member ID.</h1>
+      <p class="sub">Takes under a minute. Earn points from your first visit.</p>
+
+      <label class="req">Full name</label>
+      <input type="text" id="fullName" required>
+
+      <label>Business name (optional)</label>
+      <input type="text" id="businessName">
+
+      <label class="req">Phone number</label>
+      <input type="tel" id="phone" placeholder="024 123 4567" required>
+
+      <label>WhatsApp (only if different)</label>
+      <input type="tel" id="whatsapp" placeholder="Leave blank if same as phone">
+
+      <div class="err" id="err1"></div>
+      <button type="button" class="btn btn-primary" onclick="goStep(2)">Next</button>
+    </div>
+
+    <!-- STEP 2: optional details -->
+    <div class="step" data-step="2">
+      <h1>A couple more (optional).</h1>
+      <p class="sub">Skip anything you'd rather not share.</p>
+
+      <label>Email</label>
+      <input type="email" id="email">
+
+      <label>Address</label>
+      <input type="text" id="address">
+
+      <div class="row">
+        <button type="button" class="btn btn-ghost" onclick="goStep(1)">Back</button>
+        <button type="button" class="btn btn-primary" onclick="goStep(3)">Next</button>
       </div>
-      <textarea class="ta" id="rptDescription" placeholder="Describe the issue..."></textarea>
-      <div class="field-grid">
-        <input class="search-input" id="rptReporterName" placeholder="Your name (staff)">
-        <select class="select-input" id="rptAssignTo"><option value="">Assign to... (optional)</option></select>
+    </div>
+
+    <!-- STEP 3: service interest -->
+    <div class="step" data-step="3">
+      <span class="badge">Quick question</span>
+      <h1>Which service applies to you?</h1>
+      <p class="sub">Tap all that apply.</p>
+      <div id="serviceChoices"></div>
+      <input type="hidden" id="service">
+      <div class="err" id="err3"></div>
+      <div class="row">
+        <button type="button" class="btn btn-ghost" onclick="goStep(2)">Back</button>
+        <button type="button" class="btn btn-primary" onclick="goStep(4)">Next</button>
       </div>
-      <button class="btn" onclick="submitStaffTicket()">SUBMIT TICKET</button>
-      <div id="rptResult" class="result-msg"></div>
     </div>
-    <div class="card" style="border-color:var(--teal)">
-      <div class="card-title" style="color:var(--teal)">&#128241; GUEST REPORT LINK</div>
-      <div style="font-size:12px;color:var(--text-dim);line-height:1.6">Share this link (or a QR code pointing to it) so guests can report issues themselves — e.g. printed and stuck inside each room door, or at the pool. Guest-submitted tickets show up under <b>Unverified (Guest)</b> until a staff member confirms them.</div>
-    </div>
-  </div>
 
-  <!-- OPEN TICKETS -->
-  <div class="section" id="sec-open">
-    <div class="card">
-      <div class="card-title">&#128203; OPEN &amp; IN-PROGRESS TICKETS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(sorted by priority)</span></div>
-      <div id="openTicketsList"><div class="empty">Loading...</div></div>
-    </div>
-  </div>
-
-  <!-- UNVERIFIED -->
-  <div class="section" id="sec-unverified">
-    <div class="card">
-      <div class="card-title">&#10067; GUEST-SUBMITTED — NEEDS VERIFICATION</div>
-      <div style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Confirm a real ticket to move it into the normal queue, or dismiss anything spam/mistaken.</div>
-      <div id="unverifiedList"><div class="empty">Loading...</div></div>
-    </div>
-  </div>
-
-  <!-- COMPLETED -->
-  <div class="section" id="sec-complete">
-    <div class="card">
-      <div class="card-title">&#9989; COMPLETED TICKETS</div>
-      <div id="completeTicketsList"><div class="empty">Loading...</div></div>
-    </div>
-  </div>
-
-  <!-- PROJECTS -->
-  <div class="section" id="sec-projects">
-    <div class="card">
-      <div class="card-title">&#127959; NEW / UPDATE PROJECT</div>
-      <div class="field-grid">
-        <input class="search-input" id="prjTitle" placeholder="Project title">
-        <select class="select-input" id="prjStatus"><option>Planned</option><option>Ongoing</option><option>Complete</option></select>
+    <!-- STEP 4: how did you hear -->
+    <div class="step" data-step="4">
+      <span class="badge">Almost done</span>
+      <h1>How did you hear about us?</h1>
+      <p class="sub">Tap all that apply.</p>
+      <div id="howHeardChoices"></div>
+      <input type="hidden" id="howHeard">
+      <div class="err" id="err4"></div>
+      <div class="row">
+        <button type="button" class="btn btn-ghost" onclick="goStep(3)">Back</button>
+        <button type="button" class="btn btn-primary" onclick="goStep(5)">Next</button>
       </div>
-      <div class="field-grid">
-        <input class="search-input" id="prjStart" type="date">
-        <input class="search-input" id="prjTarget" type="date">
-      </div>
-      <input class="search-input" id="prjOwner" placeholder="Owner / lead">
-      <textarea class="ta" id="prjDescription" placeholder="Project description..."></textarea>
-      <button class="btn" style="background:var(--purple);color:#fff" onclick="submitProject()">+ ADD PROJECT</button>
-      <div id="prjResult" class="result-msg"></div>
     </div>
-    <div class="card">
-      <div class="card-title">&#128203; ALL PROJECTS</div>
-      <div id="projectsList"><div class="empty">Loading...</div></div>
-    </div>
-  </div>
 
-  <!-- ASSETS -->
-  <div class="section" id="sec-assets">
-    <div class="card">
-      <div class="card-title">&#127976; ROOMS &amp; AREAS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(edit/add more directly in the 🏢 Facilities Assets sheet)</span></div>
-      <input class="search-input" id="assetSearch" placeholder="Search rooms/areas..." oninput="renderAssets()">
-      <div class="asset-grid" id="assetGrid"><div class="empty">Loading...</div></div>
-    </div>
-  </div>
+    <!-- STEP 5: socials + suggestions + submit -->
+    <div class="step" data-step="5">
+      <h1>Last thing.</h1>
+      <p class="sub">Which of these do you already follow?</p>
+      <div class="chip-row" id="socialChips"></div>
+      <input type="hidden" id="followedSocials">
 
-  <!-- STAFF -->
-  <div class="section" id="sec-staff">
-    <div class="card">
-      <div class="card-title">&#129489;&#8205;&#128295; MAINTENANCE STAFF <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(edit names/specialty in the 🧑‍🔧 Maintenance Staff sheet)</span></div>
-      <div class="staff-grid" id="staffGrid"><div class="empty">Loading...</div></div>
+      <label>Any suggestions? (optional)</label>
+      <textarea id="suggestions" placeholder="Anything you'd like to tell us"></textarea>
+
+      <button type="button" class="btn btn-primary" id="submitBtn" onclick="submitRegistration()">
+        <span class="spinner" id="spinner"></span>
+        <span id="submitLabel">Get my Member ID</span>
+      </button>
+      <div class="err" id="err5"></div>
+      <button type="button" class="btn btn-ghost" onclick="goStep(4)">Back</button>
     </div>
-  </div>
+
+    <!-- STEP 6: outcome -->
+    <div class="step" data-step="6">
+      <div id="outcome"></div>
+    </div>
+  </form>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+/* =========================================================
+   CONFIG
+   SUPABASE MIGRATION: this page used to POST to a separate Master
+   Customer System Apps Script project, which wrote to its own
+   "Master Customers" Google Sheet — a second, unsynced customer
+   store from the one order.html/bar-dashboard.html use (Supabase
+   bar_customers). That caused the same person to exist as two
+   different records with two different point balances. This page now
+   writes straight to bar_customers via register_customer_full(),
+   the same table and the same customer ID every other page reads —
+   one customer base, not two.
+   ========================================================= */
 const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNydnV6a3lmcnFiZm1hbWVneGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MzI5NjQsImV4cCI6MjEwMDAwODk2NH0.gMsv3yvw6plDCherA2YdU4UgWRMXUc9H1Hr_IdR9GxA';
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-let facData = {tickets: [], openSorted: [], assets: [], projects: [], staff: [], counts: {}};
-
-// Shared HTML-escaping helper. Ticket descriptions/locations can come
-// straight from the public guest-facing report page (facilities-report.html)
-// with zero staff review before landing here — must be escaped before
-// going into innerHTML, or a malicious ticket description runs as code
-// in a staff member's browser.
+// Shared HTML-escaping helper — used for defense in depth on any
+// server-derived value rendered here (this page doesn't echo back a
+// guest's own name/notes, so the surface is small, but it costs
+// nothing to be consistent with every other page in this system).
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
-function showToast(msg, isErr){
-  const t = document.getElementById('toast');
-  if(!t){ return; }
-  t.textContent = msg;
-  t.classList.toggle('err', !!isErr);
-  t.classList.add('show');
-  clearTimeout(t._hideTimer);
-  t._hideTimer = setTimeout(()=>t.classList.remove('show'), 3200);
+const CONFIG = {
+  WHATSAPP_NUMBER: "233509960980" // no leading zero, no +
+};
+
+/* -----------------------------------------------------------
+   FOLLOW-US / WEBSITE LINKS
+   NOTE (rebrand): these URLs still point at the old
+   "thewhitehousegh" handles/domain. Renaming the business does not
+   automatically rename its social media accounts or website — if
+   you've actually created new accounts under the new name, swap the
+   URLs below to match. Left untouched here deliberately rather than
+   guessed, since a wrong guess is worse than a stale-but-correct
+   link. The button text itself already reads generically (TikTok,
+   Instagram, etc.) so nothing customer-facing says the old name.
+   ----------------------------------------------------------- */
+const FOLLOW_LINKS = [
+  { name:'TikTok',          url:'https://www.tiktok.com/@thewhitehousegh' },
+  { name:'Instagram',       url:'https://www.instagram.com/thewhitehousegh' },
+  { name:'Facebook',        url:'https://www.facebook.com/thewhitehousegh' },
+  { name:'YouTube',         url:'https://www.youtube.com/@thewhitehousegh' },
+  { name:'WhatsApp Channel',url:'' }, // paste the channel invite link (whatsapp.com/channel/...) once you have it
+  { name:'Google Review',   url:'' }  // paste your Google Maps review link here once you have it
+];
+const WEBSITE_URL = 'https://www.thewhitehousegh.com'; // same rebrand note as above
+
+const SERVICES = ['Pool','Bar','Canteen','Events','Family Occasions','Couples','Other'];
+const HOW_HEARD = ['Social Media','Word of Mouth','Referral','Radio','TV','Sign','Other'];
+const SOCIALS = ['TikTok','YouTube','Instagram','Facebook','Google Review'];
+
+const state = { service:[], howHeard:[], socials:[] };
+const totalSteps = 5;
+const PAGE_LOAD_TIME = Date.now();
+
+function buildProgress(){
+  const el = document.getElementById('progress'); el.innerHTML='';
+  for(let i=1;i<=totalSteps;i++){ const seg=document.createElement('div'); seg.className='seg'; seg.id='seg'+i; el.appendChild(seg); }
+}
+buildProgress();
+function updateProgress(step){ for(let i=1;i<=totalSteps;i++) document.getElementById('seg'+i).classList.toggle('done', i<=step); }
+
+function renderMultiChoiceGroup(containerId, hiddenId, items){
+  document.getElementById(containerId).innerHTML = items.map(v =>
+    `<button type="button" class="choice" onclick="toggleChoice('${containerId}','${hiddenId}','${v}',this)"><b>${v}</b></button>`
+  ).join('');
+}
+function toggleChoice(containerId, hiddenId, value, el){
+  const arr = state[hiddenId];
+  const idx = arr.indexOf(value);
+  if(idx===-1){ arr.push(value); el.classList.add('tapped'); }
+  else { arr.splice(idx,1); el.classList.remove('tapped'); }
+  document.getElementById(hiddenId).value = arr.join(', ');
+}
+renderMultiChoiceGroup('serviceChoices','service',SERVICES);
+renderMultiChoiceGroup('howHeardChoices','howHeard',HOW_HEARD);
+
+function renderSocialChips(){
+  document.getElementById('socialChips').innerHTML = SOCIALS.map(s =>
+    `<div class="chip" onclick="toggleSocial('${s}',this)">${s}</div>`
+  ).join('');
+}
+renderSocialChips();
+function toggleSocial(s, el){
+  const idx = state.socials.indexOf(s);
+  if(idx===-1){ state.socials.push(s); el.classList.add('on'); }
+  else { state.socials.splice(idx,1); el.classList.remove('on'); }
+  document.getElementById('followedSocials').value = state.socials.join(', ');
 }
 
-
-function showApiError(msg){
-  const el = document.getElementById('errorBanner');
-  el.innerHTML = "<b>&#9888; Dashboard can't reach Supabase:</b> " + msg + " — check your connection and try Refresh.";
-  el.classList.add('active');
-}
-function clearApiError(){ document.getElementById('errorBanner').classList.remove('active'); }
-
-function switchSection(sec, btn){
-  document.querySelectorAll('.tab-pill').forEach(t=>t.classList.remove('active'));
-  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
-  btn.classList.add('active');
-  document.getElementById('sec-'+sec).classList.add('active');
+function validateStep1(){
+  const fullName = document.getElementById('fullName').value.trim();
+  const phone = document.getElementById('phone').value.trim();
+  const hasLetters = v => /[a-zA-Z]{3,}/.test(v);
+  const digits = phone.replace(/[\s-]/g,'');
+  const validPhone = /^0\d{9}$/.test(digits) || /^(\+233|233)\d{9}$/.test(digits);
+  if(fullName.length < 3 || !hasLetters(fullName)) return 'Enter your full name (at least 3 letters).';
+  if(!validPhone) return 'Enter a valid Ghana number, e.g. 024 123 4567.';
+  return '';
 }
 
-function cap(s){ return s ? s.charAt(0).toUpperCase()+s.slice(1) : s; }
-function statusToLabel(s){ return s==='closed' ? 'Complete' : s==='in_progress' ? 'In Progress' : 'Open'; }
-const PRIORITY_ORDER = {Urgent:0, High:1, Medium:2, Low:3};
-
-function mapTicket(t, staffMap){
-  return {
-    ticketId: t.id,
-    timestamp: t.created_at,
-    location: t.location,
-    category: t.category || 'Other',
-    description: t.description,
-    priority: cap(t.urgency || 'medium'),
-    status: statusToLabel(t.status),
-    reportedByType: cap(t.reported_via || 'staff'),
-    reporterName: t.reporter_name,
-    reporterContact: t.reporter_contact,
-    assignedTo: t.assigned_to ? (staffMap[t.assigned_to] || '') : '',
-    resolutionNotes: t.resolution_notes,
-    verified: t.verified || 'YES'
-  };
+function goStep(n){
+  if(n===2){ const m=validateStep1(); if(m){ document.getElementById('err1').textContent=m; return; } document.getElementById('err1').textContent=''; }
+  if(n===4){ if(state.service.length===0){ document.getElementById('err3').textContent='Pick at least one option.'; return; } document.getElementById('err3').textContent=''; }
+  if(n===5){ if(state.howHeard.length===0){ document.getElementById('err4').textContent='Pick at least one option.'; return; } document.getElementById('err4').textContent=''; }
+  document.querySelectorAll('.step').forEach(s=>s.classList.remove('active'));
+  document.querySelector('.step[data-step="'+n+'"]').classList.add('active');
+  if(n<=totalSteps) updateProgress(n);
 }
 
-async function loadData(){
-  document.getElementById('lastRefresh').textContent = 'Refreshing...';
+async function submitRegistration(){
+  const errEl = document.getElementById('err5'); errEl.textContent='';
+
+  if(document.getElementById('website').value.trim() !== ''){ showOutcome(true); return; } // honeypot
+  if(Date.now() - PAGE_LOAD_TIME < 3000){ showOutcome(true); return; } // too fast to be a real person
+
+  const btn = document.getElementById('submitBtn'), spinner = document.getElementById('spinner'), label = document.getElementById('submitLabel');
+  btn.disabled = true; spinner.style.display='inline-block'; label.textContent='Submitting...';
+
+  // SUPABASE MIGRATION: writes straight to bar_customers via
+  // register_customer_full() — the same table order.html and
+  // bar-dashboard.html already use. No second customer store.
+  let result = null;
   try{
-    const [ticketsRes, assetsRes, projectsRes, staffRes] = await Promise.all([
-      supabaseClient.from('facilities_tickets').select('*').order('created_at', { ascending: false }),
-      supabaseClient.from('facilities_assets').select('location, category, zone, status').order('location'),
-      supabaseClient.from('facilities_projects').select('*').order('created_at', { ascending: false }),
-      supabaseClient.from('staff').select('id, initials, full_name, role, phone').order('slot')
-    ]);
-    if(ticketsRes.error) throw new Error(ticketsRes.error.message);
-    if(assetsRes.error) throw new Error(assetsRes.error.message);
-    if(projectsRes.error) throw new Error(projectsRes.error.message);
-    if(staffRes.error) throw new Error(staffRes.error.message);
-
-    const staffMap = {};
-    (staffRes.data||[]).forEach(s => { staffMap[s.id] = s.initials; });
-
-    const tickets = (ticketsRes.data||[]).map(t => mapTicket(t, staffMap));
-    const openSorted = tickets.filter(t=>t.status!=='Complete')
-      .sort((a,b)=> (PRIORITY_ORDER[a.priority]??9) - (PRIORITY_ORDER[b.priority]??9) || new Date(b.timestamp)-new Date(a.timestamp));
-
-    facData = {
-      tickets,
-      openSorted,
-      assets: assetsRes.data || [],
-      projects: (projectsRes.data||[]).map(p => ({
-        projectId: p.project_id, title: p.title, status: p.status,
-        startDate: p.start_date, targetDate: p.target_date, owner: p.owner,
-        description: p.description, lastUpdateNote: p.last_update_note
-      })),
-      staff: (staffRes.data||[]).map(s => ({ initials: s.initials, name: s.full_name, specialty: s.role, phone: s.phone })),
-      counts: {
-        open: tickets.filter(t=>t.status==='Open').length,
-        inProgress: tickets.filter(t=>t.status==='In Progress').length,
-        complete: tickets.filter(t=>t.status==='Complete').length,
-        unverified: tickets.filter(t=>t.verified==='NO').length,
-        urgentOpen: openSorted.filter(t=>t.priority==='Urgent').length,
-        totalAssets: (assetsRes.data||[]).length
-      }
-    };
-
-    clearApiError();
-    document.getElementById('lastRefresh').textContent = 'Updated: ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
-    renderMetrics();
-    renderUrgentBanner();
-    renderOpenTickets();
-    renderUnverified();
-    renderCompleteTickets();
-    renderProjects();
-    renderAssets();
-    renderStaff();
-    populateLocationList();
-    populateAssignDropdown();
+    const { data, error } = await supabaseClient.rpc('register_customer_full', {
+      p_full_name: document.getElementById('fullName').value.trim(),
+      p_business_name: document.getElementById('businessName').value.trim() || null,
+      p_phone: document.getElementById('phone').value.trim(),
+      p_whatsapp: document.getElementById('whatsapp').value.trim() || null,
+      p_email: document.getElementById('email').value.trim() || null,
+      p_address: document.getElementById('address').value.trim() || null,
+      p_service_interest: state.service.join(', ') || null,
+      p_how_heard: state.howHeard.join(', ') || null,
+      p_suggestions: document.getElementById('suggestions').value.trim() || null,
+      p_followed_socials: state.socials.join(', ') || null,
+      p_source: 'Landing Page — QR / Direct'
+    });
+    if(error) throw new Error(error.message);
+    result = { success: true, custId: data.custId, returning: data.returning, points: data.points, membershipStatus: data.membershipStatus };
   }catch(e){
-    document.getElementById('lastRefresh').textContent = 'Offline — see message above';
-    showApiError(e.message || 'Could not load data.');
+    console.warn('Registration issue:', e);
+    errEl.textContent = 'Could not save automatically — showing what we have, please also message us on WhatsApp.';
+  }finally{
+    btn.disabled=false; spinner.style.display='none'; label.textContent='Get my Member ID';
+    showOutcome(false, result);
   }
 }
 
-function renderMetrics(){
-  const c = facData.counts || {};
-  document.getElementById('topMetrics').innerHTML = `
-    <div class="metric-card red" onclick="switchSection('open', document.querySelector('[data-sec=open]'))">
-      <div class="metric-label">OPEN TICKETS</div>
-      <div class="metric-value">${c.open||0}</div>
-      <div class="metric-sub">${c.urgentOpen||0} urgent</div>
-    </div>
-    <div class="metric-card gold" onclick="switchSection('open', document.querySelector('[data-sec=open]'))">
-      <div class="metric-label">IN PROGRESS</div>
-      <div class="metric-value">${c.inProgress||0}</div>
-      <div class="metric-sub">being worked on</div>
-    </div>
-    <div class="metric-card green" onclick="switchSection('complete', document.querySelector('[data-sec=complete]'))">
-      <div class="metric-label">COMPLETED</div>
-      <div class="metric-value">${c.complete||0}</div>
-      <div class="metric-sub">all-time</div>
-    </div>
-    <div class="metric-card teal" onclick="switchSection('unverified', document.querySelector('[data-sec=unverified]'))">
-      <div class="metric-label">NEEDS VERIFICATION</div>
-      <div class="metric-value">${c.unverified||0}</div>
-      <div class="metric-sub">guest-submitted</div>
-    </div>
-    <div class="metric-card purple" onclick="switchSection('assets', document.querySelector('[data-sec=assets]'))">
-      <div class="metric-label">ROOMS &amp; AREAS</div>
-      <div class="metric-value">${c.totalAssets||0}</div>
-      <div class="metric-sub">tracked locations</div>
-    </div>`;
-  document.getElementById('cntOpen').textContent = (c.open||0)+(c.inProgress||0);
-  document.getElementById('cntUnverified').textContent = c.unverified||0;
-  document.getElementById('cntComplete').textContent = c.complete||0;
-  document.getElementById('cntProjects').textContent = (facData.projects||[]).length;
-  document.getElementById('cntAssets').textContent = (facData.assets||[]).length;
-}
-
-function renderUrgentBanner(){
-  const urgent = (facData.openSorted||[]).filter(t=>t.priority==='Urgent');
-  const banner = document.getElementById('urgentBanner');
-  if(urgent.length===0){ banner.classList.remove('active'); return; }
-  banner.classList.add('active');
-  document.getElementById('urgentPills').innerHTML = urgent.map(t=>`<span class="urgent-pill" onclick="switchSection('open', document.querySelector('[data-sec=open]'))">${esc(t.location)} — ${esc(t.description.slice(0,40))}${t.description.length>40?'...':''}</span>`).join('');
-}
-
-function ticketCardHtml(t, showActions){
-  const timeStr = t.timestamp ? new Date(t.timestamp).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '—';
-  let actionsHtml = '';
-  if(showActions){
-    actionsHtml = `
-      <div class="ticket-actions">
-        ${t.status==='Open' ? `<button class="btn ghost" onclick="quickUpdateStatus('${t.ticketId}','In Progress')">MARK IN PROGRESS</button>` : ''}
-        <button class="btn teal" onclick="toggleCompleteForm('${t.ticketId}')">MARK COMPLETE</button>
-      </div>
-      <div class="inline-form" id="completeForm-${t.ticketId}">
-        <textarea class="ta" id="resNotes-${t.ticketId}" placeholder="What was fixed? (required)"></textarea>
-        <select class="select-input" id="resAssigned-${t.ticketId}"><option value="">Assigned to... (optional)</option></select>
-        <button class="btn teal" onclick="submitComplete('${t.ticketId}')">&#10003; CONFIRM COMPLETE</button>
-        <div class="result-msg" id="completeResult-${t.ticketId}"></div>
-      </div>`;
+function renderFollowRow(){
+  const items = FOLLOW_LINKS.map(s => s.url
+    ? `<a class="follow-link live" href="${s.url}" target="_blank" rel="noopener">${s.name}</a>`
+    : `<span class="follow-link">${s.name}</span>`
+  );
+  if(WEBSITE_URL){
+    items.push(`<a class="follow-link live" href="${WEBSITE_URL}" target="_blank" rel="noopener">Our Website</a>`);
   }
-  const resolutionHtml = t.status==='Complete' && t.resolutionNotes ? `<div class="resolution-box">&#10003; ${esc(t.resolutionNotes)} ${t.assignedTo?'— '+esc(t.assignedTo):''}</div>` : '';
-  return `
-    <div class="ticket-card priority-${esc(t.priority)}">
-      <div class="ticket-top">
-        <div>
-          <div class="ticket-loc">${esc(t.location)}${t.verified==='NO'?'<span class="unverified-tag">UNVERIFIED</span>':''}</div>
-          <div class="ticket-meta">${esc(t.category)} · ${esc(t.reportedByType)}${t.reporterName?' ('+esc(t.reporterName)+')':''} · ${timeStr} · ${esc(t.ticketId)}</div>
-        </div>
-        <span class="priority-tag ${esc(t.priority)}">${esc(t.priority)}</span>
+  return `<div class="follow-row">${items.join('')}</div>`;
+}
+
+function showOutcome(silentFail, result){
+  const el = document.getElementById('outcome');
+  if(silentFail){
+    el.innerHTML = `<div class="success-icon">✓</div><h1>You're in.</h1><p class="sub">Thanks for registering with THE WHITE HOUSE EVENTS & MORE.</p>`;
+  } else if(result && result.success){
+    const waText = encodeURIComponent('Hi! I just registered — my Member ID is ' + result.custId);
+    el.innerHTML = `
+      <div class="success-icon">✓</div>
+      <h1>${result.returning ? 'Welcome back!' : "You're a member."}</h1>
+      <p class="sub">${result.returning ? 'We found your existing account and updated it.' : 'Show this ID next time you visit — every visit earns points.'}</p>
+      <div class="idcard">
+        <div class="lbl">Your Member ID</div>
+        <div class="code">${esc(result.custId)}</div>
+        <div class="pts">★ ${result.points || 0} points on your account</div>
       </div>
-      <div class="ticket-desc">${esc(t.description)}</div>
-      ${t.assignedTo && t.status!=='Complete' ? `<div class="ticket-meta">Assigned: ${t.assignedTo}</div>` : ''}
-      ${resolutionHtml}
-      ${actionsHtml}
-    </div>`;
+      <a class="btn btn-teal" style="text-decoration:none;color:#0a0a0a" href="https://wa.me/${CONFIG.WHATSAPP_NUMBER}?text=${waText}" target="_blank" rel="noopener">Save my ID to WhatsApp</a>
+      <p class="muted-note">Points can go toward free drinks, entry, food, and VIP access — ask staff what's currently available.</p>
+      <p class="muted-note" style="margin-top:18px;margin-bottom:4px">Follow us</p>
+      ${renderFollowRow()}
+    `;
+  } else {
+    el.innerHTML = `
+      <div class="success-icon" style="border-color:#e77;background:rgba(231,119,119,0.12)">!</div>
+      <h1>Almost there.</h1>
+      <p class="sub">We had trouble saving this automatically. Please message us on WhatsApp so nothing gets lost.</p>
+      <a class="btn btn-teal" style="text-decoration:none;color:#0a0a0a" href="https://wa.me/${CONFIG.WHATSAPP_NUMBER}" target="_blank" rel="noopener">Message us on WhatsApp</a>
+    `;
+  }
+  document.querySelectorAll('.step').forEach(s=>s.classList.remove('active'));
+  document.querySelector('.step[data-step="6"]').classList.add('active');
 }
-
-function renderOpenTickets(){
-  const open = (facData.openSorted||[]).filter(t=>t.verified!=='NO');
-  const el = document.getElementById('openTicketsList');
-  el.innerHTML = open.length ? open.map(t=>ticketCardHtml(t,true)).join('') : '<div class="empty">No open tickets — nothing needs attention right now.</div>';
-  populateAllAssignDropdowns();
-}
-
-function renderUnverified(){
-  const unv = (facData.tickets||[]).filter(t=>t.verified==='NO');
-  const el = document.getElementById('unverifiedList');
-  if(unv.length===0){ el.innerHTML = '<div class="empty">Nothing waiting on verification.</div>'; return; }
-  el.innerHTML = unv.map(t=>{
-    const timeStr = t.timestamp ? new Date(t.timestamp).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '—';
-    return `
-    <div class="ticket-card priority-${esc(t.priority)}">
-      <div class="ticket-top">
-        <div>
-          <div class="ticket-loc">${esc(t.location)}</div>
-          <div class="ticket-meta">${esc(t.category)} · Guest${t.reporterName?' — '+esc(t.reporterName):''}${t.reporterContact?' ('+esc(t.reporterContact)+')':''} · ${timeStr}</div>
-        </div>
-        <span class="priority-tag ${t.priority}">${t.priority}</span>
-      </div>
-      <div class="ticket-desc">${esc(t.description)}</div>
-      <div class="ticket-actions">
-        <button class="btn teal" onclick="verifyTicket('${t.ticketId}','YES')">&#10003; CONFIRM — MOVE TO QUEUE</button>
-        <button class="btn red" onclick="verifyTicket('${t.ticketId}','NO')">&times; DISMISS</button>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-function renderCompleteTickets(){
-  const done = (facData.tickets||[]).filter(t=>t.status==='Complete' && t.verified!=='DISMISSED');
-  const el = document.getElementById('completeTicketsList');
-  el.innerHTML = done.length ? done.slice(0,50).map(t=>ticketCardHtml(t,false)).join('') : '<div class="empty">No completed tickets yet.</div>';
-}
-
-async function quickUpdateStatus(ticketId, status){
-  try{
-    const { error } = await supabaseClient.rpc('fac_update_ticket_status', { p_ticket_id: ticketId, p_status: status });
-    if(error) throw new Error(error.message);
-    loadData();
-  }catch(e){ showToast(e.message || 'Could not update.', true); }
-}
-
-function toggleCompleteForm(ticketId){
-  const form = document.getElementById('completeForm-'+ticketId);
-  form.classList.toggle('show');
-}
-
-async function submitComplete(ticketId){
-  const notes = document.getElementById('resNotes-'+ticketId).value.trim();
-  const assigned = document.getElementById('resAssigned-'+ticketId).value;
-  const resultEl = document.getElementById('completeResult-'+ticketId);
-  if(!notes){ resultEl.innerHTML = '<span style="color:var(--red)">Add a note describing what was fixed.</span>'; return; }
-  resultEl.innerHTML = 'Saving...';
-  try{
-    const { error } = await supabaseClient.rpc('fac_update_ticket_status', {
-      p_ticket_id: ticketId, p_status: 'Complete', p_resolution_notes: notes, p_assigned_initials: assigned || null
-    });
-    if(error) throw new Error(error.message);
-    loadData();
-  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">'+(e.message||'Failed')+'</span>'; }
-}
-
-async function verifyTicket(ticketId, verified){
-  try{
-    const { error } = await supabaseClient.rpc('fac_verify_ticket', { p_ticket_id: ticketId, p_verified: verified });
-    if(error) throw new Error(error.message);
-    loadData();
-  }catch(e){ showToast(e.message || 'Could not update.', true); }
-}
-
-function populateLocationList(){
-  const items = (facData.assets||[]).map(a=>a.location);
-  document.getElementById('locationList').innerHTML = items.map(i=>`<option value="${i}">`).join('');
-}
-
-function populateAssignDropdown(){
-  const staff = (facData.staff||[]).filter(s=>s.name||s.initials);
-  const sel = document.getElementById('rptAssignTo');
-  sel.innerHTML = '<option value="">Assign to... (optional)</option>' + staff.map(s=>`<option value="${esc(s.initials)}">${esc(s.initials)}${s.name?' — '+esc(s.name):''}</option>`).join('');
-}
-function populateAllAssignDropdowns(){
-  const staff = (facData.staff||[]).filter(s=>s.name||s.initials);
-  document.querySelectorAll('[id^="resAssigned-"]').forEach(sel=>{
-    sel.innerHTML = '<option value="">Assigned to... (optional)</option>' + staff.map(s=>`<option value="${esc(s.initials)}">${esc(s.initials)}${s.name?' — '+esc(s.name):''}</option>`).join('');
-  });
-}
-
-async function submitStaffTicket(){
-  const location = document.getElementById('rptLocation').value.trim();
-  const category = document.getElementById('rptCategory').value;
-  const priority = document.getElementById('rptPriority').value;
-  const description = document.getElementById('rptDescription').value.trim();
-  const reporterName = document.getElementById('rptReporterName').value.trim();
-  const assignTo = document.getElementById('rptAssignTo').value;
-  const resultEl = document.getElementById('rptResult');
-  if(!location || !description){ resultEl.innerHTML = '<span style="color:var(--red)">Location and description are required.</span>'; return; }
-  resultEl.innerHTML = 'Saving...';
-  try{
-    const clientId = (Date.now()+'-'+Math.random().toString(36).slice(2));
-    const { data, error } = await supabaseClient.rpc('fac_submit_ticket', {
-      p_client_id: clientId, p_location: location, p_category: category, p_priority: priority,
-      p_description: description, p_reported_via: 'staff', p_reporter_name: reporterName || null, p_reporter_contact: null
-    });
-    if(error) throw new Error(error.message);
-    resultEl.innerHTML = '<span style="color:var(--green)">&#10003; Ticket logged.</span>';
-    document.getElementById('rptLocation').value='';
-    document.getElementById('rptDescription').value='';
-    if(assignTo && data && data.id){
-      await supabaseClient.rpc('fac_update_ticket_status', { p_ticket_id: data.id, p_status: 'Open', p_assigned_initials: assignTo });
-    }
-    loadData();
-  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">'+(e.message||'Failed')+'</span>'; }
-}
-
-function renderProjects(){
-  const projects = facData.projects || [];
-  const el = document.getElementById('projectsList');
-  el.innerHTML = projects.length ? projects.map(p=>`
-    <div class="project-card">
-      <div class="ticket-top">
-        <div><div class="ticket-loc">${esc(p.title)}</div><div class="ticket-meta">${p.owner?esc(p.owner)+' · ':''}${p.startDate?'from '+esc(p.startDate):''}${p.targetDate?' → '+esc(p.targetDate):''}</div></div>
-        <span class="status-chip ${esc(p.status)}">${esc(p.status)}</span>
-      </div>
-      <div class="ticket-desc">${esc(p.description)||''}</div>
-      ${p.lastUpdateNote?'<div class="resolution-box" style="background:#0e1420;border-color:var(--teal);color:#bfe8e2">Latest: '+p.lastUpdateNote+'</div>':''}
-      <div class="field-grid" style="margin-top:10px">
-        <select class="select-input" id="prjStatusUpdate-${p.projectId}" style="margin:0"><option>Planned</option><option>Ongoing</option><option>Complete</option></select>
-        <button class="btn ghost" style="width:auto;padding:8px 14px" onclick="quickProjectUpdate('${p.projectId}')">UPDATE STATUS</button>
-      </div>
-    </div>`).join('') : '<div class="empty">No projects logged yet.</div>';
-  projects.forEach(p=>{
-    const sel = document.getElementById('prjStatusUpdate-'+p.projectId);
-    if(sel) sel.value = p.status;
-  });
-}
-
-async function quickProjectUpdate(projectId){
-  const status = document.getElementById('prjStatusUpdate-'+projectId).value;
-  try{
-    const { error } = await supabaseClient.rpc('fac_update_project', { p_project_id: projectId, p_status: status });
-    if(error) throw new Error(error.message);
-    loadData();
-  }catch(e){ showToast(e.message || 'Failed', true); }
-}
-
-async function submitProject(){
-  const title = document.getElementById('prjTitle').value.trim();
-  const status = document.getElementById('prjStatus').value;
-  const startDate = document.getElementById('prjStart').value;
-  const targetDate = document.getElementById('prjTarget').value;
-  const owner = document.getElementById('prjOwner').value.trim();
-  const description = document.getElementById('prjDescription').value.trim();
-  const resultEl = document.getElementById('prjResult');
-  if(!title){ resultEl.innerHTML = '<span style="color:var(--red)">Title is required.</span>'; return; }
-  resultEl.innerHTML = 'Saving...';
-  try{
-    const { error } = await supabaseClient.rpc('fac_add_project', {
-      p_title: title, p_status: status, p_start_date: startDate || null,
-      p_target_date: targetDate || null, p_owner: owner || null, p_description: description || null
-    });
-    if(error) throw new Error(error.message);
-    resultEl.innerHTML = '<span style="color:var(--green)">&#10003; Project added.</span>';
-    ['prjTitle','prjStart','prjTarget','prjOwner','prjDescription'].forEach(id=>document.getElementById(id).value='');
-    loadData();
-  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">'+(e.message||'Connection error.')+'</span>'; }
-}
-
-function renderAssets(){
-  const q = (document.getElementById('assetSearch').value||'').toLowerCase();
-  let assets = facData.assets || [];
-  if(q) assets = assets.filter(a=>a.location.toLowerCase().includes(q) || a.category.toLowerCase().includes(q));
-  const el = document.getElementById('assetGrid');
-  el.innerHTML = assets.length ? assets.map(a=>`
-    <div class="asset-card ${a.status==='Planned'?'planned':''}">
-      <div class="asset-name">${esc(a.location)}</div>
-      <div class="asset-meta">${esc(a.category)} · ${esc(a.zone)}${a.status==='Planned'?' · PLANNED':''}</div>
-    </div>`).join('') : '<div class="empty">No matches.</div>';
-}
-
-function renderStaff(){
-  const staff = (facData.staff||[]).filter(s=>s.name||s.initials);
-  const el = document.getElementById('staffGrid');
-  el.innerHTML = staff.length ? staff.map(s=>`
-    <div class="staff-card">
-      <div class="staff-initials">${esc(s.initials)||'—'}</div>
-      <div style="font-size:13px;font-weight:700;margin-top:2px">${esc(s.name)||'(name not set)'}</div>
-      <div style="font-size:11px;color:var(--text-dim);margin-top:6px">${esc(s.specialty)||'Specialty not set'}<br>${esc(s.phone)||''}</div>
-    </div>`).join('') : '<div class="empty">No staff profiles filled in yet — add names in the 🧑‍🔧 Maintenance Staff sheet.</div>';
-}
-
-loadData();
-setInterval(loadData, 30000);
 </script>
-<div class="toast" id="toast"></div>
 </body>
 </html>
