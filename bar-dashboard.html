@@ -590,6 +590,15 @@ function genClientId(){
   return 'cid-' + Date.now() + '-' + Math.random().toString(36).slice(2);
 }
 
+// Shared HTML-escaping helper — every piece of text that could ever
+// originate from a guest or staff free-text field (customer name,
+// notes, item name, etc.) must go through this before being placed
+// into innerHTML. A guest can type anything as their name on the
+// public order page; without escaping it here, that becomes real code
+// running in a staff member's browser, in a session with full
+// database write access.
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
 function backoffDelayMs(attempts){
   const base = 4000, cap = 60000;
   const raw = Math.min(cap, base * Math.pow(2, attempts));
@@ -979,9 +988,9 @@ function renderStaff(){
   }else{
     el.innerHTML = onDutyStaff.map(s=>`
       <div class="staff-card">
-        <div class="staff-initials">${s.initials||'—'}</div>
-        <div class="staff-name">${s.name||'(name not set)'}</div>
-        <div class="staff-meta">${s.workingDays||'Days not set'}<br>${s.workingHours||'Hours not set'}</div>
+        <div class="staff-initials">${esc(s.initials)||'—'}</div>
+        <div class="staff-name">${esc(s.name)||'(name not set)'}</div>
+        <div class="staff-meta">${esc(s.workingDays)||'Days not set'}<br>${esc(s.workingHours)||'Hours not set'}</div>
         <button class="btn" style="margin-top:10px;background:var(--green)" onclick="toggleOnDuty('${s.initials}', false)">&#9679; ON DUTY — TAP TO CHECK OUT</button>
       </div>`).join('');
   }
@@ -993,7 +1002,7 @@ function populateCheckInSelect(){
   if(!sel) return;
   const notOnDuty = (barData.staff||[]).filter(s=>s.active && !s.onDuty && s.initials && s.initials.trim());
   sel.innerHTML = '<option value="">Select your name to check in...</option>' +
-    notOnDuty.map(s => `<option value="${s.initials}">${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
+    notOnDuty.map(s => `<option value="${esc(s.initials)}">${esc(s.initials)}${s.name?' — '+esc(s.name):''}</option>`).join('');
 }
 
 async function submitCheckIn(){
@@ -1034,7 +1043,7 @@ function populateStaffDropdowns(){
   const sel = document.getElementById('restockBy');
   const current = sel.value;
   sel.innerHTML = '<option value="">Restocked by... (required)</option>' +
-    staff.map(s => `<option value="${s.initials}">${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
+    staff.map(s => `<option value="${esc(s.initials)}">${esc(s.initials)}${s.name?' — '+esc(s.name):''}</option>`).join('');
   if(staff.some(s=>s.initials===current)) sel.value = current;
 }
 
@@ -1146,10 +1155,13 @@ async function lookupCustomer(prefillQuery){
       await selectCustomerById(nameMatches[0].customer_id);
     }else if(nameMatches && nameMatches.length > 1){
       resultEl.innerHTML = `<div style="margin-bottom:6px;color:var(--muted);font-size:12px">${nameMatches.length} matches — tap one:</div>` +
-        nameMatches.map(c => `<div class="rank-row" style="cursor:pointer" onclick="selectCustomerById('${c.customer_id}')">
-          <div class="rank-info"><div class="rank-name">${c.name}</div><div class="rank-sub">${c.customer_id} · ${c.phone_number||'no phone on file'}</div></div>
+        nameMatches.map(c => `<div class="rank-row" style="cursor:pointer" data-select-customer="${esc(c.customer_id)}">
+          <div class="rank-info"><div class="rank-name">${esc(c.name)}</div><div class="rank-sub">${esc(c.customer_id)} · ${esc(c.phone_number)||'no phone on file'}</div></div>
           <div class="rank-value">${c.loyalty_points} pts</div>
         </div>`).join('');
+      resultEl.querySelectorAll('[data-select-customer]').forEach(row => {
+        row.addEventListener('click', () => selectCustomerById(row.dataset.selectCustomer));
+      });
     }else{
       resultEl.innerHTML = "No customer found matching that — they'll be registered next time they order.";
     }
@@ -1196,14 +1208,17 @@ async function renderCustomerCard(){
       ${rewardsCache.map(r => {
         const canAfford = c.loyaltyPoints >= r.points_required;
         return `<button class="btn small ${canAfford?'teal':'ghost'}" style="margin:0 6px 6px 0" ${canAfford?'':'disabled'}
-          onclick="claimReward('${r.reward_name.replace(/'/g,"\\'")}', ${r.points_required})">
-          ${r.reward_name} — ${r.points_required} pts</button>`;
+          data-claim-reward="${esc(r.reward_name)}" data-claim-points="${r.points_required}">
+          ${esc(r.reward_name)} — ${r.points_required} pts</button>`;
       }).join('')}
     </div>` : '';
-  resultEl.innerHTML = `<b>${c.custId}</b> — ${c.name}${membershipLine}<br>Loyalty points: <b id="custPointsLive">${c.loyaltyPoints}</b><br>Total visits: ${c.totalVisits}<br>Last visit: ${c.lastVisit||'—'}
+  resultEl.innerHTML = `<b>${esc(c.custId)}</b> — ${esc(c.name)}${membershipLine}<br>Loyalty points: <b id="custPointsLive">${c.loyaltyPoints}</b><br>Total visits: ${c.totalVisits}<br>Last visit: ${c.lastVisit||'—'}
     <button class="btn" style="margin-top:10px" onclick="generateCustomerQR()">&#127915; GENERATE QR ID CARD</button>
     ${rewardsHtml}
     <div id="claimResultMsg" style="margin-top:8px;font-size:12px"></div>`;
+  resultEl.querySelectorAll('[data-claim-reward]').forEach(btn => {
+    btn.addEventListener('click', () => claimReward(btn.dataset.claimReward, parseInt(btn.dataset.claimPoints, 10)));
+  });
 }
 
 async function claimReward(rewardName, pointsRequired){
@@ -1285,7 +1300,7 @@ async function submitRestock(){
 
   if(result.ok){
     const data = result.data;
-    resultEl.innerHTML = `<span class="flash">&#10003; ${item} — new qty: ${data.newQty}${data.newItem?' (new item created)':''} · logged under ${data.restockedBy} at ${data.timestamp}</span>`;
+    resultEl.innerHTML = `<span class="flash">&#10003; ${esc(item)} — new qty: ${data.newQty}${data.newItem?' (new item created)':''} · logged under ${esc(data.restockedBy)} at ${esc(data.timestamp)}</span>`;
     document.getElementById('restockItem').value = '';
     document.getElementById('restockQty').value = '';
     document.getElementById('restockPar').value = '';
@@ -1638,7 +1653,7 @@ function renderQuickSellPanel(){
 
   const staffSel = document.getElementById('qsStaff');
   staffSel.innerHTML = '<option value="">Select staff...</option>' +
-    staff.map(s => `<option value="${s.initials}">${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
+    staff.map(s => `<option value="${esc(s.initials)}">${esc(s.initials)}${s.name?' — '+esc(s.name):''}</option>`).join('');
   if(staff.some(s=>s.initials===prevStaff)) staffSel.value = prevStaff;
 
   document.getElementById('qsCustomer').value = prevCustomer;
@@ -1715,7 +1730,7 @@ async function submitBarTab(){
       p_table_number: tableNumber
     });
     if(error) throw new Error(error.message);
-    resultEl.innerHTML = `<span class="flash">&#10003; Tab opened for ${custName} — ${area}${tableNumber?' '+tableNumber:''}. It's now showing at the top of the dashboard until paid.</span>`;
+    resultEl.innerHTML = `<span class="flash">&#10003; Tab opened for ${esc(custName)} — ${esc(area)}${tableNumber?' '+esc(tableNumber):''}. It's now showing at the top of the dashboard until paid.</span>`;
     setTimeout(() => { clearCart(); loadData(); }, 1500);
   }catch(e){
     resultEl.innerHTML = '<span style="color:var(--red)">' + e.message + '</span>';
@@ -1803,18 +1818,18 @@ async function submitQuickSellCart(){
   let subtotalRung = succeeded.reduce((s,r)=>s + (r.result.data ? r.result.data.lineTotal : 0), 0);
   let msg = '';
   if(succeeded.length){
-    msg += `<span class="flash">&#10003; ${succeeded.length} item${succeeded.length>1?'s':''} rung up — &#8373;${subtotalRung.toFixed(2)} · served by ${staffInitials}</span><br>`;
+    msg += `<span class="flash">&#10003; ${succeeded.length} item${succeeded.length>1?'s':''} rung up — &#8373;${subtotalRung.toFixed(2)} · served by ${esc(staffInitials)}</span><br>`;
     const lastWithCust = succeeded.slice().reverse().find(r => r.result.data.custId && r.result.data.custId !== '—');
-    if(lastWithCust) msg += `${lastWithCust.result.data.custId}${lastWithCust.result.data.pointsNow!==null ? ' ('+lastWithCust.result.data.pointsNow+' pts)':''}<br>`;
+    if(lastWithCust) msg += `${esc(lastWithCust.result.data.custId)}${lastWithCust.result.data.pointsNow!==null ? ' ('+lastWithCust.result.data.pointsNow+' pts)':''}<br>`;
     const lowStockSet = new Set();
     succeeded.forEach(r => (r.result.data.lowStockNames||[]).forEach(n=>lowStockSet.add(n)));
-    if(lowStockSet.size) msg += `<span style="color:var(--red)">&#9888; Low stock: ${Array.from(lowStockSet).join(', ')}</span><br>`;
+    if(lowStockSet.size) msg += `<span style="color:var(--red)">&#9888; Low stock: ${esc(Array.from(lowStockSet).join(', '))}</span><br>`;
   }
   if(queued.length){
     msg += `<span style="color:var(--teal)">&#9203; ${queued.length} item${queued.length>1?'s':''} queued (no connection) — will send automatically once back online.</span><br>`;
   }
   if(failed.length){
-    msg += `<span style="color:var(--red)">${failed.length} item${failed.length>1?'s':''} failed: ${failed.map(f=>f.itemName+' ('+f.result.error+')').join('; ')}</span>`;
+    msg += `<span style="color:var(--red)">${failed.length} item${failed.length>1?'s':''} failed: ${esc(failed.map(f=>f.itemName+' ('+f.result.error+')').join('; '))}</span>`;
   }
   resultEl.innerHTML = msg;
 
@@ -2173,7 +2188,7 @@ function orderAge(timestamp){
 }
 
 function locationLabel(o){
-  const loc = o.locationType === 'Table' ? ('Table ' + (o.locationDetail || '?')) : (o.locationType + (o.locationDetail ? ' — ' + o.locationDetail : ''));
+  const loc = o.locationType === 'Table' ? ('Table ' + esc(o.locationDetail || '?')) : (esc(o.locationType) + (o.locationDetail ? ' — ' + esc(o.locationDetail) : ''));
   return loc;
 }
 
@@ -2249,10 +2264,10 @@ function renderTableOrders(){
   if(active.length === 0){ el.innerHTML = '<div class="empty">No active table orders right now.</div>'; return; }
 
   const staffOptionsHtml = (selected) => '<option value="">Select staff...</option>' +
-    staffList.map(s => `<option value="${s.initials}" ${selected===s.initials?'selected':''}>${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
+    staffList.map(s => `<option value="${esc(s.initials)}" ${selected===s.initials?'selected':''}>${esc(s.initials)}${s.name?' — '+esc(s.name):''}</option>`).join('');
 
   el.innerHTML = active.map(o => {
-    const itemsHtml = (o.items||[]).map(i => `${i.qty} &times; ${i.item}`).join(', ');
+    const itemsHtml = (o.items||[]).map(i => `${i.qty} &times; ${esc(i.item)}`).join(', ');
     const isNew = o.status === 'Placed' && !tableOrdersFirstLoad;
     const isProcessing = processingOrderIds.has(o.orderId);
     const selectedStaff = orderStaffSelections[o.orderId] || '';
@@ -2286,7 +2301,7 @@ function renderTableOrders(){
         <div class="order-card-age">${orderAge(o.timestamp)}</div>
       </div>
       <div class="order-items-list">${itemsHtml}</div>
-      <div class="order-items-list" style="margin-top:-4px;color:var(--text-dim)">${o.customerName || 'no name given'}</div>
+      <div class="order-items-list" style="margin-top:-4px;color:var(--text-dim)">${esc(o.customerName) || 'no name given'}</div>
       ${momoHtml}
       ${comboHtml}
       <div class="order-card-footer">
@@ -2431,10 +2446,10 @@ function renderFoodOrders(){
   if(active.length === 0){ el.innerHTML = '<div class="empty">No active food orders right now.</div>'; return; }
 
   const staffOptionsHtml = (selected) => '<option value="">Select staff...</option>' +
-    staffList.map(s => `<option value="${s.initials}" ${selected===s.initials?'selected':''}>${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
+    staffList.map(s => `<option value="${esc(s.initials)}" ${selected===s.initials?'selected':''}>${esc(s.initials)}${s.name?' — '+esc(s.name):''}</option>`).join('');
 
   el.innerHTML = active.map(o => {
-    const itemsHtml = (o.items||[]).map(i => `${i.qty} &times; ${i.item}`).join(', ');
+    const itemsHtml = (o.items||[]).map(i => `${i.qty} &times; ${esc(i.item)}`).join(', ');
     const isNew = o.status === 'Placed' && !foodOrdersFirstLoad;
     const isProcessing = processingFoodOrderIds.has(o.orderId);
     const selectedStaff = foodOrderStaffSelections[o.orderId] || '';
@@ -2467,7 +2482,7 @@ function renderFoodOrders(){
         <div class="order-card-age">${orderAge(o.timestamp)}</div>
       </div>
       <div class="order-items-list">${itemsHtml}</div>
-      <div class="order-items-list" style="margin-top:-4px;color:var(--text-dim)">${o.customerName || 'no name given'}</div>
+      <div class="order-items-list" style="margin-top:-4px;color:var(--text-dim)">${esc(o.customerName) || 'no name given'}</div>
       ${comboHtml}
       <div class="order-card-footer">
         <span class="order-total">GHS ${o.total.toFixed(2)}</span>
