@@ -766,7 +766,7 @@ async function onCustPhoneBlur(){
     if(error) throw new Error(error.message);
 
     if(custId){
-      const { data: cust, error: custErr } = await supabaseClient.from('bar_customers').select('*').eq('customer_id', custId).maybeSingle();
+      const { data: cust, error: custErr } = await supabaseClient.from('bar_customers').select('customer_id, name, phone_number, first_visit, last_visit, total_visits, loyalty_points, membership_status, lifetime_points, business_name').eq('customer_id', custId).maybeSingle();
       if(myToken !== custLookupToken) return;
       if(custErr || !cust){
         lookedUpCustomer = null;
@@ -1045,7 +1045,7 @@ async function loadMemberAccount(){
 
 async function renderFullProfileBar(custId, name, phone){
   const [custRes, rewardsRes, tableOrdersRes, canteenOrdersRes] = await Promise.allSettled([
-    supabaseClient.from('bar_customers').select('*').eq('customer_id', custId).maybeSingle(),
+    supabaseClient.from('bar_customers').select('customer_id, name, phone_number, first_visit, last_visit, total_visits, loyalty_points, membership_status, lifetime_points, business_name').eq('customer_id', custId).maybeSingle(),
     supabaseClient.from('rewards').select('*').eq('active', true).order('points_required', { ascending: true }),
     supabaseClient.from('table_orders').select('items_json, created_at, total_ghs').eq('customer_phone', phone).order('created_at', { ascending:false }).limit(20),
     supabaseClient.from('canteen_orders').select('items_json, created_at, total_ghs').eq('customer_phone', phone).order('created_at', { ascending:false }).limit(20)
