@@ -65,6 +65,14 @@ select:focus,input:focus,textarea:focus{border-color:var(--gold);}
 .footer-links{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;padding:18px 0 6px;}
 .footer-link{font-size:11px;color:var(--muted);text-decoration:none;padding:6px 12px;border:1px solid var(--border);border-radius:20px;}
 .footer-link.live{color:var(--teal);border-color:var(--teal);}
+.pin-modal-overlay{display:none;position:fixed;inset:0;background:rgba(10,10,10,0.65);z-index:500;align-items:center;justify-content:center;padding:20px;}
+.pin-modal-overlay.show{display:flex;}
+.pin-modal-box{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:20px;max-width:320px;width:100%;}
+.pin-modal-title{font-weight:700;font-size:15px;color:var(--gold);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;}
+.pin-modal-title .close-x{cursor:pointer;color:var(--muted);font-size:20px;line-height:1;}
+.pin-modal-msg{color:var(--text-dim);font-size:12.5px;margin-bottom:10px;}
+.pin-modal-input{width:100%;padding:10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:18px;letter-spacing:4px;text-align:center;}
+.pin-modal-err{color:#e77;font-size:12px;min-height:16px;margin-top:6px;}
 </style>
 </head>
 <body>
@@ -271,6 +279,33 @@ function checkActingAsExpiry(){
     clearActingAs();
   }
 }
+// Masked PIN entry modal — replaces browser prompt() (which shows the PIN
+// in plain text) with a real password-type input. Returns a Promise that
+// resolves to the entered string, or null if cancelled.
+let _pinModalResolve = null;
+function askPinModal(title, msg){
+  return new Promise(resolve=>{
+    _pinModalResolve = resolve;
+    document.getElementById('pinModalTitle').textContent = title || 'Enter PIN';
+    document.getElementById('pinModalMsg').textContent = msg || '';
+    document.getElementById('pinModalErr').textContent = '';
+    const input = document.getElementById('pinModalInput');
+    input.value = '';
+    document.getElementById('pinModal').classList.add('show');
+    setTimeout(()=>input.focus(), 50);
+    input.onkeydown = (e)=>{ if(e.key==='Enter'){ e.preventDefault(); submitPinModal(); } };
+  });
+}
+function submitPinModal(){
+  const val = document.getElementById('pinModalInput').value;
+  document.getElementById('pinModal').classList.remove('show');
+  if(_pinModalResolve){ const r=_pinModalResolve; _pinModalResolve=null; r(val || null); }
+}
+function closePinModal(){
+  document.getElementById('pinModal').classList.remove('show');
+  if(_pinModalResolve){ const r=_pinModalResolve; _pinModalResolve=null; r(null); }
+}
+
 function clearActingAs(){
   state.actingAs = ''; state.actingAsExpires = 0;
   try{ localStorage.removeItem('members_acting_as'); localStorage.removeItem('members_acting_as_expires'); }catch(e){}
@@ -323,19 +358,19 @@ async function onActingAsChange(){
     const { data: hasPin, error: hasErr } = await supabaseClient.rpc('staff_has_pin', { p_initials: chosen });
     if(hasErr) throw new Error(hasErr.message);
     if(!hasPin){
-      const p1 = prompt('First time selecting your name, ' + displayName + '. Set a PIN (4+ digits) so nobody else can add points or redeem rewards under your name:');
+      const p1 = await askPinModal('Set your PIN', 'First time selecting your name, ' + displayName + '. Set a PIN (4+ digits) so nobody else can add points or redeem rewards under your name.');
       if(!p1){ sel.value = state.actingAs || ''; return; }
-      const p2 = prompt('Confirm your PIN:');
+      const p2 = await askPinModal('Confirm your PIN', 'Re-enter the same PIN to confirm.');
       if(p1 !== p2){ showToast('PINs did not match — try again'); sel.value = state.actingAs || ''; return; }
       const { data: setOk, error: setErr } = await supabaseClient.rpc('set_staff_pin', { p_initials: chosen, p_new_pin: p1 });
       if(setErr || !setOk){ showToast('Could not set PIN — try again'); sel.value = state.actingAs || ''; return; }
       showToast('PIN set for ' + displayName);
       setActingAs(chosen);
     } else {
-      const pin = prompt('Enter your PIN, ' + displayName + ':');
+      const pin = await askPinModal('Enter PIN', 'Enter your PIN, ' + displayName + '.');
       if(pin === null){ sel.value = state.actingAs || ''; return; }
       const { data: ok, error: verErr } = await supabaseClient.rpc('verify_staff_pin', { p_initials: chosen, p_pin: pin });
-      if(verErr){ showToast('Could not verify PIN right now'); sel.value = state.actingAs || ''; return; }
+      if(verErr){ showToast(verErr.message || 'Could not verify PIN right now'); sel.value = state.actingAs || ''; return; }
       if(!ok){ showToast('Wrong PIN'); sel.value = state.actingAs || ''; return; }
       setActingAs(chosen);
     }
@@ -668,5 +703,14 @@ async function submitAdjustPoints(){
 loadData();
 setInterval(loadData, 60000);
 </script>
+<div class="pin-modal-overlay" id="pinModal">
+  <div class="pin-modal-box">
+    <div class="pin-modal-title"><span id="pinModalTitle">Enter PIN</span><span class="close-x" onclick="closePinModal()">&times;</span></div>
+    <p class="pin-modal-msg" id="pinModalMsg"></p>
+    <input type="password" id="pinModalInput" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off" class="pin-modal-input" placeholder="&#8226;&#8226;&#8226;&#8226;">
+    <div class="pin-modal-err" id="pinModalErr"></div>
+    <button class="small-btn" style="margin-top:10px;width:100%" onclick="submitPinModal()">Continue</button>
+  </div>
+</div>
 </body>
 </html>
