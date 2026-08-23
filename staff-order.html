@@ -228,6 +228,12 @@ const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNydnV6a3lmcnFiZm1hbWVneGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MzI5NjQsImV4cCI6MjEwMDAwODk2NH0.gMsv3yvw6plDCherA2YdU4UgWRMXUc9H1Hr_IdR9GxA';
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// Shared HTML-escaping helper — same reasoning as order.html: staff
+// take orders on this page on a customer's behalf, and customer name/
+// item data still flows into innerHTML on this screen and later into
+// staff dashboards via bar_customers, so it must be escaped here too.
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
 let locationType = null;
 let locationDetail = '';
 let menu = [];
@@ -283,7 +289,7 @@ async function loadStaff(){
       return;
     }
     sel.innerHTML = '<option value="">Select your name...</option>' +
-      list.map(s => `<option value="${s.initials}">${s.initials}${s.full_name?' — '+s.full_name:''}</option>`).join('');
+      list.map(s => `<option value="${esc(s.initials)}">${esc(s.initials)}${s.full_name?' — '+esc(s.full_name):''}</option>`).join('');
   }catch(e){
     sel.innerHTML = '<option value="">Could not load staff — check your connection and reload</option>';
   }
@@ -748,17 +754,17 @@ function showConfirmation(orders, payment, locType, locDetail, custId){
   if(payment === 'MoMo'){
     payHtml = `<div class="pending-note" style="border-color:var(--gold-dim);background:#1e1706;color:var(--text)">
       Customer should send <b>GHS ${total.toFixed(2)}</b> via MoMo to<br>
-      <b>${momoNumber || '(number not set yet — check venue settings)'}</b>${momoName ? ' — ' + momoName : ''}
+      <b>${esc(momoNumber) || '(number not set yet — check venue settings)'}</b>${momoName ? ' — ' + esc(momoName) : ''}
     </div>`;
   }else{
     payHtml = `<div class="pending-note" style="border-color:var(--gold-dim);background:#1e1706;color:var(--text)">Collect <b>GHS ${total.toFixed(2)}</b> in cash when delivered.</div>`;
   }
-  const orderLines = orders.map(o => `<div class="order-id">${orders.length>1 ? o.label+': ' : ''}Order ${o.data.orderId} — GHS ${o.data.total.toFixed(2)}</div>`).join('');
-  const custLine = custId ? `<div class="order-id" style="margin-top:8px;color:var(--teal)">Customer ID: ${custId}</div>` : '';
+  const orderLines = orders.map(o => `<div class="order-id">${orders.length>1 ? esc(o.label)+': ' : ''}Order ${esc(o.data.orderId)} — GHS ${o.data.total.toFixed(2)}</div>`).join('');
+  const custLine = custId ? `<div class="order-id" style="margin-top:8px;color:var(--teal)">Customer ID: ${esc(custId)}</div>` : '';
   el.innerHTML = `
     <div class="ok-badge">&#9989;</div>
     <h2>Order sent!</h2>
-    <div class="order-id" style="margin-bottom:6px">${locType || 'Order'}${locDetail ? ' — ' + locDetail : ''}${selectedStaffInitials ? ' · taken by ' + selectedStaffInitials : ''}</div>
+    <div class="order-id" style="margin-bottom:6px">${esc(locType) || 'Order'}${locDetail ? ' — ' + esc(locDetail) : ''}${selectedStaffInitials ? ' · taken by ' + esc(selectedStaffInitials) : ''}</div>
     ${orderLines}
     ${custLine}
     ${payHtml}
