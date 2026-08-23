@@ -194,6 +194,12 @@ const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNydnV6a3lmcnFiZm1hbWVneGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MzI5NjQsImV4cCI6MjEwMDAwODk2NH0.gMsv3yvw6plDCherA2YdU4UgWRMXUc9H1Hr_IdR9GxA';
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// Shared HTML-escaping helper — used for defense in depth on any
+// server-derived value rendered here (this page doesn't echo back a
+// guest's own name/notes, so the surface is small, but it costs
+// nothing to be consistent with every other page in this system).
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
 const CONFIG = {
   WHATSAPP_NUMBER: "233509960980" // no leading zero, no +
 };
@@ -343,7 +349,7 @@ function showOutcome(silentFail, result){
       <p class="sub">${result.returning ? 'We found your existing account and updated it.' : 'Show this ID next time you visit — every visit earns points.'}</p>
       <div class="idcard">
         <div class="lbl">Your Member ID</div>
-        <div class="code">${result.custId}</div>
+        <div class="code">${esc(result.custId)}</div>
         <div class="pts">★ ${result.points || 0} points on your account</div>
       </div>
       <a class="btn btn-teal" style="text-decoration:none;color:#0a0a0a" href="https://wa.me/${CONFIG.WHATSAPP_NUMBER}?text=${waText}" target="_blank" rel="noopener">Save my ID to WhatsApp</a>
