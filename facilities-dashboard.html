@@ -237,6 +237,13 @@ const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let facData = {tickets: [], openSorted: [], assets: [], projects: [], staff: [], counts: {}};
 
+// Shared HTML-escaping helper. Ticket descriptions/locations can come
+// straight from the public guest-facing report page (facilities-report.html)
+// with zero staff review before landing here — must be escaped before
+// going into innerHTML, or a malicious ticket description runs as code
+// in a staff member's browser.
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
 function showApiError(msg){
   const el = document.getElementById('errorBanner');
   el.innerHTML = "<b>&#9888; Dashboard can't reach Supabase:</b> " + msg + " — check your connection and try Refresh.";
@@ -372,7 +379,7 @@ function renderUrgentBanner(){
   const banner = document.getElementById('urgentBanner');
   if(urgent.length===0){ banner.classList.remove('active'); return; }
   banner.classList.add('active');
-  document.getElementById('urgentPills').innerHTML = urgent.map(t=>`<span class="urgent-pill" onclick="switchSection('open', document.querySelector('[data-sec=open]'))">${t.location} — ${t.description.slice(0,40)}${t.description.length>40?'...':''}</span>`).join('');
+  document.getElementById('urgentPills').innerHTML = urgent.map(t=>`<span class="urgent-pill" onclick="switchSection('open', document.querySelector('[data-sec=open]'))">${esc(t.location)} — ${esc(t.description.slice(0,40))}${t.description.length>40?'...':''}</span>`).join('');
 }
 
 function ticketCardHtml(t, showActions){
@@ -391,17 +398,17 @@ function ticketCardHtml(t, showActions){
         <div class="result-msg" id="completeResult-${t.ticketId}"></div>
       </div>`;
   }
-  const resolutionHtml = t.status==='Complete' && t.resolutionNotes ? `<div class="resolution-box">&#10003; ${t.resolutionNotes} ${t.assignedTo?'— '+t.assignedTo:''}</div>` : '';
+  const resolutionHtml = t.status==='Complete' && t.resolutionNotes ? `<div class="resolution-box">&#10003; ${esc(t.resolutionNotes)} ${t.assignedTo?'— '+esc(t.assignedTo):''}</div>` : '';
   return `
-    <div class="ticket-card priority-${t.priority}">
+    <div class="ticket-card priority-${esc(t.priority)}">
       <div class="ticket-top">
         <div>
-          <div class="ticket-loc">${t.location}${t.verified==='NO'?'<span class="unverified-tag">UNVERIFIED</span>':''}</div>
-          <div class="ticket-meta">${t.category} · ${t.reportedByType}${t.reporterName?' ('+t.reporterName+')':''} · ${timeStr} · ${t.ticketId}</div>
+          <div class="ticket-loc">${esc(t.location)}${t.verified==='NO'?'<span class="unverified-tag">UNVERIFIED</span>':''}</div>
+          <div class="ticket-meta">${esc(t.category)} · ${esc(t.reportedByType)}${t.reporterName?' ('+esc(t.reporterName)+')':''} · ${timeStr} · ${esc(t.ticketId)}</div>
         </div>
-        <span class="priority-tag ${t.priority}">${t.priority}</span>
+        <span class="priority-tag ${esc(t.priority)}">${esc(t.priority)}</span>
       </div>
-      <div class="ticket-desc">${t.description}</div>
+      <div class="ticket-desc">${esc(t.description)}</div>
       ${t.assignedTo && t.status!=='Complete' ? `<div class="ticket-meta">Assigned: ${t.assignedTo}</div>` : ''}
       ${resolutionHtml}
       ${actionsHtml}
@@ -422,15 +429,15 @@ function renderUnverified(){
   el.innerHTML = unv.map(t=>{
     const timeStr = t.timestamp ? new Date(t.timestamp).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '—';
     return `
-    <div class="ticket-card priority-${t.priority}">
+    <div class="ticket-card priority-${esc(t.priority)}">
       <div class="ticket-top">
         <div>
-          <div class="ticket-loc">${t.location}</div>
-          <div class="ticket-meta">${t.category} · Guest${t.reporterName?' — '+t.reporterName:''}${t.reporterContact?' ('+t.reporterContact+')':''} · ${timeStr}</div>
+          <div class="ticket-loc">${esc(t.location)}</div>
+          <div class="ticket-meta">${esc(t.category)} · Guest${t.reporterName?' — '+esc(t.reporterName):''}${t.reporterContact?' ('+esc(t.reporterContact)+')':''} · ${timeStr}</div>
         </div>
         <span class="priority-tag ${t.priority}">${t.priority}</span>
       </div>
-      <div class="ticket-desc">${t.description}</div>
+      <div class="ticket-desc">${esc(t.description)}</div>
       <div class="ticket-actions">
         <button class="btn teal" onclick="verifyTicket('${t.ticketId}','YES')">&#10003; CONFIRM — MOVE TO QUEUE</button>
         <button class="btn red" onclick="verifyTicket('${t.ticketId}','NO')">&times; DISMISS</button>
@@ -489,12 +496,12 @@ function populateLocationList(){
 function populateAssignDropdown(){
   const staff = (facData.staff||[]).filter(s=>s.name||s.initials);
   const sel = document.getElementById('rptAssignTo');
-  sel.innerHTML = '<option value="">Assign to... (optional)</option>' + staff.map(s=>`<option value="${s.initials}">${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
+  sel.innerHTML = '<option value="">Assign to... (optional)</option>' + staff.map(s=>`<option value="${esc(s.initials)}">${esc(s.initials)}${s.name?' — '+esc(s.name):''}</option>`).join('');
 }
 function populateAllAssignDropdowns(){
   const staff = (facData.staff||[]).filter(s=>s.name||s.initials);
   document.querySelectorAll('[id^="resAssigned-"]').forEach(sel=>{
-    sel.innerHTML = '<option value="">Assigned to... (optional)</option>' + staff.map(s=>`<option value="${s.initials}">${s.initials}${s.name?' — '+s.name:''}</option>`).join('');
+    sel.innerHTML = '<option value="">Assigned to... (optional)</option>' + staff.map(s=>`<option value="${esc(s.initials)}">${esc(s.initials)}${s.name?' — '+esc(s.name):''}</option>`).join('');
   });
 }
 
@@ -531,10 +538,10 @@ function renderProjects(){
   el.innerHTML = projects.length ? projects.map(p=>`
     <div class="project-card">
       <div class="ticket-top">
-        <div><div class="ticket-loc">${p.title}</div><div class="ticket-meta">${p.owner?p.owner+' · ':''}${p.startDate?'from '+p.startDate:''}${p.targetDate?' → '+p.targetDate:''}</div></div>
-        <span class="status-chip ${p.status}">${p.status}</span>
+        <div><div class="ticket-loc">${esc(p.title)}</div><div class="ticket-meta">${p.owner?esc(p.owner)+' · ':''}${p.startDate?'from '+esc(p.startDate):''}${p.targetDate?' → '+esc(p.targetDate):''}</div></div>
+        <span class="status-chip ${esc(p.status)}">${esc(p.status)}</span>
       </div>
-      <div class="ticket-desc">${p.description||''}</div>
+      <div class="ticket-desc">${esc(p.description)||''}</div>
       ${p.lastUpdateNote?'<div class="resolution-box" style="background:#0e1420;border-color:var(--teal);color:#bfe8e2">Latest: '+p.lastUpdateNote+'</div>':''}
       <div class="field-grid" style="margin-top:10px">
         <select class="select-input" id="prjStatusUpdate-${p.projectId}" style="margin:0"><option>Planned</option><option>Ongoing</option><option>Complete</option></select>
@@ -585,8 +592,8 @@ function renderAssets(){
   const el = document.getElementById('assetGrid');
   el.innerHTML = assets.length ? assets.map(a=>`
     <div class="asset-card ${a.status==='Planned'?'planned':''}">
-      <div class="asset-name">${a.location}</div>
-      <div class="asset-meta">${a.category} · ${a.zone}${a.status==='Planned'?' · PLANNED':''}</div>
+      <div class="asset-name">${esc(a.location)}</div>
+      <div class="asset-meta">${esc(a.category)} · ${esc(a.zone)}${a.status==='Planned'?' · PLANNED':''}</div>
     </div>`).join('') : '<div class="empty">No matches.</div>';
 }
 
@@ -595,9 +602,9 @@ function renderStaff(){
   const el = document.getElementById('staffGrid');
   el.innerHTML = staff.length ? staff.map(s=>`
     <div class="staff-card">
-      <div class="staff-initials">${s.initials||'—'}</div>
-      <div style="font-size:13px;font-weight:700;margin-top:2px">${s.name||'(name not set)'}</div>
-      <div style="font-size:11px;color:var(--text-dim);margin-top:6px">${s.specialty||'Specialty not set'}<br>${s.phone||''}</div>
+      <div class="staff-initials">${esc(s.initials)||'—'}</div>
+      <div style="font-size:13px;font-weight:700;margin-top:2px">${esc(s.name)||'(name not set)'}</div>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:6px">${esc(s.specialty)||'Specialty not set'}<br>${esc(s.phone)||''}</div>
     </div>`).join('') : '<div class="empty">No staff profiles filled in yet — add names in the 🧑‍🔧 Maintenance Staff sheet.</div>';
 }
 
