@@ -209,7 +209,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let REV_PW = '';
-try{ REV_PW = sessionStorage.getItem('revenue_pw') || ''; }catch(e){}
+try{ REV_PW = sessionStorage.getItem('whgh_revenue_pw') || ''; }catch(e){}
 
 function fmt(n){ return '\u20B5' + (parseFloat(n)||0).toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -223,7 +223,7 @@ async function checkGate(){
     if(error) throw new Error(error.message);
     if(!data){ errEl.textContent = 'Wrong password.'; return; }
     REV_PW = pw;
-    try{ sessionStorage.setItem('revenue_pw', pw); }catch(e){}
+    try{ sessionStorage.setItem('whgh_revenue_pw', pw); }catch(e){}
     document.getElementById('gateScreen').style.display = 'none';
     document.getElementById('appScreen').style.display = 'block';
     loadAll();
@@ -393,7 +393,7 @@ async function changePassword(){
     const { data, error } = await supabaseClient.rpc('set_revenue_password', { p_current_password: cur, p_new_password: nw });
     if(error) throw new Error(error.message);
     REV_PW = nw;
-    try{ sessionStorage.setItem('revenue_pw', nw); }catch(e){}
+    try{ sessionStorage.setItem('whgh_revenue_pw', nw); }catch(e){}
     result.innerHTML = '<span style="color:var(--green)">Password updated.</span>';
     setTimeout(()=>document.getElementById('pwModal').classList.remove('show'), 900);
   }catch(e){ result.innerHTML = '<span style="color:var(--red)">'+esc(e.message)+'</span>'; }
