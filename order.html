@@ -338,6 +338,15 @@ function genClientId(){
   return 'cid-' + Date.now() + '-' + Math.random().toString(36).slice(2);
 }
 
+// v4.9: shared HTML-escaping helper — every piece of text that could
+// ever originate from a guest or staff free-text field (name, room
+// number, item name, etc.) must go through this before being placed
+// into innerHTML. Without it, a name like <img src=x onerror=...>
+// typed at checkout runs as real code in whoever's browser renders it
+// next (this page's own "welcome back" panel, and — because the same
+// name is stored in bar_customers — staff dashboards later too).
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
 /* ===================================================================
    BIG ERROR POPUPS
    Replaces the old tiny red text: shows a large, animated toast at the
@@ -654,7 +663,7 @@ function renderMenu(){
     let altHtml = '';
     if(m.available === false){
       const alt = findAlternate(m);
-      if(alt) altHtml = `<div class="mi-alt">Try: ${alt.item}</div>`;
+      if(alt) altHtml = `<div class="mi-alt">Try: ${esc(alt.item)}</div>`;
     }
     el.innerHTML = `${m.available === false ? '<span class="mi-oos-badge">OUT</span>' : '<span class="mi-qty" style="display:none"></span>'}
       <div class="mi-name"></div>
@@ -1062,23 +1071,23 @@ async function renderFullProfileBar(custId, name, phone){
 
     const wrap = document.getElementById('memberBarWrap');
     const content = document.getElementById('memberBarContent');
-    let html = `<div class="mw-title">Welcome back to The White House Events & More, ${displayName}!</div><div>${custId}</div>`;
+    let html = `<div class="mw-title">Welcome back to The White House Events & More, ${esc(displayName)}!</div><div>${esc(custId)}</div>`;
     if(cust) html += `<div class="mw-points">${currentPoints} points &middot; ${cust.total_visits||0} visits</div>`;
-    html += `<div class="mw-phone">Phone on file: ${phone} &middot; <span style="color:var(--teal)">&#128274; kept private, never sold or shared</span></div>`;
+    html += `<div class="mw-phone">Phone on file: ${esc(phone)} &middot; <span style="color:var(--teal)">&#128274; kept private, never sold or shared</span></div>`;
 
     if(topFavorite){
-      html += `<div class="mw-favorite-line">Most ordered: <b style="color:var(--gold)">${topFavorite}</b></div>`;
+      html += `<div class="mw-favorite-line">Most ordered: <b style="color:var(--gold)">${esc(topFavorite)}</b></div>`;
     }
     if(favorites.length){
       html += `<div class="mw-favorites-label">Your usual — tap to add:</div>`;
       html += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">` +
-        favorites.map(f => `<button type="button" class="btn" style="width:auto;padding:10px 16px;margin:0;font-size:14px" onclick="reorderFavorite('${f.replace(/'/g,"\\'")}')">+ ${f}</button>`).join('') + `</div>`;
+        favorites.map(f => `<button type="button" class="btn" style="width:auto;padding:10px 16px;margin:0;font-size:14px" data-favorite="${encodeURIComponent(f)}">+ ${esc(f)}</button>`).join('') + `</div>`;
     }
     if(allOrders.length){
       html += `<div class="mw-recent-label">Recent orders:</div>` +
         allOrders.slice(0,5).map(o => {
           const d = new Date(o.created_at);
-          const itemsStr = (o.items_json||[]).map(i=>`${i.qty}x ${i.item}`).join(', ');
+          const itemsStr = (o.items_json||[]).map(i=>`${esc(i.qty)}x ${esc(i.item)}`).join(', ');
           return `<div class="mw-recent-line">${d.toLocaleDateString('en-GB')} — ${itemsStr} — GHS ${(o.total_ghs||0).toFixed(2)}</div>`;
         }).join('');
     }
@@ -1089,7 +1098,7 @@ async function renderFullProfileBar(custId, name, phone){
       html += rewards.map(r => {
         const eligible = currentPoints >= (r.points_required||0);
         return `<div class="mw-reward-row${eligible?' eligible':''}">
-          <span class="mw-reward-name">${r.reward_name}${eligible?'<span class="mw-reward-eligible-tag">YOU CAN REDEEM THIS</span>':''}</span>
+          <span class="mw-reward-name">${esc(r.reward_name)}${eligible?'<span class="mw-reward-eligible-tag">YOU CAN REDEEM THIS</span>':''}</span>
           <span class="mw-reward-pts">${r.points_required} pts</span>
         </div>`;
       }).join('');
@@ -1105,12 +1114,18 @@ async function renderFullProfileBar(custId, name, phone){
 
     html += `<div class="mw-section-label">Contact us</div>`;
     if(venueContactPhone){
-      html += `<div class="mw-contact-line">Call or WhatsApp: <a href="tel:${venueContactPhone}">${venueContactPhone}</a></div>`;
+      html += `<div class="mw-contact-line">Call or WhatsApp: <a href="tel:${esc(venueContactPhone)}">${esc(venueContactPhone)}</a></div>`;
     }else{
       html += `<div class="mw-contact-line">Ask any staff member on-site for help.</div>`;
     }
 
     content.innerHTML = html;
+    // v4.9: favorite-item buttons are wired up here instead of via an
+    // inline onclick="" string — safer (no manual quote-escaping of a
+    // guest-entered item name needed) and functionally identical.
+    content.querySelectorAll('[data-favorite]').forEach(btn => {
+      btn.addEventListener('click', () => reorderFavorite(decodeURIComponent(btn.dataset.favorite)));
+    });
     wrap.style.display = 'block';
   }catch(e){ console.log('loadMemberAccount render error:', e); }
 }
@@ -1142,8 +1157,8 @@ function showConfirmation(orders, payment, locType, locDetail, custId, custPoint
   if(payment === 'MoMo'){
     payHtml = `<div class="momo-box">
       Send <b>GHS ${total.toFixed(2)}</b> via MoMo to<br>
-      <b>${momoNumber || '(number not set yet — ask staff)'}</b>${momoName ? ' — ' + momoName : ''}<br>
-      <span style="font-size:12px;color:var(--text-dim)">Depending on your network, the name that shows may say "The White House Events &amp; More"${momoName ? ' or "' + momoName + '"' : ''} — both are correct, it's the same account.</span><br><br>
+      <b>${esc(momoNumber) || '(number not set yet — ask staff)'}</b>${momoName ? ' — ' + esc(momoName) : ''}<br>
+      <span style="font-size:12px;color:var(--text-dim)">Depending on your network, the name that shows may say "The White House Events &amp; More"${momoName ? ' or "' + esc(momoName) + '"' : ''} — both are correct, it's the same account.</span><br><br>
       Then show the confirmation message on your phone to staff when your order is delivered.
     </div>`;
   }else{
@@ -1158,7 +1173,7 @@ function showConfirmation(orders, payment, locType, locDetail, custId, custPoint
       : `<p style="margin-top:6px;color:var(--text-dim);font-size:12px">Your points and visit count are on your profile below.</p>`;
     memberBlockHtml = `
       <div class="momo-box" style="border-color:var(--gold);margin-top:14px">
-        <b style="color:var(--gold)">Welcome, ${document.getElementById('custName').value.trim() || 'valued guest'}! Your Member ID: ${custId}</b>
+        <b style="color:var(--gold)">Welcome, ${esc(document.getElementById('custName').value.trim()) || 'valued guest'}! Your Member ID: ${esc(custId)}</b>
         ${statsLine}
         <p style="margin-top:8px;color:var(--text-dim);font-size:12px;line-height:1.6">Save this number. Next time, enter it in the phone/membership field instead of typing your details again — it also tracks your points, rewards, and order history so you don't have to.</p>
         <p style="margin-top:8px;font-size:12px;line-height:1.6">Follow us so you don't miss offers and events:</p>
@@ -1179,7 +1194,7 @@ function showConfirmation(orders, payment, locType, locDetail, custId, custPoint
   el.innerHTML = `
     <div class="ok-badge">&#9989;</div>
     <h2>Order sent!</h2>
-    <div class="order-id" style="margin-bottom:6px">${displayLocType || 'Your order'}${displayLocDetail ? ' — ' + displayLocDetail : ''}</div>
+    <div class="order-id" style="margin-bottom:6px">${esc(displayLocType) || 'Your order'}${displayLocDetail ? ' — ' + esc(displayLocDetail) : ''}</div>
     ${orderLines}
     ${payHtml}
     ${memberBlockHtml}
