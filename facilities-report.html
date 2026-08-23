@@ -157,6 +157,11 @@ const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNydnV6a3lmcnFiZm1hbWVneGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MzI5NjQsImV4cCI6MjEwMDAwODk2NH0.gMsv3yvw6plDCherA2YdU4UgWRMXUc9H1Hr_IdR9GxA';
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// Shared HTML-escaping helper — this page is fully public (no login),
+// so the ticketId echoed back on success is the only server-derived
+// value rendered here, but it's wrapped anyway for defense in depth.
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
 // Static fallback list, mirrors the seeded 🏢 Facilities Assets sheet.
 const FALLBACK_LOCATIONS = (function(){
   const rooms = [];
@@ -266,7 +271,7 @@ function showOutcome(silentFail, result){
       <div class="success-icon">✓</div>
       <h1>Thanks — got it.</h1>
       <p class="sub">Your report has been sent to our facilities team.</p>
-      ${ticketId ? `<div class="idcard"><div class="lbl">Reference</div><div class="code">${ticketId}</div></div>` : ''}
+      ${ticketId ? `<div class="idcard"><div class="lbl">Reference</div><div class="code">${esc(ticketId)}</div></div>` : ''}
       <p class="muted-note">We appreciate you taking the time to let us know. Our team will take a look shortly.</p>
     `;
   } else {
