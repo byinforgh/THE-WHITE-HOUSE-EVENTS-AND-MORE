@@ -1645,7 +1645,7 @@ async function markPaid(runId){
     const { error } = await supabaseClient.rpc('mark_payroll_paid_by_id', { p_run_id: runId });
     if(error) throw new Error(error.message);
     loadData();
-  }catch(e){ alert(e.message || 'Failed'); }
+  }catch(e){ showToast(e.message || 'Failed', true); }
 }
 
 function renderPayrollTable(){
