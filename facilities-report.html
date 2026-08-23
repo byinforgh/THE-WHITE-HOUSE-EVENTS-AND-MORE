@@ -181,6 +181,68 @@ const FALLBACK_LOCATIONS = (function(){
 const totalSteps = 3;
 const PAGE_LOAD_TIME = Date.now();
 
+// Offline/retry queue — same pattern as order.html's PENDING_KEY system.
+// A guest filling this in from a QR code walks away without staff
+// supervision, same as placing an order, so a lost connection here
+// carries the same silent-failure risk. fac_submit_ticket is safe to
+// retry: it checks client_id up front and returns the existing row
+// instead of creating a duplicate, so re-sending a queued report never
+// creates two tickets.
+const FAC_PENDING_KEY = 'whgh_facilities_report_pending_v1';
+const FAC_PENDING_MAX_AGE_MS = 2 * 60 * 60 * 1000; // 2 hours, matches order.html
+let facResumeAttempts = 0;
+
+function saveFacPendingReport(payload){
+  const queue = getFacPendingQueue();
+  queue.push(Object.assign({}, payload, { queuedAt: payload.queuedAt || Date.now() }));
+  try{ localStorage.setItem(FAC_PENDING_KEY, JSON.stringify(queue)); }catch(e){}
+}
+function saveFacPendingQueueRaw(queue){ try{ localStorage.setItem(FAC_PENDING_KEY, JSON.stringify(queue)); }catch(e){} }
+function getFacPendingQueue(){ try{ return JSON.parse(localStorage.getItem(FAC_PENDING_KEY) || '[]'); }catch(e){ return []; } }
+function clearFacPendingReport(clientId){ const queue = getFacPendingQueue().filter(p => p.clientId !== clientId); saveFacPendingQueueRaw(queue); }
+
+async function tryFacSubmit(payload){
+  try{
+    const { data, error } = await supabaseClient.rpc('fac_submit_ticket', {
+      p_client_id: payload.clientId,
+      p_location: payload.location,
+      p_category: 'Other',
+      p_priority: payload.priority,
+      p_description: payload.description,
+      p_reported_via: 'guest',
+      p_reporter_name: payload.reporterName || null,
+      p_reporter_contact: payload.reporterContact || null
+    });
+    if(error) throw new Error(error.message);
+    return { ok: true, data: { ticketId: data && data.id ? data.id.slice(0,8).toUpperCase() : '' } };
+  }catch(e){
+    return { ok: false, queued: true, error: 'No connection' };
+  }
+}
+
+async function resumeFacPendingReport(){
+  let queue = getFacPendingQueue();
+  if(queue.length === 0) return;
+  const now = Date.now();
+  const fresh = queue.filter(p => now - (p.queuedAt || 0) < FAC_PENDING_MAX_AGE_MS);
+  if(fresh.length !== queue.length){ saveFacPendingQueueRaw(fresh); queue = fresh; }
+  if(queue.length === 0) return;
+
+  for(const payload of queue){
+    const result = await tryFacSubmit(payload);
+    if(result.ok){
+      clearFacPendingReport(payload.clientId);
+      facResumeAttempts = 0;
+      showOutcome(false, { success: true, ticketId: result.data.ticketId });
+      return;
+    }
+  }
+  facResumeAttempts = Math.min(facResumeAttempts + 1, 6);
+  const delay = Math.min(30000, 3000 * Math.pow(2, facResumeAttempts)) * (0.6 + Math.random() * 0.4);
+  setTimeout(resumeFacPendingReport, delay);
+}
+resumeFacPendingReport();
+
 function buildProgress(){
   const el = document.getElementById('progress'); el.innerHTML='';
   for(let i=1;i<=totalSteps;i++){ const seg=document.createElement('div'); seg.className='seg'; seg.id='seg'+i; el.appendChild(seg); }
@@ -240,27 +302,38 @@ async function submitReport(){
   btn.disabled = true; spinner.style.display='inline-block'; label.textContent='Sending...';
 
   const clientId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : ('cid-'+Date.now()+'-'+Math.random().toString(36).slice(2));
+  const payload = {
+    clientId,
+    location: document.getElementById('location').value,
+    priority: document.getElementById('priority').value,
+    description: document.getElementById('description').value.trim(),
+    reporterName: document.getElementById('reporterName').value.trim() || null,
+    reporterContact: document.getElementById('reporterContact').value.trim() || null
+  };
 
-  let result = null;
-  try{
-    const { data, error } = await supabaseClient.rpc('fac_submit_ticket', {
-      p_client_id: clientId,
-      p_location: document.getElementById('location').value,
-      p_category: 'Other',
-      p_priority: document.getElementById('priority').value,
-      p_description: document.getElementById('description').value.trim(),
-      p_reported_via: 'guest',
-      p_reporter_name: document.getElementById('reporterName').value.trim() || null,
-      p_reporter_contact: document.getElementById('reporterContact').value.trim() || null
-    });
-    if(error) throw new Error(error.message);
-    result = { success: true, ticketId: data && data.id ? data.id.slice(0,8).toUpperCase() : '' };
-  }catch(e){
-    console.warn('Report issue:', e);
-  }finally{
-    btn.disabled=false; spinner.style.display='none'; label.textContent='Send Report';
-    showOutcome(false, result);
+  const result = await tryFacSubmit(payload);
+  btn.disabled=false; spinner.style.display='none'; label.textContent='Send Report';
+
+  if(result.ok){
+    showOutcome(false, { success: true, ticketId: result.data.ticketId });
+  } else if(result.queued){
+    saveFacPendingReport(payload);
+    showQueuedOutcome();
+    resumeFacPendingReport();
+  } else {
+    showOutcome(false, { success: false });
   }
+}
+
+function showQueuedOutcome(){
+  const el = document.getElementById('outcome');
+  el.innerHTML = `
+    <div class="success-icon">&#8987;</div>
+    <h1>Saved — sending when connected.</h1>
+    <p class="sub">No connection right now. Your report is saved on this device and will send automatically once it's back — no need to fill this in again.</p>
+  `;
+  document.querySelectorAll('.step').forEach(s=>s.classList.remove('active'));
+  document.querySelector('.step[data-step="4"]').classList.add('active');
 }
 
 function showOutcome(silentFail, result){
