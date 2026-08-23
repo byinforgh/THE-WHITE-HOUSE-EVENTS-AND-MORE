@@ -814,7 +814,7 @@ function showApiError(msg){
 function clearApiError(){ document.getElementById('errorBanner').classList.remove('active'); }
 
 function fmt(n){ return 'GHS ' + (parseFloat(n)||0).toFixed(2); }
-function esc(s){ return (s==null?'':String(s)).replace(/</g,'&lt;'); }
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 function tickClock(){
   const now = new Date();
@@ -1170,7 +1170,7 @@ function renderOverview(){
   document.getElementById('overviewExpenses').innerHTML = exp.length ? exp.map(e=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border-soft);font-size:12px"><span>${e.item} <span style="color:var(--muted);font-size:10px">(${e.category})</span></span><span style="color:var(--gold);font-family:'Space Mono',monospace">${fmt(e.amount)}</span></div>`).join('') : '<div class="empty">No expenses logged yet.</div>';
 
   const onShift = data.onShift || [];
-  document.getElementById('overviewShift').innerHTML = onShift.length ? onShift.map(s=>`<span class="onshift-pill">&#9679; ${s.name} — ${s.department}</span>`).join('') : '<div class="empty">Nobody checked in right now.</div>';
+  document.getElementById('overviewShift').innerHTML = onShift.length ? onShift.map(s=>`<span class="onshift-pill">&#9679; ${esc(s.name)} — ${esc(s.department)}</span>`).join('') : '<div class="empty">Nobody checked in right now.</div>';
 }
 
 function buildDailyChecklist(){
@@ -1227,7 +1227,7 @@ function openPayrollModal(){
   const pending = runs.filter(r=>r.status!=='Paid');
   openModal('Payroll — Recent Runs', `
     <div class="modal-section-label">GHS ${fmt(data.totalMonthlyPayrollGrossEstimate).replace('GHS ','')} est. gross this month &middot; ${pending.length} run(s) unpaid</div>
-    ${runs.length ? runs.map(r=>`<div class="list-row"><span>${r.name||'—'} <span style="color:var(--muted);font-size:10px">${r.periodLabel||''}</span></span><span>${fmt(r.netPay)} ${r.status==='Paid'?'<span class="pill pos">PAID</span>':`<button class="btn ghost" style="width:auto;padding:4px 10px;font-size:10px" onclick="markPaid('${r.runId}')">MARK PAID</button>`}</span></div>`).join('') : '<div class="empty">No payroll runs yet.</div>'}
+    ${runs.length ? runs.map(r=>`<div class="list-row"><span>${esc(r.name)||'—'} <span style="color:var(--muted);font-size:10px">${esc(r.periodLabel)||''}</span></span><span>${fmt(r.netPay)} ${r.status==='Paid'?'<span class="pill pos">PAID</span>':`<button class="btn ghost" style="width:auto;padding:4px 10px;font-size:10px" onclick="markPaid('${r.runId}')">MARK PAID</button>`}</span></div>`).join('') : '<div class="empty">No payroll runs yet.</div>'}
     <div class="action-row"><button class="btn ghost" onclick="jumpToTab('payroll')">OPEN PAYROLL &amp; STAFF TAB</button></div>`);
 }
 
@@ -1236,7 +1236,7 @@ function openMembersModal(){
   const top = (mem.topMembers||[]).slice(0,10);
   openModal('Members — Top By Points', `
     <div class="modal-section-label">${mem.totalCustomers||0} total members &middot; ${(mem.totalPointsLive||0).toLocaleString()} points live</div>
-    ${top.length ? top.map((m,i)=>`<div class="list-row clickable" onclick="openMemberDetailModal('${(m.custId||'').replace(/'/g,"\\'")}')"><span>${i+1}. ${m.name}</span><span style="color:var(--gold);font-family:'Space Mono',monospace">${m.points} pts &#8250;</span></div>`).join('') : '<div class="empty">No members yet.</div>'}
+    ${top.length ? top.map((m,i)=>`<div class="list-row clickable" onclick="openMemberDetailModal('${(m.custId||'').replace(/'/g,"\\'")}')"><span>${i+1}. ${esc(m.name)}</span><span style="color:var(--gold);font-family:'Space Mono',monospace">${m.points} pts &#8250;</span></div>`).join('') : '<div class="empty">No members yet.</div>'}
     <div class="action-row"><button class="btn ghost" onclick="jumpToTab('members')">OPEN MEMBERS TAB</button></div>`);
 }
 
@@ -1252,7 +1252,7 @@ function openTicketsModal(){
 function openOnShiftModal(){
   const onShift = data.onShift || [];
   openModal('On Shift Right Now', `
-    ${onShift.length ? onShift.map(s=>`<div class="list-row"><span>&#9679; ${s.name}</span><span style="color:var(--muted);font-size:11px">${s.department}</span></div>`).join('') : '<div class="empty">Nobody checked in right now.</div>'}
+    ${onShift.length ? onShift.map(s=>`<div class="list-row"><span>&#9679; ${esc(s.name)}</span><span style="color:var(--muted);font-size:11px">${esc(s.department)}</span></div>`).join('') : '<div class="empty">Nobody checked in right now.</div>'}
     <div class="action-row"><button class="btn ghost" onclick="jumpToTab('shifts')">OPEN SHIFTS TAB</button></div>`);
 }
 
@@ -1303,7 +1303,7 @@ function renderDailyOps(){
 
   document.getElementById('opsUnused').innerHTML = unusedStaff.length ? unusedStaff.map(s=>`
     <div class="list-row clickable" onclick="openStaffEditModalByInitials('${(s.initials||'').replace(/'/g,"\\'")}')">
-      <span>${s.full_name}${s.on_duty?' <span style="color:var(--green);font-size:10px">&#9679; ON DUTY</span>':''}</span>
+      <span>${esc(s.full_name)}${s.on_duty?' <span style="color:var(--green);font-size:10px">&#9679; ON DUTY</span>':''}</span>
       <span style="color:var(--muted);font-size:11px">${s.department||'—'} &#8250;</span>
     </div>`).join('') : '<div class="empty">Everyone on the roster has logged some activity.</div>';
 
@@ -1341,7 +1341,7 @@ function routeAlertClick(text){
 function openUnusedStaffModal(){
   const unusedStaff = data.unusedStaff || [];
   openModal('Staff With Zero Activity Today', `
-    ${unusedStaff.length ? unusedStaff.map(s=>`<div class="list-row clickable" onclick="openStaffEditModalByInitials('${(s.initials||'').replace(/'/g,"\\'")}')"><span>${s.full_name}${s.on_duty?' <span style="color:var(--green);font-size:10px">&#9679; ON DUTY</span>':''}</span><span style="color:var(--muted);font-size:11px">${s.department||'—'} &#8250;</span></div>`).join('') : '<div class="empty">Everyone on the roster has logged some activity.</div>'}
+    ${unusedStaff.length ? unusedStaff.map(s=>`<div class="list-row clickable" onclick="openStaffEditModalByInitials('${(s.initials||'').replace(/'/g,"\\'")}')"><span>${esc(s.full_name)}${s.on_duty?' <span style="color:var(--green);font-size:10px">&#9679; ON DUTY</span>':''}</span><span style="color:var(--muted);font-size:11px">${s.department||'—'} &#8250;</span></div>`).join('') : '<div class="empty">Everyone on the roster has logged some activity.</div>'}
     <div class="action-row"><button class="btn ghost" onclick="jumpToTab('payroll')">OPEN PAYROLL &amp; STAFF TAB</button></div>`);
 }
 
@@ -1350,7 +1350,7 @@ function openDeptModal(dept){
   openModal(dept + ' — Staff', `
     ${staffInDept.length ? staffInDept.map(s=>`
       <div class="list-row">
-        <span class="clickable" onclick="openStaffEditModal('${s.staffId}')">${s.onDuty?'&#9679; ':''}${s.fullName} <span style="color:var(--muted);font-size:10px">${s.role||''}</span></span>
+        <span class="clickable" onclick="openStaffEditModal('${s.staffId}')">${s.onDuty?'&#9679; ':''}${esc(s.fullName)} <span style="color:var(--muted);font-size:10px">${esc(s.role)||''}</span></span>
         <span class="action-row" style="margin:0"><button class="btn ${s.onDuty?'danger':'teal'}" style="width:auto;padding:5px 12px;font-size:10px" onclick="quickShiftToggle('${s.staffId}','${s.fullName.replace(/'/g,"\\'")}','${dept}',${s.onDuty})">${s.onDuty?'CHECK OUT':'CHECK IN'}</button></span>
       </div>`).join('') : '<div class="empty">No active staff assigned to this department.</div>'}
     <div class="action-row"><button class="btn ghost" onclick="jumpToTab('shifts')">OPEN SHIFTS TAB</button></div>`);
@@ -1471,7 +1471,7 @@ function renderStaffList(){
   const el = document.getElementById('staffList');
   el.innerHTML = staff.length ? staff.map(s=>`
     <div class="staff-card clickable" onclick="openStaffEditModal('${s.staffId}')">
-      <div><div class="s-name">${s.fullName} ${s.status!=='Active'?'<span style="color:var(--red);font-size:10px">('+s.status+')</span>':''}</div><div class="s-meta">${s.initials||'—'} · ${s.department} · ${s.role||'—'} · ${s.payType} ${fmt(s.payRate)}</div></div>
+      <div><div class="s-name">${esc(s.fullName)} ${s.status!=='Active'?'<span style="color:var(--red);font-size:10px">('+s.status+')</span>':''}</div><div class="s-meta">${esc(s.initials)||'—'} · ${esc(s.department)} · ${esc(s.role)||'—'} · ${esc(s.payType)} ${fmt(s.payRate)}</div></div>
       <span style="color:var(--muted);font-size:16px">&#8250;</span>
     </div>`).join('') : '<div class="empty">No staff yet — add one below.</div>';
 }
@@ -1479,9 +1479,9 @@ function renderStaffList(){
 function populateStaffSelects(){
   const staff = (data.staff||[]).filter(s=>s.status==='Active');
   const prSel = document.getElementById('prStaff');
-  prSel.innerHTML = '<option value="">All active staff (one full period)</option>' + staff.map(s=>`<option value="${s.staffId}">${s.fullName} (${s.department})</option>`).join('');
+  prSel.innerHTML = '<option value="">All active staff (one full period)</option>' + staff.map(s=>`<option value="${s.staffId}">${esc(s.fullName)} (${esc(s.department)})</option>`).join('');
   const shSel = document.getElementById('shStaff');
-  shSel.innerHTML = '<option value="">Select staff...</option>' + staff.map(s=>`<option value="${s.staffId}" data-name="${s.fullName}" data-dept="${s.department}" data-initials="${s.initials||''}">${s.fullName} (${s.department})</option>`).join('');
+  shSel.innerHTML = '<option value="">Select staff...</option>' + staff.map(s=>`<option value="${s.staffId}" data-name="${esc(s.fullName)}" data-dept="${esc(s.department)}" data-initials="${esc(s.initials)||''}">${esc(s.fullName)} (${esc(s.department)})</option>`).join('');
 }
 
 // ---------- STAFF EDIT MODAL (view + edit, the operational heart of Payroll & Staff) ----------
@@ -1576,8 +1576,8 @@ function renderStaffProfiles(){
       <div class="metric-hint">edit &#8250;</div>
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
         <div>
-          <div style="font-weight:800;font-size:14px">${s.full_name}${s.on_duty?' <span style="color:var(--green);font-size:10px">&#9679; ON DUTY</span>':''}</div>
-          <div style="font-size:11px;color:var(--muted)">${s.initials||'—'} · ${s.department||'—'} · ${s.role||'—'}</div>
+          <div style="font-weight:800;font-size:14px">${esc(s.full_name)}${s.on_duty?' <span style="color:var(--green);font-size:10px">&#9679; ON DUTY</span>':''}</div>
+          <div style="font-size:11px;color:var(--muted)">${esc(s.initials)||'—'} · ${esc(s.department)||'—'} · ${esc(s.role)||'—'}</div>
         </div>
         <div style="text-align:right"><div class="metric-value" style="font-size:18px">${totalActivity}</div><div class="metric-sub">total activity</div></div>
       </div>
@@ -1648,7 +1648,7 @@ function renderPayrollTable(){
   el.innerHTML = runs.length ? runs.map(r=>`
     <tr>
       <td style="font-size:11px">${r.periodLabel||'—'}</td>
-      <td style="font-size:11px">${r.name||'—'}</td>
+      <td style="font-size:11px">${esc(r.name)||'—'}</td>
       <td style="font-family:'Space Mono',monospace;font-size:11px">${fmt(r.grossPay)}</td>
       <td style="font-family:'Space Mono',monospace;font-size:11px;color:var(--red)">${fmt(r.ssnitEmployee)}</td>
       <td style="font-family:'Space Mono',monospace;font-size:11px;color:var(--red)">${fmt(r.payeTax)}</td>
@@ -1719,23 +1719,26 @@ function renderBarCanteen(){
 
   const orders = data.activeOrders || [];
   document.getElementById('barActiveOrders').innerHTML = orders.length ? orders.map(o=>`
-    <div class="list-row clickable" onclick="openOrderDetailModal('${o.table}','${o.orderId}')">
-      <span>${o.table==='table_orders'?'&#127860;':'&#127858;'} ${o.locationType||''}${o.locationDetail?(' '+o.locationDetail):''} <span style="color:var(--muted);font-size:10px">${o.customerName||'walk-in'}</span></span>
-      <span>${fmt(o.total)} <span class="pill ${o.status==='Placed'?'warn':'mono'}">${o.status}</span></span>
+    <div class="list-row clickable" data-order-table="${esc(o.table)}" data-order-id="${esc(o.orderId)}">
+      <span>${o.table==='table_orders'?'&#127860;':'&#127858;'} ${esc(o.locationType)||''}${o.locationDetail?(' '+esc(o.locationDetail)):''} <span style="color:var(--muted);font-size:10px">${esc(o.customerName)||'walk-in'}</span></span>
+      <span>${fmt(o.total)} <span class="pill ${o.status==='Placed'?'warn':'mono'}">${esc(o.status)}</span></span>
     </div>`).join('') : '<div class="empty">No active orders right now.</div>';
+  document.getElementById('barActiveOrders').querySelectorAll('[data-order-table]').forEach(row => {
+    row.addEventListener('click', () => openOrderDetailModal(row.dataset.orderTable, row.dataset.orderId));
+  });
 
   const low = bar.lowStockItems || [];
-  document.getElementById('barLowStock').innerHTML = low.length ? low.map(i=>`<span class="onshift-pill" style="border-color:var(--red);color:var(--red);background:#2a0a0a">${i.item||i}</span>`).join('') : '<div class="empty">Nothing low right now.</div>';
+  document.getElementById('barLowStock').innerHTML = low.length ? low.map(i=>`<span class="onshift-pill" style="border-color:var(--red);color:var(--red);background:#2a0a0a">${esc(i.item||i)}</span>`).join('') : '<div class="empty">Nothing low right now.</div>';
 }
 
 function openOrderDetailModal(table, orderId){
   const o = (data.activeOrders||[]).find(x=>x.table===table && String(x.orderId)===String(orderId));
   if(!o){ showToast('Order not found — it may have just been updated.', true); return; }
   const items = Array.isArray(o.items) ? o.items : [];
-  openModal('Order — ' + (o.locationType||'') + ' ' + (o.locationDetail||''), `
-    <div class="modal-section-label">${o.customerName||'Walk-in guest'}${o.phone?' · '+o.phone:''}</div>
+  openModal('Order — ' + esc(o.locationType||'') + ' ' + esc(o.locationDetail||''), `
+    <div class="modal-section-label">${esc(o.customerName)||'Walk-in guest'}${o.phone?' · '+esc(o.phone):''}</div>
     <div class="scroll-table" style="max-height:200px;margin-bottom:12px">
-      ${items.length ? items.map(it=>`<div class="list-row"><span>${it.qty||1}&times; ${it.name||it.item||'item'}</span><span style="font-family:'Space Mono',monospace">${fmt((it.price||0)*(it.qty||1))}</span></div>`).join('') : '<div class="empty">No item detail on this order.</div>'}
+      ${items.length ? items.map(it=>`<div class="list-row"><span>${it.qty||1}&times; ${esc(it.name||it.item||'item')}</span><span style="font-family:'Space Mono',monospace">${fmt((it.price||0)*(it.qty||1))}</span></div>`).join('') : '<div class="empty">No item detail on this order.</div>'}
     </div>
     <div class="subtotal-row" style="border-top:1px solid var(--border);padding-top:10px"><span>Total</span><span>${fmt(o.total)}</span></div>
     <div class="modal-section-label">Update status</div>
@@ -1804,9 +1807,9 @@ function openTicketDetailModal(ticketId){
       <span class="pill ${t.status==='closed'?'pos':'warn'}">${t.status}</span>
       ${t.verified ? `<span class="pill ${t.verified==='YES'?'pos':'neg'}">VERIFIED: ${t.verified}</span>` : ''}
     </div>
-    ${t.location ? `<div style="font-size:12px;color:var(--text-dim);margin-bottom:8px"><b>Location:</b> ${t.location}</div>` : ''}
-    ${t.description ? `<div style="font-size:12.5px;margin-bottom:12px">${t.description}</div>` : ''}
-    <div style="font-size:10.5px;color:var(--muted);margin-bottom:14px">Logged ${new Date(t.createdAt).toLocaleString('en-GB')}${t.assignedInitials?' · assigned to '+t.assignedInitials:''}</div>
+    ${t.location ? `<div style="font-size:12px;color:var(--text-dim);margin-bottom:8px"><b>Location:</b> ${esc(t.location)}</div>` : ''}
+    ${t.description ? `<div style="font-size:12.5px;margin-bottom:12px">${esc(t.description)}</div>` : ''}
+    <div style="font-size:10.5px;color:var(--muted);margin-bottom:14px">Logged ${new Date(t.createdAt).toLocaleString('en-GB')}${t.assignedInitials?' · assigned to '+esc(t.assignedInitials):''}</div>
     <div class="modal-section-label">Update status</div>
     <div class="action-row">
       <button class="btn ghost" onclick="setTicketStatus('${t.id}','open')">OPEN</button>
@@ -1899,9 +1902,9 @@ function renderMembers(){
     <div class="metric-card green"><div class="metric-label">NEW TODAY</div><div class="metric-value">${mem.newToday||0}</div></div>
     <div class="metric-card gold"><div class="metric-label">TOTAL POINTS LIVE</div><div class="metric-value" style="font-size:20px">${(mem.totalPointsLive||0).toLocaleString()}</div></div>`;
   const top = mem.topMembers || [];
-  document.getElementById('memberTop').innerHTML = top.length ? top.map((m,i)=>`<div class="list-row clickable" onclick="openMemberDetailModal('${(m.custId||'').replace(/'/g,"\\'")}')"><span>${i+1}. ${m.name} ${m.status==='VIP'?'<span class="pill cocktail" style="margin-left:6px">VIP</span>':''}</span><span style="color:var(--gold);font-family:'Space Mono',monospace">${m.points} pts &#8250;</span></div>`).join('') : '<div class="empty">No members yet.</div>';
+  document.getElementById('memberTop').innerHTML = top.length ? top.map((m,i)=>`<div class="list-row clickable" onclick="openMemberDetailModal('${(m.custId||'').replace(/'/g,"\\'")}')"><span>${i+1}. ${esc(m.name)} ${m.status==='VIP'?'<span class="pill cocktail" style="margin-left:6px">VIP</span>':''}</span><span style="color:var(--gold);font-family:'Space Mono',monospace">${m.points} pts &#8250;</span></div>`).join('') : '<div class="empty">No members yet.</div>';
   const vip = mem.vipRequests || [];
-  document.getElementById('memberVipRequests').innerHTML = vip.length ? vip.map(v=>`<div class="list-row clickable" onclick="openMemberDetailModal('${(v.custId||'').replace(/'/g,"\\'")}')"><span>${v.name} · ${v.phone||'—'}</span><span class="pill warn">${v.custId} &#8250;</span></div>`).join('') : '<div class="empty">No VIP requests pending.</div>';
+  document.getElementById('memberVipRequests').innerHTML = vip.length ? vip.map(v=>`<div class="list-row clickable" onclick="openMemberDetailModal('${(v.custId||'').replace(/'/g,"\\'")}')"><span>${esc(v.name)} · ${esc(v.phone)||'—'}</span><span class="pill warn">${v.custId} &#8250;</span></div>`).join('') : '<div class="empty">No VIP requests pending.</div>';
 }
 
 function openMemberDetailModal(custId){
@@ -1918,7 +1921,7 @@ function openMemberDetailModal(custId){
     </div>
     <button class="btn ghost" onclick="modalAdjustPoints('${custId.replace(/'/g,"\\'")}')">APPLY POINTS CHANGE</button>
     <div class="modal-section-label">Redeem a reward</div>
-    <select id="mdReward"><option value="">Choose a reward...</option>${rewards.map(r=>`<option value="${(r.name||r.reward_name||'').replace(/"/g,'&quot;')}">${r.name||r.reward_name} ${r.points_cost?('('+r.points_cost+' pts)'):''}</option>`).join('')}</select>
+    <select id="mdReward"><option value="">Choose a reward...</option>${rewards.map(r=>`<option value="${esc(r.name||r.reward_name||'')}">${esc(r.name||r.reward_name)} ${r.points_cost?('('+r.points_cost+' pts)'):''}</option>`).join('')}</select>
     <button class="btn teal" onclick="modalRedeemReward('${custId.replace(/'/g,"\\'")}')">REDEEM SELECTED REWARD</button>
     <div class="modal-section-label">Membership status</div>
     <div class="action-row">
@@ -1978,7 +1981,7 @@ async function submitRegisterMember(){
     if(error) throw new Error(error.message);
     const { data: cust } = await supabaseClient.from('bar_customers').select('*').eq('customer_id', custId).maybeSingle();
     if(cust){
-      resultEl.innerHTML = `<span style="color:var(--green)">&#10003; ${cust.name || 'Guest'} — ${custId} · ${cust.loyalty_points||0} points on file.</span>`;
+      resultEl.innerHTML = `<span style="color:var(--green)">&#10003; ${esc(cust.name) || 'Guest'} — ${esc(custId)} · ${cust.loyalty_points||0} points on file.</span>`;
     }else{
       resultEl.innerHTML = `<span style="color:var(--green)">&#10003; Registered — ${custId}</span>`;
     }
@@ -2011,9 +2014,9 @@ async function submitShift(action){
 
 function renderShifts(){
   const onShift = data.onShift || [];
-  document.getElementById('shiftOnNow').innerHTML = onShift.length ? onShift.map(s=>`<span class="onshift-pill">&#9679; ${s.name} — ${s.department}</span>`).join('') : '<div class="empty">Nobody checked in right now.</div>';
+  document.getElementById('shiftOnNow').innerHTML = onShift.length ? onShift.map(s=>`<span class="onshift-pill">&#9679; ${esc(s.name)} — ${esc(s.department)}</span>`).join('') : '<div class="empty">Nobody checked in right now.</div>';
   const log = data.shiftLog || [];
-  document.getElementById('shiftLogBody').innerHTML = log.length ? log.map(l=>`<tr><td style="font-size:11px;font-family:'Space Mono',monospace">${new Date(l.timestamp).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</td><td>${l.name||'—'}</td><td style="font-size:11px">${l.department||'—'}</td><td>${l.action==='Check In'?'<span class="pill pos">IN</span>':'<span class="pill neg">OUT</span>'}</td><td style="font-size:11px;color:var(--text-dim)">${l.source||'—'}</td></tr>`).join('') : '<tr><td colspan="5" class="empty">No shift activity logged yet.</td></tr>';
+  document.getElementById('shiftLogBody').innerHTML = log.length ? log.map(l=>`<tr><td style="font-size:11px;font-family:'Space Mono',monospace">${new Date(l.timestamp).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</td><td>${esc(l.name)||'—'}</td><td style="font-size:11px">${esc(l.department)||'—'}</td><td>${l.action==='Check In'?'<span class="pill pos">IN</span>':'<span class="pill neg">OUT</span>'}</td><td style="font-size:11px;color:var(--text-dim)">${l.source||'—'}</td></tr>`).join('') : '<tr><td colspan="5" class="empty">No shift activity logged yet.</td></tr>';
 }
 
 // ---------- SHIFT SUMMARIES ----------
@@ -2062,7 +2065,7 @@ function populateRestockBySelect(){
   if(!sel) return;
   const staff = (data.staff||[]).filter(s=>s.status==='Active');
   const current = sel.value;
-  sel.innerHTML = '<option value="">Restocked by...</option>' + staff.map(s=>`<option value="${s.fullName}">${s.fullName} (${s.department})</option>`).join('');
+  sel.innerHTML = '<option value="">Restocked by...</option>' + staff.map(s=>`<option value="${esc(s.fullName)}">${esc(s.fullName)} (${esc(s.department)})</option>`).join('');
   sel.value = current;
 }
 
@@ -2077,14 +2080,14 @@ function renderStock(){
 
   document.getElementById('reorderList').innerHTML = reorder.length ? reorder.map(r=>`
     <div class="reorder-row clickable" onclick="prefillRestock('${r.item.replace(/'/g,"\\'")}',${r.suggestedQty},${r.parLevel},${r.costPerUnit})">
-      <div><div class="rr-item">${r.item}</div><div class="rr-meta">${r.currentQty}${r.unit} on hand · par ${r.parLevel}${r.unit} · suggest +${r.suggestedQty}${r.unit}</div></div>
+      <div><div class="rr-item">${esc(r.item)}</div><div class="rr-meta">${r.currentQty}${esc(r.unit)} on hand · par ${r.parLevel}${esc(r.unit)} · suggest +${r.suggestedQty}${esc(r.unit)}</div></div>
       <div class="rr-cost">${fmt(r.estCost)} &#8250;</div>
     </div>`).join('') : '<div class="empty">Nothing at or below par right now.</div>';
 
   document.getElementById('supplierDirectory').innerHTML = (data.suppliers||[]).length ? data.suppliers.map(s=>`
     <div class="supplier-card clickable" onclick="jumpToExpensesFiltered('${s.name.replace(/'/g,"\\'")}')">
-      <div class="sc-name">${s.name}</div>
-      <div class="sc-meta">${s.contact||'No phone on file'} · ${s.orders} order(s) · last ${s.lastDate ? new Date(s.lastDate).toLocaleDateString('en-GB') : '—'} · <span style="color:var(--gold)">${fmt(s.totalSpend)} total spend</span></div>
+      <div class="sc-name">${esc(s.name)}</div>
+      <div class="sc-meta">${esc(s.contact)||'No phone on file'} · ${s.orders} order(s) · last ${s.lastDate ? new Date(s.lastDate).toLocaleDateString('en-GB') : '—'} · <span style="color:var(--gold)">${fmt(s.totalSpend)} total spend</span></div>
       <div style="font-size:10px;color:var(--muted);margin-top:2px">tap to see this supplier's expense history &#8250;</div>
     </div>`).join('') : '<div class="empty">No suppliers on file yet — they appear here once logged against an expense.</div>';
 
@@ -2387,7 +2390,7 @@ function renderGoCart(){
   rowsEl.innerHTML = names.map(name => {
     const m = (data.menu||[]).find(mm=>mm.item===name);
     const price = m ? m.price : 0; const qty = goCart[name];
-    return `<div class="cart-row"><div class="cr-name">${name}<span class="cr-price">GHS ${price.toFixed(2)} each</span></div>
+    return `<div class="cart-row"><div class="cr-name">${esc(name)}<span class="cr-price">GHS ${price.toFixed(2)} each</span></div>
       <div class="qty-stepper"><button onclick="goSetQty('${name.replace(/'/g,"\\'")}', ${qty-1})">&minus;</button><span>${qty}</span><button onclick="goSetQty('${name.replace(/'/g,"\\'")}', ${qty+1})">+</button></div>
       <div class="cart-line-total">GHS ${(price*qty).toFixed(2)}</div></div>`;
   }).join('');
