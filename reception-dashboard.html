@@ -872,7 +872,8 @@ let state = {
   staff: [], staffRoster: [], shiftLog: [], notes: [], recognitionPosts: [],
   roomFilter: 'All', bookingFilter: 'All', ticketFilter: 'Open', taskFilter: 'active', noteFilter: 'all', showTaskArchive: false,
   facilitiesOnline: false,
-  actingAs: (function(){ try{ return localStorage.getItem('reception_acting_as') || ''; }catch(e){ return ''; } })()
+  actingAs: (function(){ try{ return localStorage.getItem('reception_acting_as') || ''; }catch(e){ return ''; } })(),
+  actingAsExpires: (function(){ try{ return parseInt(localStorage.getItem('reception_acting_as_expires')||'0',10) || 0; }catch(e){ return 0; } })()
 };
 
 function showToast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2500); }
@@ -991,6 +992,7 @@ async function loadAll(){
     renderCleaning();
     renderStaffRosterOptions(); renderOnShift(); renderShiftLog();
     populateBookingStaffDropdown();
+    checkActingAsExpiry();
     populateActingAsDropdown();
     populateStaffAttributionDropdowns();
     applyActingAsToForms();
@@ -1201,7 +1203,7 @@ function renderBookings(){
     </tr>`).join('');
 }
 async function archiveBookingRow(id){
-  const by = getBookingAddedBy() || prompt('Your name, for the record?');
+  const by = getBookingAddedBy() || requireActingAs();
   if(!by) return;
   try{
     const { error } = await supabaseClient.rpc('archive_booking', { p_booking_id: id, p_by: by });
@@ -1227,7 +1229,7 @@ async function setBookingStatus(id, status){
 }
 
 async function checkinBookingRow(id){
-  const by = getBookingAddedBy() || prompt('Your name, for the record?');
+  const by = getBookingAddedBy() || requireActingAs();
   if(!by) return;
   try{
     const { error } = await supabaseClient.rpc('checkin_booking', { p_booking_id: id, p_by: by });
@@ -1236,7 +1238,7 @@ async function checkinBookingRow(id){
   }catch(e){ showToast('Could not check in: ' + (e.message||'error')); }
 }
 async function checkoutBookingRow(id){
-  const by = getBookingAddedBy() || prompt('Your name, for the record?');
+  const by = getBookingAddedBy() || requireActingAs();
   if(!by) return;
   try{
     const { error } = await supabaseClient.rpc('checkout_booking', { p_booking_id: id, p_by: by });
@@ -1246,7 +1248,7 @@ async function checkoutBookingRow(id){
 }
 async function cancelBookingRow(id){
   if(!confirm('Cancel this booking? Any room held for it will be freed.')) return;
-  const by = getBookingAddedBy() || prompt('Your name, for the record?');
+  const by = getBookingAddedBy() || requireActingAs();
   if(!by) return;
   try{
     const { error } = await supabaseClient.rpc('cancel_booking', { p_booking_id: id, p_by: by });
@@ -1601,7 +1603,46 @@ async function submitClockOut(initials){
 // Fills in every "reported by / taken by / staff" field across the
 // dashboard automatically, and is what every activity tally on the
 // Manager Dashboard Staff Profile is keyed on.
+//
+// v1.2 SECURITY FIX: a PIN entered once used to authenticate this
+// tablet forever (state.actingAs was restored from localStorage on
+// every load with no re-check). It now expires after 4 hours, so
+// whoever picks up a shared tablet next has to re-enter a PIN rather
+// than silently inheriting the last person's identity. checkActingAsExpiry()
+// runs on every loadAll() (the existing 60s refresh loop already
+// calls this), so expiry is caught promptly without a separate timer.
 // ---------------------------------------------------------------------------
+const ACTING_AS_TTL_MS = 4 * 60 * 60 * 1000;
+
+function checkActingAsExpiry(){
+  if(state.actingAs && (!state.actingAsExpires || Date.now() > state.actingAsExpires)){
+    clearActingAs();
+  }
+}
+function clearActingAs(){
+  state.actingAs = ''; state.actingAsExpires = 0;
+  try{ localStorage.removeItem('reception_acting_as'); localStorage.removeItem('reception_acting_as_expires'); }catch(e){}
+  const sel = document.getElementById('actingAsSelect');
+  if(sel) sel.value = '';
+  const note = document.getElementById('actingAsNote');
+  if(note) note.style.display = 'block';
+  applyActingAsToForms();
+}
+// requireActingAs(): every destructive/attributed action (booking
+// cancel/check-in/check-out, staff notes, etc.) calls this first
+// instead of falling back to a free-text prompt() for "your name" —
+// a typed name proves nothing; a verified PIN identity does.
+function requireActingAs(){
+  checkActingAsExpiry();
+  if(!state.actingAs){
+    showToast('Select who you are (top right) and enter your PIN before doing this.');
+    document.getElementById('actingAsNote').style.display = 'block';
+    return null;
+  }
+  const s = (state.staff||[]).find(x=>x.initials===state.actingAs);
+  return s ? s.full_name : state.actingAs;
+}
+
 function populateActingAsDropdown(){
   const sel = document.getElementById('actingAsSelect');
   if(!sel) return;
@@ -1613,7 +1654,11 @@ function populateActingAsDropdown(){
 }
 function setActingAs(initials){
   state.actingAs = initials || '';
-  try{ localStorage.setItem('reception_acting_as', state.actingAs); }catch(e){}
+  state.actingAsExpires = initials ? (Date.now() + ACTING_AS_TTL_MS) : 0;
+  try{
+    localStorage.setItem('reception_acting_as', state.actingAs);
+    localStorage.setItem('reception_acting_as_expires', String(state.actingAsExpires));
+  }catch(e){}
   const sel = document.getElementById('actingAsSelect');
   if(sel) sel.value = state.actingAs;
   document.getElementById('actingAsNote').style.display = state.actingAs ? 'none' : 'block';
@@ -2051,7 +2096,8 @@ async function submitNote(){
   const result = document.getElementById('ntResult');
   if(!body){ result.innerHTML = '<span class="err-msg">Write something first.</span>'; return; }
   const authorSel = document.getElementById('ntAuthor');
-  const author = authorSel.value === '__other__' ? (prompt('Your name?')||'Reception') : (authorSel.value || 'Reception');
+  const author = authorSel.value === '__other__' ? requireActingAs() : (authorSel.value || 'Reception');
+  if(authorSel.value === '__other__' && !author) return;
   result.innerHTML = '<span style="color:var(--muted)">Saving…</span>';
   try{
     const { error } = await supabaseClient.rpc('create_staff_note', {
