@@ -167,6 +167,7 @@ body::after{
 .metric-card::after{ content:''; position:absolute; top:-30%; right:-20%; width:130px; height:130px; border-radius:50%; opacity:.14; background:var(--accent,var(--gold)); filter:blur(18px); }
 .metric-card.gold{ --accent:var(--gold); } .metric-card.teal{ --accent:var(--teal); } .metric-card.red{ --accent:var(--red); }
 .metric-card.green{ --accent:var(--green); } .metric-card.purple{ --accent:var(--purple); }
+.metric-card.amber{ --accent:var(--amber); } .metric-card.cyan{ --accent:var(--cyan); }
 .metric-label{ font-size:10px; font-weight:700; letter-spacing:1.6px; color:var(--muted); margin-bottom:10px; text-transform:uppercase; }
 .metric-value{ font-size:29px; font-weight:700; font-family:'Space Grotesk',sans-serif; line-height:1; color:var(--accent,var(--gold)); }
 .metric-sub{ font-size:11.5px; color:var(--text-dim); margin-top:7px; }
@@ -198,9 +199,10 @@ body::after{
 .leader-sub{ font-size:10.5px; color:var(--muted); margin-top:2px; }
 .leader-pts{ margin-left:auto; font-family:'IBM Plex Mono',monospace; font-weight:700; color:var(--gold-deep); font-size:15px; flex:none; }
 .rec-card{ background:var(--card-hi); border:1px solid var(--border); border-left:3px solid var(--purple); border-radius:10px; padding:13px 15px; margin-bottom:9px; }
-.rec-card.type-tournament{ border-left-color:var(--gold); }
+.rec-card.type-tournamentwinner{ border-left-color:var(--gold); }
 .rec-card.type-shoutout{ border-left-color:var(--teal); }
 .rec-card.type-milestone{ border-left-color:var(--green); }
+.rec-card.type-announcement{ border-left-color:var(--cyan); }
 .present-btn{ background:linear-gradient(155deg,#a389e8,#7c5cd6); color:#fff; }
 #presentOverlay{ display:none; position:fixed; inset:0; z-index:500; background:linear-gradient(150deg,#171512,#0f0e10); color:#f6f0e2; overflow-y:auto; padding:48px 60px; }
 #presentOverlay.show{ display:block; }
@@ -435,6 +437,16 @@ label.f{ display:block; font-size:10px; color:var(--muted); font-weight:700; let
           <div id="todayVip"></div>
         </div>
       </div>
+      <div class="two-col">
+        <div class="card">
+          <div class="card-title clickable" onclick="switchTab('cleaning')">&#128736; Open Maintenance / Cleaning Issues <span class="go-arrow">View all &rarr;</span></div>
+          <div id="todayIssues"></div>
+        </div>
+        <div class="card">
+          <div class="card-title clickable" onclick="switchTab('staff')">&#128100; On Shift Now <span class="go-arrow">View all &rarr;</span></div>
+          <div id="todayStaff"></div>
+        </div>
+      </div>
       <div class="card">
         <div class="card-title clickable" onclick="switchTab('rooms')">&#128101; Guests In Today &mdash; In-House &amp; Walk-In <span class="go-arrow">View rooms &rarr;</span></div>
         <div id="todayGuests"></div>
@@ -542,14 +554,23 @@ label.f{ display:block; font-size:10px; color:var(--muted); font-weight:700; let
         </div>
         <div class="card">
           <div class="card-title">&#8901; Check In</div>
-          <label class="f">Staff member</label>
-          <select id="ciExisting"><option value="">Select your name…</option></select>
-          <button class="btn teal" onclick="submitClockIn()">&#8901; Check In</button>
+          <div class="note-box gold" id="ciNoIdentityNote" style="display:none">Sign in as yourself first: use "Who are you?" at the top right and enter your PIN. Nobody else can check you in.</div>
+          <div id="ciIdentityWrap" style="display:none">
+            <label class="f">Checking in as</label>
+            <div id="ciIdentityName" style="font-family:var(--font-display);font-weight:700;font-size:15px;color:var(--cream);margin-bottom:10px"></div>
+            <button class="btn teal" onclick="submitClockIn()">&#8901; Check In</button>
+          </div>
           <div id="ciResult" class="result-msg"></div>
         </div>
       </div>
       <div class="card">
-        <div class="card-title">&#128203; Today's Shift Log</div>
+        <div class="card-title">&#128203; Shift Log &amp; Hours</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+          <label class="f" style="margin:0">Date</label>
+          <input type="date" id="shiftLogDate" onchange="onShiftLogDateChange()" style="max-width:170px">
+          <button class="btn small ghost" onclick="setShiftLogToday()">Today</button>
+          <span id="shiftLogTotals" style="font-size:11.5px;color:var(--text-dim);margin-left:auto"></span>
+        </div>
         <div class="scroll-table"><table><thead><tr><th>Staff</th><th>Role</th><th>In</th><th>Out</th><th>Duration</th><th>Status</th><th></th></tr></thead><tbody id="shiftLogBody"></tbody></table></div>
       </div>
     </div>
@@ -1061,13 +1082,27 @@ function renderToday(){
   const urgentTickets = openTickets.filter(t=>t.priority==='Urgent');
   const todaysBookings = state.bookings.filter(b => (b.check_in && fmtDate(b.check_in)===todayStr) || fmtDate(b.created_at)===todayStr);
   const vipQueue = state.guests.filter(g => (g.notes||'').toUpperCase().indexOf('VIP REQUESTED')!==-1 && g.membership_status!=='VIP');
+  const openIssues = (state.cleaningLogs||[]).filter(c=>c.result==='Fail' && !c.corrected);
+  const onShiftNow = (state.staff||[]).filter(s=>s.on_duty);
 
   document.getElementById('todayMetrics').innerHTML = `
     <div class="metric-card gold clickable" onclick="switchTab('rooms');setRoomFilter('Occupied')"><div class="metric-label">Rooms Occupied</div><div class="metric-value">${occupied}/${state.rooms.length||25}</div><div class="metric-sub">${vacant} vacant right now: tap to view</div></div>
     <div class="metric-card teal clickable" onclick="switchTab('tasks')"><div class="metric-label">Open Tasks</div><div class="metric-value">${openTasks.length}</div><div class="metric-sub">on the to-do list: tap to view</div></div>
     <div class="metric-card red clickable" onclick="switchTab('facilities')"><div class="metric-label">Open Breakdowns</div><div class="metric-value">${openTickets.length}</div><div class="metric-sub">${urgentTickets.length} marked urgent: tap to view</div></div>
     <div class="metric-card green clickable" onclick="switchTab('bookings')"><div class="metric-label">Today's Bookings</div><div class="metric-value">${todaysBookings.length}</div><div class="metric-sub">check-ins/events today: tap to view</div></div>
-    <div class="metric-card purple clickable" onclick="switchTab('guests')"><div class="metric-label">VIP Follow-Ups</div><div class="metric-value">${vipQueue.length}</div><div class="metric-sub">awaiting management contact: tap to view</div></div>`;
+    <div class="metric-card purple clickable" onclick="switchTab('guests')"><div class="metric-label">VIP Follow-Ups</div><div class="metric-value">${vipQueue.length}</div><div class="metric-sub">awaiting management contact: tap to view</div></div>
+    <div class="metric-card amber clickable" onclick="switchTab('cleaning')"><div class="metric-label">Open Maintenance Issues</div><div class="metric-value">${openIssues.length}</div><div class="metric-sub">from cleaning/room checks: tap to view</div></div>
+    <div class="metric-card cyan clickable" onclick="switchTab('staff')"><div class="metric-label">On Shift Now</div><div class="metric-value">${onShiftNow.length}</div><div class="metric-sub">checked in right now: tap to view</div></div>`;
+
+  document.getElementById('todayIssues').innerHTML = openIssues.length ? openIssues.slice(0,6).map(c=>`
+    <div style="padding:8px 0;border-bottom:1px solid var(--border-soft);font-size:12.5px;display:flex;justify-content:space-between;gap:8px;cursor:pointer" onclick="switchTab('cleaning')">
+      <span>${esc(c.zone)}${c.location?': '+esc(c.location):''}${c.issues_found?' — '+esc((c.issues_found||'').slice(0,40))+((c.issues_found||'').length>40?'…':''):''}</span><span class="pill urgent">OPEN</span>
+    </div>`).join('') : '<div class="empty">Nothing outstanding.</div>';
+
+  document.getElementById('todayStaff').innerHTML = onShiftNow.length ? onShiftNow.slice(0,6).map(s=>`
+    <div style="padding:8px 0;border-bottom:1px solid var(--border-soft);font-size:12.5px;display:flex;justify-content:space-between;gap:8px;cursor:pointer" onclick="switchTab('staff')">
+      <span>${esc(s.full_name)} <span style="color:var(--text-dim)">(${esc(s.role||s.department)||'Staff'})</span></span><span style="color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:11px">In ${fmtTime(s.on_duty_since)}</span>
+    </div>`).join('') : '<div class="empty">Nobody checked in right now.</div>';
 
   document.getElementById('todayTasks').innerHTML = openTasks.length ? openTasks.slice(0,6).map(t=>`
     <div style="padding:8px 0;border-bottom:1px solid var(--border-soft);font-size:12.5px;display:flex;justify-content:space-between;gap:8px;cursor:pointer" onclick="switchTab('tasks')">
@@ -1522,13 +1557,29 @@ async function submitVipInterest(){
 // Bar Dashboard, so anyone can check in at Reception and it shows up
 // everywhere (Manager Dashboard Staff Profile tallies it automatically).
 // ---------------------------------------------------------------------------
+// Check-in identity comes ONLY from the PIN-verified "Who are you?" selector
+// at the top right — there is no free dropdown of other staff names here.
+// This is what stops one person checking somebody else in.
 function renderStaffRosterOptions(){
-  const sel = document.getElementById('ciExisting');
-  const prev = sel.value;
-  const roster = (state.staff||[]).filter(s=>!s.on_duty).slice().sort((a,b)=>(a.full_name||'').localeCompare(b.full_name||''));
-  sel.innerHTML = '<option value="">Select your name…</option>' +
-    roster.map(s => `<option value="${esc(s.initials)}">${esc(s.full_name)} (${esc(s.role||s.department||'Staff')})</option>`).join('');
-  if(prev) sel.value = prev;
+  const noteEl = document.getElementById('ciNoIdentityNote');
+  const wrapEl = document.getElementById('ciIdentityWrap');
+  const nameEl = document.getElementById('ciIdentityName');
+  if(!noteEl || !wrapEl || !nameEl) return;
+  const s = (state.staff||[]).find(x=>x.initials===state.actingAs);
+  if(!state.actingAs || !s){
+    noteEl.style.display = 'block';
+    wrapEl.style.display = 'none';
+    return;
+  }
+  noteEl.style.display = 'none';
+  if(s.on_duty){
+    wrapEl.style.display = 'none';
+    noteEl.style.display = 'block';
+    noteEl.textContent = s.full_name + ' is already checked in. Use "Check Out" on their card to end the shift.';
+  } else {
+    wrapEl.style.display = 'block';
+    nameEl.textContent = s.full_name + (s.role||s.department ? ' — ' + (s.role||s.department) : '');
+  }
 }
 
 function renderOnShift(){
@@ -1545,13 +1596,40 @@ function renderOnShift(){
     </div>`).join('');
 }
 
+// Local yyyy-mm-dd (matches <input type="date"> value), not UTC, so a shift
+// logged late at night in local time doesn't get miscounted against the wrong day.
+function toLocalYmd(d){
+  const dt = d ? new Date(d) : new Date();
+  const y = dt.getFullYear(), m = String(dt.getMonth()+1).padStart(2,'0'), day = String(dt.getDate()).padStart(2,'0');
+  return y + '-' + m + '-' + day;
+}
+function setShiftLogToday(){
+  state.shiftLogDate = toLocalYmd();
+  const input = document.getElementById('shiftLogDate');
+  if(input) input.value = state.shiftLogDate;
+  renderShiftLog();
+}
+function onShiftLogDateChange(){
+  const input = document.getElementById('shiftLogDate');
+  state.shiftLogDate = (input && input.value) || toLocalYmd();
+  renderShiftLog();
+}
 function renderShiftLog(){
-  const todayStr = new Date().toLocaleDateString('en-GB');
-  const todays = (state.shiftLog||[]).filter(s => fmtDate(s.created_at) === todayStr);
+  const input = document.getElementById('shiftLogDate');
+  if(!state.shiftLogDate) state.shiftLogDate = toLocalYmd();
+  if(input && !input.value) input.value = state.shiftLogDate;
+  const dayStr = state.shiftLogDate;
+  const isToday = dayStr === toLocalYmd();
+  const dayEntries = (state.shiftLog||[]).filter(s => toLocalYmd(s.created_at) === dayStr);
   const body = document.getElementById('shiftLogBody');
-  if(!todays.length){ body.innerHTML = '<tr><td colspan="7" class="empty">No shifts logged yet today.</td></tr>'; return; }
+  const totalsEl = document.getElementById('shiftLogTotals');
+  if(!dayEntries.length){
+    body.innerHTML = '<tr><td colspan="7" class="empty">'+(isToday?'No shifts logged yet today.':'No shifts logged on this date.')+'</td></tr>';
+    if(totalsEl) totalsEl.textContent = '';
+    return;
+  }
   // Pair each Check In with its matching Check Out (same staff_id, next chronological entry) for duration display.
-  const asc = todays.slice().sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+  const asc = dayEntries.slice().sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
   const rows = [];
   const openIns = {};
   asc.forEach(s => {
@@ -1567,18 +1645,34 @@ function renderShiftLog(){
       <td><strong>${esc(r.in.name)}</strong></td>
       <td style="font-size:11px">${esc(r.in.department)||'—'}</td>
       <td style="font-size:11px">${fmtTime(r.in.created_at)}</td>
-      <td style="font-size:11px">${r.out ? fmtTime(r.out.created_at) : '—'}</td>
-      <td style="font-size:11px">${fmtDuration(r.in.created_at, r.out ? r.out.created_at : null)}</td>
-      <td>${r.out ? '<span class="pill done">Off shift</span>' : '<span class="pill occupied">On shift</span>'}</td>
+      <td style="font-size:11px">${r.out ? fmtTime(r.out.created_at) : (isToday?'—':'not checked out')}</td>
+      <td style="font-size:11px">${fmtDuration(r.in.created_at, r.out ? r.out.created_at : (isToday?null:r.in.created_at))}</td>
+      <td>${r.out ? '<span class="pill done">Off shift</span>' : (isToday?'<span class="pill occupied">On shift</span>':'<span class="pill urgent">No check-out logged</span>')}</td>
       <td></td>
     </tr>`).join('');
+  // Total hours per staff member for the selected day, for payroll/roster reference.
+  if(totalsEl){
+    const totalsByStaff = {};
+    rows.forEach(r => {
+      const mins = Math.max(0, Math.round((((r.out?new Date(r.out.created_at):(isToday?new Date():new Date(r.in.created_at))).getTime()) - new Date(r.in.created_at).getTime())/60000));
+      totalsByStaff[r.in.name] = (totalsByStaff[r.in.name]||0) + mins;
+    });
+    const parts = Object.keys(totalsByStaff).sort().map(name => {
+      const mins = totalsByStaff[name]; const h = Math.floor(mins/60), m = mins%60;
+      return name + ': ' + (h>0?h+'h ':'') + m + 'm';
+    });
+    totalsEl.textContent = parts.length ? parts.join(' · ') : '';
+  }
 }
 
 async function submitClockIn(){
-  const initials = document.getElementById('ciExisting').value;
   const result = document.getElementById('ciResult');
-  if(!initials){ result.innerHTML = '<span class="err-msg">Select your name first.</span>'; return; }
+  // Identity comes from the PIN-verified "Who are you?" selector only — this
+  // is what prevents one staff member checking someone else in.
+  const initials = state.actingAs;
+  if(!initials){ result.innerHTML = '<span class="err-msg">Sign in as yourself (top right) first.</span>'; return; }
   const s = (state.staff||[]).find(x=>x.initials===initials);
+  if(s && s.on_duty){ result.innerHTML = '<span class="err-msg">You are already checked in.</span>'; return; }
   result.innerHTML = '<span style="color:var(--muted)">Checking in…</span>';
   try{
     const { error } = await supabaseClient.rpc('set_staff_on_duty', { p_initials: initials, p_on_duty: true });
@@ -1588,13 +1682,12 @@ async function submitClockIn(){
     }
     result.innerHTML = '<span style="color:var(--green);font-weight:700">&#10003; Checked in</span>';
     showToast((s?s.full_name:initials) + ' checked in');
-    document.getElementById('ciExisting').value='';
-    if(!state.actingAs) setActingAs(initials);
     loadAll();
   }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not check in')+'</span>'; }
 }
 
 async function submitClockOut(initials){
+  if(!state.actingAs){ showToast('Sign in as yourself (top right) before checking someone out.'); return; }
   const s = (state.staff||[]).find(x=>x.initials===initials);
   try{
     const { error } = await supabaseClient.rpc('set_staff_on_duty', { p_initials: initials, p_on_duty: false });
@@ -1663,6 +1756,7 @@ function clearActingAs(){
   const note = document.getElementById('actingAsNote');
   if(note) note.style.display = 'block';
   applyActingAsToForms();
+  renderStaffRosterOptions();
 }
 // requireActingAs(): every destructive/attributed action (booking
 // cancel/check-in/check-out, staff notes, etc.) calls this first
@@ -1699,6 +1793,7 @@ function setActingAs(initials){
   if(sel) sel.value = state.actingAs;
   document.getElementById('actingAsNote').style.display = state.actingAs ? 'none' : 'block';
   applyActingAsToForms();
+  renderStaffRosterOptions();
 }
 async function onActingAsChange(){
   const sel = document.getElementById('actingAsSelect');
@@ -1734,7 +1829,7 @@ async function onActingAsChange(){
 function applyActingAsToForms(){
   const s = (state.staff||[]).find(x=>x.initials===state.actingAs);
   const name = s ? s.full_name : '';
-  ['tkReportedBy','clStaff','tsCreatedBy','bkAddedBy'].forEach(id=>{
+  ['tkReportedBy','clStaff','tsCreatedBy','bkAddedBy','rpCreatedBy'].forEach(id=>{
     const el = document.getElementById(id);
     if(el && state.actingAs) el.value = state.actingAs;
   });
@@ -1774,7 +1869,7 @@ async function setTicketStatus(ticketId, status){
     const { error } = await supabaseClient.rpc('fac_update_ticket_status', { p_ticket_id: ticketId, p_status: status });
     if(error) throw new Error(error.message);
     showToast('Ticket updated');
-    loadFacilities();
+    loadAll(); // full sync, not just loadFacilities() — Today/Home metrics and nav badges need this too
   }catch(e){ showToast('Could not update: ' + (e.message||'error')); }
 }
 
@@ -1823,7 +1918,7 @@ async function submitTicket(){
     result.innerHTML = '<span style="color:var(--green);font-weight:700">&#10003; Reported'+(data&&data.id?': '+data.id.slice(0,8).toUpperCase():'')+'</span>';
     showToast('Breakdown reported');
     resetTicketForm();
-    loadFacilities();
+    loadAll(); // full sync, not just loadFacilities() — so this shows up on Today/Home immediately, not just after the next 60s poll
   }catch(e){ result.innerHTML = '<span class="err-msg">'+(e.message||'Could not report: check the connection and try again')+'</span>'; }
 }
 function resetTicketForm(){
