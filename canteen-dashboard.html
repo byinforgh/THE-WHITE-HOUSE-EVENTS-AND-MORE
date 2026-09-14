@@ -149,6 +149,15 @@ td{padding:7px 10px;border-bottom:1px solid #1a1a1a;}
 .rank-name{font-size:12px;font-weight:700;}
 .rank-sub{font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;margin-top:2px;}
 .rank-value{font-family:'Space Mono',monospace;font-weight:700;font-size:12px;color:var(--teal);flex-shrink:0;}
+.staff-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;}
+.staff-card{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--purple);border-radius:6px;padding:12px 14px;}
+.staff-card .staff-initials{color:var(--purple);font-weight:800;font-family:'Space Mono',monospace;font-size:13px;}
+.staff-card .staff-name{font-size:13px;font-weight:700;margin-top:2px;}
+.staff-card .staff-meta{font-size:11px;color:var(--text-dim);margin-top:6px;line-height:1.5;}
+.checkin-row{display:flex;gap:8px;margin-bottom:14px;align-items:flex-start;}
+.checkin-row .select-input{margin-bottom:0;}
+.checkin-row .btn{width:auto;padding:10px 18px;white-space:nowrap;background:var(--teal);color:#0a0a0a;}
+.checkin-row .btn:hover{background:#33978c;}
 </style>
 </head>
 <body>
@@ -164,9 +173,24 @@ td{padding:7px 10px;border-bottom:1px solid #1a1a1a;}
   <div class="error-banner" id="errorBanner"></div>
   <div class="pending-banner" id="pendingBanner"></div>
 
+  <div class="card">
+    <div class="card-title">&#129489;&#8205;&#127859; STAFF ON DUTY <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(only canteen staff can check in here — add more in Supabase's staff table with department = CANTEEN)</span></div>
+    <div class="checkin-row">
+      <select class="select-input" id="canteenCheckInSelect"><option value="">Select your name to check in...</option></select>
+      <button type="button" class="btn" onclick="submitCanteenCheckIn()">CHECK IN</button>
+    </div>
+    <div id="canteenCheckInResult" style="margin-bottom:10px;font-size:12px"></div>
+    <div class="staff-grid" id="canteenStaffGrid"><div class="empty">Loading staff...</div></div>
+  </div>
+
   <div class="card" id="canteenOrdersCard">
     <div class="card-title">&#127859; INCOMING CANTEEN ORDERS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(from canteen-order.html — pick staff on each order card below)</span></div>
     <div class="order-cards-grid" id="canteenOrdersBody"><div class="empty">Loading canteen orders...</div></div>
+  </div>
+
+  <div class="card" id="daySummaryCard">
+    <div class="card-title">&#128203; DAY SUMMARY <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(today's canteen totals — copy to share on WhatsApp/SMS manually)</span></div>
+    <div id="daySummaryBody"><div class="empty">Loading...</div></div>
   </div>
 
   <div class="metrics-grid" id="topMetrics"><div class="loading">Loading canteen data</div></div>
@@ -204,6 +228,7 @@ const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let foodMenu = [];
 let staffList = [];
+let allCanteenStaff = [];
 let quickSellCategory = 'All';
 let foodMenuCategory = 'All';
 let cart = {};
@@ -255,13 +280,18 @@ async function loadAll(){
   try{
     const [menuRes, staffRes] = await Promise.all([
       supabaseClient.from('food_menu').select('item_name, category, price_ghs'),
-      supabaseClient.from('staff').select('id, initials, full_name, department, role, pay_type, pay_rate, phone, active, on_duty, on_duty_since, working_days, working_hours, slot').eq('active', true).order('slot')
+      supabaseClient.from('staff').select('id, initials, full_name, department, role, pay_type, pay_rate, phone, active, on_duty, on_duty_since, working_days, working_hours, slot').eq('active', true).eq('department', 'CANTEEN').order('slot')
     ]);
     if(menuRes.error) throw new Error(menuRes.error.message);
     if(staffRes.error) throw new Error(staffRes.error.message);
 
     foodMenu = menuRes.data.map(r => ({ item: r.item_name, category: r.category||'', price: parseFloat(r.price_ghs)||0 }));
-    staffList = staffRes.data.map(s => ({ initials: s.initials || s.staff_code || '', name: s.full_name || '' })).filter(s => s.initials);
+    allCanteenStaff = staffRes.data.map(s => ({
+      id: s.id, initials: s.initials || '', name: s.full_name || '',
+      workingDays: s.working_days || '', workingHours: s.working_hours || '',
+      active: s.active !== false, onDuty: !!s.on_duty
+    })).filter(s => s.initials);
+    staffList = allCanteenStaff;
 
     document.getElementById('lastRefresh').textContent = 'Updated: ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
     clearApiError();
@@ -271,12 +301,117 @@ async function loadAll(){
     renderQuickSellPanel();
     renderFoodMenuTabs();
     renderFoodMenu();
+    renderCanteenStaffGrid();
   }catch(e){
     document.getElementById('lastRefresh').textContent = 'Offline — see message above';
     showApiError(e.message || 'Could not load data.');
     console.log('Load error:', e);
   }
   loadCanteenOrders();
+}
+
+// =====================
+// STAFF CHECK-IN (canteen-only allow list — department = CANTEEN)
+// =====================
+function renderCanteenStaffGrid(){
+  const el = document.getElementById('canteenStaffGrid');
+  if(!el) return;
+  const onDuty = (allCanteenStaff||[]).filter(s=>s.onDuty);
+  if(onDuty.length===0){
+    el.innerHTML = '<div class="empty">Nobody checked in yet — select your name above.</div>';
+  }else{
+    el.innerHTML = onDuty.map(s=>`
+      <div class="staff-card">
+        <div class="staff-initials">${esc(s.initials)||'—'}</div>
+        <div class="staff-name">${esc(s.name)||'(name not set)'}</div>
+        <div class="staff-meta">${esc(s.workingDays)||'Days not set'}<br>${esc(s.workingHours)||'Hours not set'}</div>
+        <button class="btn" style="margin-top:10px;background:var(--green)" onclick="toggleCanteenOnDuty('${s.initials}', false)">&#9679; ON DUTY — TAP TO CHECK OUT</button>
+      </div>`).join('');
+  }
+  populateCanteenCheckInSelect();
+}
+
+function populateCanteenCheckInSelect(){
+  const sel = document.getElementById('canteenCheckInSelect');
+  if(!sel) return;
+  const current = sel.value;
+  const notOnDuty = (allCanteenStaff||[]).filter(s=>s.active && !s.onDuty && s.initials);
+  sel.innerHTML = '<option value="">Select your name to check in...</option>' +
+    notOnDuty.map(s => `<option value="${esc(s.initials)}">${esc(s.initials)}${s.name?' — '+esc(s.name):''}</option>`).join('');
+  if(notOnDuty.some(s=>s.initials===current)) sel.value = current;
+}
+
+async function submitCanteenCheckIn(){
+  const sel = document.getElementById('canteenCheckInSelect');
+  const initials = sel.value;
+  const resultEl = document.getElementById('canteenCheckInResult');
+  if(!initials){ resultEl.innerHTML = '<span style="color:var(--red)">Select your name first.</span>'; return; }
+  resultEl.innerHTML = 'Checking in...';
+  try{
+    const { error } = await supabaseClient.rpc('set_staff_on_duty', { p_initials: initials, p_on_duty: true });
+    if(error) throw new Error(error.message);
+    const s = (allCanteenStaff||[]).find(x=>x.initials===initials);
+    if(s && s.id){
+      await supabaseClient.rpc('log_staff_shift', { p_staff_id: s.id, p_name: s.name, p_department: 'Canteen', p_action: 'Check In', p_source: 'Canteen Dashboard' });
+    }
+    resultEl.innerHTML = '<span class="flash">&#10003; Checked in.</span>';
+    setTimeout(() => { resultEl.innerHTML = ''; }, 4000);
+    loadAll();
+  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">Could not check in: ' + e.message + '</span>'; }
+}
+
+async function toggleCanteenOnDuty(initials, newState){
+  try{
+    const { error } = await supabaseClient.rpc('set_staff_on_duty', { p_initials: initials, p_on_duty: newState });
+    if(error) throw new Error(error.message);
+    const s = (allCanteenStaff||[]).find(x=>x.initials===initials);
+    if(s && s.id){
+      await supabaseClient.rpc('log_staff_shift', { p_staff_id: s.id, p_name: s.name, p_department: 'Canteen', p_action: newState ? 'Check In' : 'Check Out', p_source: 'Canteen Dashboard' });
+    }
+    loadAll();
+  }catch(e){ showToast('Could not update on-duty status: ' + e.message, true); }
+}
+
+// =====================
+// DAY SUMMARY (today's canteen totals)
+// =====================
+function isSameLocalDay(iso, ref){
+  const d = new Date(iso);
+  if(isNaN(d.getTime())) return false;
+  return d.toDateString() === ref.toDateString();
+}
+
+function renderDaySummary(){
+  const el = document.getElementById('daySummaryBody');
+  if(!el) return;
+  const now = new Date();
+  const finalToday = (canteenOrdersData.recentFinal || []).filter(o => isSameLocalDay(o.timestamp, now));
+  // recentFinal is capped at 15 — for an accurate day total, also fold in
+  // anything paid/cancelled today that fell outside that cap by re-checking
+  // the active list's own timestamps won't cover it, so this is a best-
+  // effort total from what's currently loaded (last 200 orders).
+  const paidToday = finalToday.filter(o => o.status === 'Paid');
+  const cancelledToday = finalToday.filter(o => o.status === 'Cancelled');
+  const revenueToday = paidToday.reduce((s,o) => s + (o.total||0), 0);
+  const itemCount = paidToday.reduce((s,o) => s + (o.items||[]).reduce((si,it) => si + (it.qty||0), 0), 0);
+
+  const byStaff = {};
+  paidToday.forEach(o => {
+    const who = o.handledBy || 'Unassigned';
+    byStaff[who] = (byStaff[who]||0) + (o.total||0);
+  });
+  const staffRows = Object.keys(byStaff).sort((a,b)=>byStaff[b]-byStaff[a])
+    .map(who => `<div class="rank-row"><div class="rank-info"><div class="rank-name">${esc(who)}</div></div><div class="rank-value">GHS ${byStaff[who].toFixed(2)}</div></div>`).join('');
+
+  el.innerHTML = `
+    <div class="metrics-grid" style="margin-bottom:12px">
+      <div class="metric-card gold"><div class="metric-label">ORDERS PAID TODAY</div><div class="metric-value">${paidToday.length}</div></div>
+      <div class="metric-card teal"><div class="metric-label">REVENUE TODAY</div><div class="metric-value">&#8373;${revenueToday.toFixed(2)}</div></div>
+      <div class="metric-card green"><div class="metric-label">ITEMS SOLD TODAY</div><div class="metric-value">${itemCount}</div></div>
+    </div>
+    ${cancelledToday.length ? `<div class="metric-sub" style="margin-bottom:10px">${cancelledToday.length} order${cancelledToday.length>1?'s':''} cancelled today</div>` : ''}
+    ${staffRows || '<div class="empty">No paid orders yet today.</div>'}
+  `;
 }
 
 // =====================
@@ -343,6 +478,7 @@ async function loadCanteenOrders(){
     const { data, error } = await supabaseClient
       .from('canteen_orders')
       .select('*')
+      .eq('archived', false)
       .order('created_at', { ascending: false })
       .limit(200);
     if(error) throw new Error(error.message);
@@ -368,6 +504,7 @@ async function loadCanteenOrders(){
     renderCanteenOrders();
     renderMetrics();
     renderRecentOrders();
+    renderDaySummary();
   }catch(e){
     console.log('loadCanteenOrders error:', e);
     const el = document.getElementById('canteenOrdersBody');
