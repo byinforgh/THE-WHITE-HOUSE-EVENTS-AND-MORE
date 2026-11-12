@@ -1,7 +1,37 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-  THE WHITE HOUSE EVENTS & MORE — BAR DASHBOARD (v7.0)
+  THE WHITE HOUSE EVENTS & MORE — BAR DASHBOARD (v7.1)
+
+  v7.1 CHANGES (this session):
+  - NEW AREA DASHBOARDS. vip-dashboard.html and stage2-dashboard.html are
+    dedicated screens for VIP Area and Stage 2 Area. They read the same
+    table_orders / canteen_orders / open_tabs / bar_stock rows as this page,
+    just filtered by area, so every VIP / Stage 2 order shows on its own screen
+    AND here. Actions on either screen update the same row.
+  - NEW TILES: VIP AREA and STAGE 2 AREA sit right beside REVENUE & REPORTS in
+    the top row, with live counts, and open the matching screen.
+  - TOP ROW MOVED UP. The tile row is now above the live queues, so it is no
+    longer pushed down the page by empty panels.
+  - COMPACT ORDERS + TABS. Incoming table orders, incoming food orders and open
+    tabs are now slim cards (staff picker + one action + cancel on one row),
+    auto-fit 4-6 across on a wide screen, and empty panels collapse to a thin
+    strip. A count badge shows how many are in each queue.
+  - AREA FILTER. One chip row filters orders AND tabs by area (All / VIP /
+    Stage 2 / Bar / Pool / Terrace...). Every card carries a coloured area tag.
+  - STICKY STAFF. New order cards default to the last staff member used on this
+    device (if still checked in), so a busy bar isn't picking a name every time.
+  - SOUND. Beep is now two-tone, can be switched off, and unlocks on the first
+    tap (browsers silently block audio before any interaction). The tab title
+    shows the number of NEW orders, e.g. "(3) Bar Dashboard".
+  - SECURITY CLEAN-UP. Item names, customer names, staff names and DB error text
+    are now escaped everywhere they go into the page, and order/tab buttons no
+    longer put data inside onclick="..." strings (an apostrophe in a customer
+    name could break out of them). Buttons use data-attributes instead.
+  - NO MORE POLLING WHEN HIDDEN. Background tabs pause polling and refresh the
+    moment you switch back. The leftover Apps-Script offline queue (nothing has
+    written to it since the Supabase move) is removed.
+  - Low-stock tile no longer re-scrolls the page on every refresh.
 
   v7.0 CHANGES (this session):
   - FIXED "CAN'T ASSIGN STAFF TO AN ORDER THAT ARRIVED BEFORE CHECK-IN".
@@ -484,6 +514,73 @@ tr.low-row td{color:var(--red);}
 /* yellow quantity badges and highlights */
 .quick-sell-item .qs-cart-qty,.menu-item .mi-qty,.tab-area-badge,.guide-hint,.ws-step .ws-num{background:#F5C518!important;color:#141414!important;border-color:#F5C518!important;}
 .toast{border-left-color:#F5C518;}
+
+/* ===== v7.1 compact queues, area tags, area tiles ===== */
+.nav-link{font-size:11px;font-weight:700;letter-spacing:.5px;color:#F3EEE0;text-decoration:none;padding:6px 11px;border:1px solid rgba(235,203,115,.5);border-radius:16px;background:rgba(255,255,255,.08);white-space:nowrap;}
+.nav-link:hover{background:#C9A24B;color:#0A0A0A;}
+.header-right{flex-wrap:wrap;gap:8px;}
+.hbtn2{background:rgba(255,255,255,.12);border:1px solid rgba(235,203,115,.6);color:#fff;padding:6px 12px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.5px;font-family:'Syne',sans-serif;white-space:nowrap;}
+.hbtn2:hover{background:#C9A24B;color:#0A0A0A;}
+.hbtn2.off{opacity:.55;}
+.metrics-grid{margin-bottom:10px;}
+@media(min-width:1400px){.metrics-grid{grid-template-columns:repeat(6,1fr);}}
+a.metric-card{display:block;text-decoration:none;color:inherit;}
+.metric-card.area-vip::before{background:#8F6B1E;} .metric-card.area-vip .metric-value{color:#8F6B1E;}
+.metric-card.area-stage2::before{background:#B5436F;} .metric-card.area-stage2 .metric-value{color:#B5436F;}
+.metric-card{padding:14px 16px;}
+.card.compact{padding:8px 12px;margin-bottom:8px;}
+.card.compact .card-title{margin-bottom:6px;font-size:10.5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.card.compact .empty{padding:2px 0;text-align:left;font-size:11.5px;}
+.card-title .count{background:#C9A24B;color:#fff;border-radius:10px;padding:1px 8px;font-family:'Space Mono',monospace;font-size:10.5px;letter-spacing:0;}
+.card-title .count.zero{background:#E2D9C6;color:var(--muted);}
+.area-chips{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 8px;align-items:center;}
+.area-chips .lbl{font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--muted);margin-right:4px;}
+.achip{background:#fff;border:1px solid var(--border);color:var(--text-dim);padding:5px 12px;border-radius:16px;font-size:11px;font-weight:700;cursor:pointer;font-family:'Syne',sans-serif;}
+.achip:hover{border-color:#C9A24B;color:#141414;}
+.achip.active{background:linear-gradient(180deg,#2B2B2B,#0A0A0A);color:#fff;border-color:#0A0A0A;}
+.achip .n{opacity:.7;margin-left:4px;font-family:'Space Mono',monospace;}
+.achip.a-vip{border-color:#8F6B1E;} .achip.a-stage2{border-color:#B5436F;}
+.order-cards-grid,#openTabsBody{display:grid!important;grid-template-columns:repeat(auto-fill,minmax(250px,1fr))!important;gap:8px!important;align-items:start;}
+.order-cards-grid .empty,#openTabsBody .empty{grid-column:1/-1;}
+.oc{background:#FCF9F0;border:1px solid var(--border);border-left:4px solid #C9A24B;border-radius:7px;padding:8px 10px;transition:opacity .15s;}
+.oc.st-preparing{border-left-color:#B5436F;} .oc.st-delivered{border-left-color:#A0702A;}
+.oc.late{border-color:var(--red);border-left-color:var(--red);}
+.oc.busy{opacity:.5;pointer-events:none;}
+.oc.is-new{animation:orderFlash 1.4s ease-in-out 3;}
+.oc-top{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.oc-loc{font-weight:800;font-size:15px;}
+.atag{font-size:8.5px;font-weight:800;letter-spacing:.6px;padding:2px 7px;border-radius:4px;background:#141414;color:#fff;white-space:nowrap;}
+.atag.a-vip{background:#8F6B1E;} .atag.a-stage2{background:#B5436F;}
+.kind{font-size:8.5px;font-weight:800;letter-spacing:.8px;padding:2px 6px;border-radius:4px;background:#E2D9C6;color:#141414;}
+.kind.food{background:#C9A24B;}
+.spill{font-size:8.5px;font-weight:800;letter-spacing:.6px;padding:2px 7px;border-radius:10px;}
+.spill.placed{background:#FFF0A8;color:var(--gold);} .spill.preparing{background:#F9DCE8;color:var(--teal);} .spill.delivered{background:#F3E4C0;color:#7A5A14;}
+.oc-age{margin-left:auto;font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;}
+.oc.late .oc-age{color:var(--red);font-weight:700;}
+.oc-items{font-size:12.5px;line-height:1.4;margin:4px 0 3px;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;color:var(--text);}
+.oc-meta{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-dim);}
+.oc-meta .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.oc-meta .tot{font-family:'Space Mono',monospace;font-weight:800;color:var(--gold);font-size:14px;}
+.oc-meta .pay{font-family:'Space Mono',monospace;font-size:10.5px;color:var(--muted);}
+.oc-note{font-size:11px;font-weight:800;color:var(--gold);background:#FFF0A8;border:1px solid var(--gold-dim);border-radius:5px;padding:4px 7px;margin-top:5px;}
+.oc-combo{font-size:10.5px;color:var(--teal);background:#FCEEF3;border:1px solid var(--teal);border-radius:5px;padding:3px 7px;margin-top:5px;}
+.oc-foot{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;align-items:stretch;}
+.oc-foot select{flex:1 1 90px;min-width:0;background:#fff;border:1px solid #CBC2AC;border-radius:5px;padding:6px;font-size:13px;font-family:'Syne',sans-serif;color:var(--text);}
+.oc-foot select.need{border-color:var(--red);}
+.oc-foot .momo{flex:1 1 100%;background:#fff;border:1px solid var(--teal);border-radius:5px;padding:6px 8px;font-size:13px;font-family:'Syne',sans-serif;}
+.abtn{background:linear-gradient(180deg,#2B2B2B,#0A0A0A);color:#fff;border:none;border-radius:5px;padding:6px 10px;font-size:10.5px;font-weight:800;letter-spacing:.4px;cursor:pointer;font-family:'Syne',sans-serif;box-shadow:inset 0 0 0 1px rgba(235,203,115,.4);white-space:nowrap;}
+.abtn.x{background:#fff;color:var(--red);box-shadow:none;border:1px solid var(--red);padding:6px 8px;}
+.abtn.cash{background:var(--green);box-shadow:none;} .abtn.momo{background:var(--teal);box-shadow:none;} .abtn.add{background:var(--purple);box-shadow:none;}
+.abtn:disabled{opacity:.5;cursor:not-allowed;}
+.tc{background:#FCF9F0;border:1.5px solid #C9A24B;border-radius:7px;padding:7px 10px;position:relative;}
+.tc .nm{font-weight:800;font-size:12.5px;padding-right:18px;}
+.tc .ph{font-size:10px;color:var(--text-dim);font-family:'Space Mono',monospace;}
+.tc .it{font-size:11px;color:var(--text-dim);margin:3px 0;line-height:1.35;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
+.tc .ft{display:flex;justify-content:space-between;align-items:center;font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;}
+.tc .ft b{font-size:13px;color:var(--gold);}
+.tc .acts{display:flex;gap:5px;margin-top:5px;}
+.tc .acts .abtn{flex:1;padding:6px 4px;}
+.tc .xx{position:absolute;top:4px;right:6px;background:none;border:none;color:var(--red);font-size:16px;line-height:1;cursor:pointer;}
 </style>
 </head>
 <body>
@@ -492,27 +589,17 @@ tr.low-row td{color:var(--red);}
     <img src="logo.jpg" alt="The White House Events & More" class="brand-logo" onerror="this.style.display='none'">
     <div class="logo">THE WHITE HOUSE EVENTS & MORE <span>BAR DASHBOARD</span></div>
   </div>
-  <div class="header-right"><span class="conn-status" id="connStatus">&#9679; checking...</span><span class="last-refresh" id="lastRefresh">Loading...</span><button class="refresh-btn" onclick="loadData()">&#8635; REFRESH</button></div>
+  <div class="header-right">
+    <a class="nav-link" href="vip-dashboard.html">VIP AREA</a>
+    <a class="nav-link" href="stage2-dashboard.html">STAGE 2 AREA</a>
+    <span class="conn-status" id="connStatus">&#9679; checking...</span><span class="last-refresh" id="lastRefresh">Loading...</span>
+    <button class="hbtn2" id="soundBtn" onclick="toggleSound()">&#128276; SOUND ON</button>
+    <button class="refresh-btn" onclick="loadData()">&#8635; REFRESH</button>
+  </div>
 </div>
 
 <div class="main">
   <div class="error-banner" id="errorBanner"></div>
-  <div class="pending-banner" id="pendingBanner"></div>
-
-  <div class="card" id="openTabsCard">
-    <div class="card-title">&#128221; OPEN BAR TABS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(customers paying when they finish — stays here until marked paid)</span></div>
-    <div id="openTabsBody"><div class="empty">Loading open tabs...</div></div>
-  </div>
-
-  <div class="card" id="tableOrdersCard">
-    <div class="card-title">&#128203; INCOMING TABLE ORDERS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(from QR ordering, or from staff phones — pick staff on each order card below)</span></div>
-    <div class="order-cards-grid" id="tableOrdersBody"><div class="empty">Loading table orders...</div></div>
-  </div>
-
-  <div class="card" id="foodOrdersCard">
-    <div class="card-title">&#127859; INCOMING FOOD ORDERS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(same orders the kitchen sees — shown here too so the bar has visibility. Actions here update the kitchen's queue directly, it's the same order)</span></div>
-    <div class="order-cards-grid" id="foodOrdersBody"><div class="empty">Loading food orders...</div></div>
-  </div>
 
   <div class="low-stock-banner" id="lowStockBanner">
     <div class="low-stock-banner-title">&#9888; LOW STOCK — RESTOCK NEEDED</div>
@@ -521,6 +608,23 @@ tr.low-row td{color:var(--red);}
 
   <div class="metrics-grid" id="topMetrics"><div class="loading">Loading bar data</div></div>
   <div id="metricDetails"></div>
+
+  <div class="area-chips" id="areaChips"></div>
+
+  <div class="card compact" id="openTabsCard">
+    <div class="card-title">&#128221; OPEN BAR TABS <span class="count zero" id="openTabsCount">0</span><span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(pay when they finish — stays until marked paid)</span></div>
+    <div id="openTabsBody"><div class="empty">Loading open tabs...</div></div>
+  </div>
+
+  <div class="card compact" id="tableOrdersCard">
+    <div class="card-title">&#128203; INCOMING TABLE ORDERS <span class="count zero" id="tableOrdersCount">0</span><span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(QR ordering or staff phones — pick staff on the card)</span></div>
+    <div class="order-cards-grid" id="tableOrdersBody"><div class="empty">Loading table orders...</div></div>
+  </div>
+
+  <div class="card compact" id="foodOrdersCard">
+    <div class="card-title">&#127859; INCOMING FOOD ORDERS <span class="count zero" id="foodOrdersCount">0</span><span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(same orders the kitchen sees — actions here update the kitchen's queue)</span></div>
+    <div class="order-cards-grid" id="foodOrdersBody"><div class="empty">Loading food orders...</div></div>
+  </div>
 
   <div class="card" id="quickSellCard">
     <div class="card-title">&#9889; QUICK SELL <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(ring up a sale without opening the sheet — tap items to add to cart)</span></div>
@@ -555,7 +659,7 @@ tr.low-row td{color:var(--red);}
         </div>
       </div>
       <div class="card">
-        <div class="card-title">&#128230; RESTOCK AN ITEM <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(pour ingredients measured in oz — Rum, Lime, Soda, etc. — are not restocked here; they only move when a cocktail is sold)</span></div>
+        <div class="card-title">&#128230; RESTOCK MAIN BAR <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(new stock arriving at the venue)</span> &#8212; <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(pour ingredients measured in oz — Rum, Lime, Soda, etc. — are not restocked here; they only move when a cocktail is sold)</span></div>
         <div class="combo-wrap" id="restockItemComboWrap">
           <input class="search-input" id="restockItem" placeholder="Item name (must match Bar Stock exactly)" autocomplete="off" style="margin-bottom:0">
           <div class="combo-list" id="restockItemComboList"></div>
@@ -625,8 +729,32 @@ tr.low-row td{color:var(--red);}
     <div class="staff-grid" id="staffGrid"><div class="empty">Loading staff...</div></div>
   </div>
 
+  <div class="card" id="locCard">
+    <div class="card-title">&#128666; STOCK BY LOCATION &amp; TRANSFERS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(a transfer MOVES units between Main Bar, VIP Area and Stage 2 — it never adds any, so the venue total stays correct. Area sales come out of the area's own stock.)</span></div>
+    <div class="two-col">
+      <div>
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <input class="search-input" id="locSearch" placeholder="Search items..." oninput="renderLoc()" style="margin:0;flex:1">
+          <select class="select-input" id="locFilter" onchange="renderLoc()" style="margin:0;width:auto"><option value="ALL">All items</option><option value="HELD">Held at an area</option><option value="LOW">Low anywhere</option></select>
+        </div>
+        <div class="scroll-table"><table><thead><tr><th>ITEM</th><th>MAIN BAR</th><th>VIP</th><th>STAGE 2</th><th>VENUE TOTAL</th></tr></thead><tbody id="locBody"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody></table></div>
+        <div style="font-size:11px;color:var(--muted);margin-top:6px">Red = at/below par. A negative area number means stock was sold there before the transfer was logged &mdash; log the transfer and it corrects itself.</div>
+      </div>
+      <div>
+        <select class="select-input" id="locDir"><option value="Main Bar|VIP Area">Main Bar &#8594; VIP Area</option><option value="Main Bar|Stage 2 Area">Main Bar &#8594; Stage 2 Area</option><option value="VIP Area|Main Bar">VIP Area &#8594; Main Bar (return)</option><option value="Stage 2 Area|Main Bar">Stage 2 Area &#8594; Main Bar (return)</option><option value="VIP Area|Stage 2 Area">VIP Area &#8594; Stage 2 Area</option><option value="Stage 2 Area|VIP Area">Stage 2 Area &#8594; VIP Area</option></select>
+        <select class="select-input" id="locItem"><option value="">Choose item...</option></select>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><input class="search-input" id="locQty" type="number" inputmode="decimal" min="0" placeholder="Quantity" style="margin:0 0 10px"><input class="search-input" id="locPar" type="number" inputmode="decimal" min="0" placeholder="Par at destination (optional)" style="margin:0 0 10px"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><select class="select-input" id="locBy" style="margin:0 0 10px"><option value="">Done by... (required)</option></select><input class="search-input" id="locNote" placeholder="Note (optional)" style="margin:0 0 10px"></div>
+        <button type="button" class="btn" id="locBtn" onclick="submitLocTransfer()">TRANSFER</button>
+        <div id="locRes" style="margin-top:8px;font-size:12px"></div>
+        <div style="margin-top:10px;font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--muted)">RECENT TRANSFERS</div>
+        <div class="scroll-table" style="max-height:200px"><table><tbody id="locLog"></tbody></table></div>
+      </div>
+    </div>
+  </div>
+
   <div class="card" id="stockCard">
-    <div class="card-title">&#128230; BAR STOCK — ALL ITEMS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(red rows = at or below par level — click a tab to filter by category)</span></div>
+    <div class="card-title">&#128230; MAIN BAR STOCK — ALL ITEMS <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(red rows = at or below par level — click a tab to filter by category)</span></div>
     <div class="tab-row" id="stockTabs"></div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
       <input class="search-input" id="stockSearch" placeholder="Search stock..." oninput="renderStock()" style="margin-bottom:0;flex:1">
@@ -686,20 +814,14 @@ function toDate(v){
   return isNaN(d.getTime()) ? new Date(v) : d;
 }
 
-const PENDING_KEY = 'whgh_pending_actions_v1';
-
 function genClientId(){
   if(window.crypto && crypto.randomUUID) return crypto.randomUUID();
   return 'cid-' + Date.now() + '-' + Math.random().toString(36).slice(2);
 }
 
-// Shared HTML-escaping helper — every piece of text that could ever
-// originate from a guest or staff free-text field (customer name,
-// notes, item name, etc.) must go through this before being placed
-// into innerHTML. A guest can type anything as their name on the
-// public order page; without escaping it here, that becomes real code
-// running in a staff member's browser, in a session with full
-// database write access.
+// Shared HTML-escaping helper — every piece of text that could ever originate
+// from a guest or staff free-text field (customer name, notes, item name, DB
+// error text...) must pass through this before going into innerHTML.
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function showToast(msg, isErr){
   const t = document.getElementById('toast');
@@ -710,58 +832,8 @@ function showToast(msg, isErr){
   clearTimeout(t._hideTimer);
   t._hideTimer = setTimeout(()=>t.classList.remove('show'), 3200);
 }
-
-function backoffDelayMs(attempts){
-  const base = 4000, cap = 60000;
-  const raw = Math.min(cap, base * Math.pow(2, attempts));
-  return raw * (0.5 + Math.random() * 0.5);
-}
-
-function getPendingQueue(){
-  try{ return JSON.parse(localStorage.getItem(PENDING_KEY) || '[]'); }
-  catch(e){ return []; }
-}
-function savePendingQueue(queue){
-  try{ localStorage.setItem(PENDING_KEY, JSON.stringify(queue)); }catch(e){ }
-}
-
-async function flushPendingQueue(silent){
-  let queue = getPendingQueue();
-  if(queue.length === 0) return;
-  const now = Date.now();
-  const stillPending = [];
-  let succeeded = 0;
-  for(const action of queue){
-    if(action.nextRetryAt && action.nextRetryAt > now){ stillPending.push(action); continue; }
-    try{
-      const res = await fetch(action.url + '&clientId=' + encodeURIComponent(action.id));
-      if(!res.ok) throw new Error('status ' + res.status);
-      const data = await res.json();
-      if(data.success) { succeeded++; continue; }
-      action.error = data.error || 'Failed';
-      action.attempts = (action.attempts || 0) + 1;
-      action.nextRetryAt = Date.now() + backoffDelayMs(action.attempts);
-      stillPending.push(action);
-    }catch(e){
-      action.attempts = (action.attempts || 0) + 1;
-      action.nextRetryAt = Date.now() + backoffDelayMs(action.attempts);
-      stillPending.push(action);
-    }
-  }
-  savePendingQueue(stillPending);
-  renderPendingBanner();
-  if(succeeded > 0 && !silent) loadData();
-}
-
-function renderPendingBanner(){
-  const queue = getPendingQueue();
-  const el = document.getElementById('pendingBanner');
-  if(queue.length === 0){ el.classList.remove('active'); el.innerHTML = ''; return; }
-  el.classList.add('active');
-  el.innerHTML = `<b>&#9203; ${queue.length} action${queue.length>1?'s':''} waiting to sync</b> — saved on this device, will send automatically once you're back online.` +
-    queue.map(a => `<div class="pending-item"><span>${a.label}</span><span style="color:var(--muted);font-family:'Space Mono',monospace">${new Date(a.queuedAt).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}${a.error?' — '+a.error:''}</span></div>`).join('') +
-    `<div class="pending-actions"><button class="btn" style="background:var(--teal);color:#0a0a0a" onclick="flushPendingQueue(false)">RETRY NOW</button></div>`;
-}
+function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+function lsSet(k, v){ try{ localStorage.setItem(k, v); }catch(e){} }
 
 function updateConnStatus(){
   const el = document.getElementById('connStatus');
@@ -773,12 +845,12 @@ function updateConnStatus(){
     el.className = 'conn-status offline';
   }
 }
-window.addEventListener('online', () => { updateConnStatus(); flushPendingQueue(false); });
+window.addEventListener('online', () => { updateConnStatus(); loadData(); loadTableOrders(); loadFoodOrders(); });
 window.addEventListener('offline', updateConnStatus);
 
 function showApiError(msg){
   const el = document.getElementById('errorBanner');
-  el.innerHTML = "<b>&#9888; Dashboard can't reach Supabase:</b> " + msg + ' <br><br>Check your internet connection and hit Refresh. If this keeps happening, the Supabase project may be paused or the anon key may have changed.';
+  el.innerHTML = "<b>&#9888; Dashboard can't reach Supabase:</b> " + esc(msg) + ' <br><br>Check your internet connection and hit Refresh. If this keeps happening, the Supabase project may be paused or the anon key may have changed.';
   el.classList.add('active');
 }
 function clearApiError(){
@@ -883,9 +955,7 @@ async function loadSupabaseBarData(){
 
 async function loadData(){
   updateConnStatus();
-  renderPendingBanner();
-  if(navigator.onLine) flushPendingQueue(true);
-  document.getElementById('lastRefresh').innerHTML = 'Refreshing...';
+  document.getElementById('lastRefresh').textContent = 'Refreshing...';
   try{
     const supaData = await loadSupabaseBarData();
     barData = supaData;
@@ -916,23 +986,34 @@ async function loadData(){
 }
 
 function renderMetrics(){
+  const vip = areaCounts('VIP Area'), st2 = areaCounts('Stage 2 Area');
   document.getElementById('topMetrics').innerHTML = `
-    <div class="metric-card gold" onclick="window.open('revenue.html','_blank')" style="cursor:pointer">
+    <div class="metric-card gold" data-key="revenue" onclick="window.open('revenue.html','_blank')" style="cursor:pointer">
       <div class="metric-label">REVENUE &amp; REPORTS <span class="metric-caret">&#128274;</span></div>
       <div class="metric-value" style="font-size:15px;line-height:1.3">Password protected</div>
       <div class="metric-sub">Tap to open in a new tab</div>
     </div>
-    <div class="metric-card teal" onclick="toggleMetric('orders')">
+    <a class="metric-card area-vip" data-key="vip" href="vip-dashboard.html">
+      <div class="metric-label">VIP AREA <span class="metric-caret">&#9654;</span></div>
+      <div class="metric-value" id="areaVipVal">${vip.active}</div>
+      <div class="metric-sub" id="areaVipSub">${esc(areaSub(vip))}</div>
+    </a>
+    <a class="metric-card area-stage2" data-key="stage2" href="stage2-dashboard.html">
+      <div class="metric-label">STAGE 2 AREA <span class="metric-caret">&#9654;</span></div>
+      <div class="metric-value" id="areaStage2Val">${st2.active}</div>
+      <div class="metric-sub" id="areaStage2Sub">${esc(areaSub(st2))}</div>
+    </a>
+    <div class="metric-card teal" data-key="orders" onclick="toggleMetric('orders')">
       <div class="metric-label">ORDERS TODAY <span class="metric-caret">&#9660;</span></div>
       <div class="metric-value">${(barData.todayOrders||[]).length}</div>
       <div class="metric-sub">logged sales</div>
     </div>
-    <div class="metric-card red" onclick="toggleMetric('lowstock')">
+    <div class="metric-card red" data-key="lowstock" onclick="toggleMetric('lowstock')">
       <div class="metric-label">LOW STOCK ITEMS <span class="metric-caret">&#9660;</span></div>
       <div class="metric-value">${barData.lowStockCount||0}</div>
       <div class="metric-sub">at or below par</div>
     </div>
-    <div class="metric-card green" onclick="toggleMetric('menu')">
+    <div class="metric-card green" data-key="menu" onclick="toggleMetric('menu')">
       <div class="metric-label">MENU ITEMS <span class="metric-caret">&#9660;</span></div>
       <div class="metric-value">${(barData.menu||[]).length}</div>
       <div class="metric-sub">cocktails + straight-sell</div>
@@ -940,42 +1021,59 @@ function renderMetrics(){
   if(expandedMetric){ renderMetricDetail(expandedMetric); }
 }
 
+// live counts for the VIP / Stage 2 tiles: updated in place so the order
+// polling never re-renders (or re-scrolls) the whole tile row
+function areaCounts(area){
+  const act = (tableOrdersData.active||[]).concat(foodOrdersData.active||[]).filter(o => o.locationType === area);
+  return { active: act.length, fresh: act.filter(o => o.status === 'Placed').length, pay: act.filter(o => o.status === 'Delivered - Awaiting Payment').length,
+           tabs: (openTabsData||[]).filter(t => t.area === area).length };
+}
+function areaSub(c){
+  const parts = [];
+  if(c.fresh) parts.push(c.fresh + ' new');
+  if(c.pay) parts.push(c.pay + ' to pay');
+  if(c.tabs) parts.push(c.tabs + ' tab' + (c.tabs > 1 ? 's' : ''));
+  return parts.length ? parts.join(' · ') : 'no active orders';
+}
+function updateAreaTiles(){
+  [['Vip','VIP Area'],['Stage2','Stage 2 Area']].forEach(p => {
+    const c = areaCounts(p[1]);
+    const v = document.getElementById('area' + p[0] + 'Val'), sub = document.getElementById('area' + p[0] + 'Sub');
+    if(v) v.textContent = c.active; if(sub) sub.textContent = areaSub(c);
+  });
+}
+
 function toggleMetric(key){
   expandedMetric = (expandedMetric === key) ? null : key;
   renderMetrics();
   renderMetricDetail(expandedMetric);
+  if(expandedMetric === 'lowstock'){
+    setStockCategory('Low Stock');
+    document.getElementById('stockCard').scrollIntoView({behavior:'smooth', block:'start'});
+  }
 }
 
 function renderMetricDetail(key){
-  const cards = document.querySelectorAll('#topMetrics .metric-card');
-  cards.forEach(c => c.classList.remove('expanded'));
+  document.querySelectorAll('#topMetrics .metric-card').forEach(c => c.classList.remove('expanded'));
   const el = document.getElementById('metricDetails');
   if(!key){ el.innerHTML = ''; return; }
+  const card = document.querySelector('#topMetrics .metric-card[data-key="' + key + '"]');
+  if(card) card.classList.add('expanded');
 
   let html = '';
-  if(key === 'revenue'){
-    cards[0] && cards[0].classList.add('expanded');
-    const byPay = barData.revenueByPayment || [];
-    html = byPay.length ? byPay.map(p => `<div class="metric-detail-row"><span>${p.method}</span><span style="color:var(--gold);font-family:'Space Mono',monospace">&#8373;${p.revenue.toFixed(2)}</span></div>`).join('')
-      : '<div class="metric-detail-empty">No sales logged yet today.</div>';
-  } else if(key === 'orders'){
-    cards[1] && cards[1].classList.add('expanded');
+  if(key === 'orders'){
     const orders = barData.todayOrders || [];
-    html = orders.length ? orders.slice(0,8).map(o => `<div class="metric-detail-row"><span>${o.item} &times;${o.qty}</span><span style="color:var(--teal);font-family:'Space Mono',monospace">${o.staffInitials||'—'}</span></div>`).join('') + (orders.length>8 ? `<div class="metric-detail-empty">+ ${orders.length-8} more — see Today's Orders table.</div>` : '')
+    html = orders.length ? orders.slice(0,8).map(o => `<div class="metric-detail-row"><span>${esc(o.item)} &times;${esc(o.qty)}</span><span style="color:var(--teal);font-family:'Space Mono',monospace">${esc(o.staffInitials)||'—'}</span></div>`).join('') + (orders.length>8 ? `<div class="metric-detail-empty">+ ${orders.length-8} more — see Today's Orders table.</div>` : '')
       : '<div class="metric-detail-empty">No orders logged yet today.</div>';
   } else if(key === 'lowstock'){
-    cards[2] && cards[2].classList.add('expanded');
     const low = (barData.stock||[]).filter(s=>s.lowStock);
-    html = low.length ? low.slice(0,10).map(s => `<div class="metric-detail-row"><span>${s.item}</span><span style="color:var(--red);font-family:'Space Mono',monospace">${s.currentQty} / par ${s.parLevel}</span></div>`).join('') + (low.length>10 ? `<div class="metric-detail-empty">+ ${low.length-10} more — filtering stock table below.</div>` : '')
+    html = low.length ? low.slice(0,10).map(s => `<div class="metric-detail-row"><span>${esc(s.item)}</span><span style="color:var(--red);font-family:'Space Mono',monospace">${s.currentQty} / par ${s.parLevel}</span></div>`).join('') + (low.length>10 ? `<div class="metric-detail-empty">+ ${low.length-10} more — filtering stock table below.</div>` : '')
       : '<div class="metric-detail-empty">Nothing is low right now.</div>';
-    setStockCategory('Low Stock');
-    document.getElementById('stockCard').scrollIntoView({behavior:'smooth', block:'start'});
   } else if(key === 'menu'){
-    cards[3] && cards[3].classList.add('expanded');
     const menu = barData.menu || [];
     const byCat = {};
     menu.forEach(m => { (byCat[m.category||'Other'] = byCat[m.category||'Other']||[]).push(m); });
-    html = Object.keys(byCat).sort().map(c => `<div class="metric-detail-row"><span>${c}</span><span style="color:var(--green);font-family:'Space Mono',monospace">${byCat[c].length} items</span></div>`).join('');
+    html = Object.keys(byCat).sort().map(c => `<div class="metric-detail-row"><span>${esc(c)}</span><span style="color:var(--green);font-family:'Space Mono',monospace">${byCat[c].length} items</span></div>`).join('');
   }
   el.innerHTML = `<div class="metric-detail show">${html}</div>`;
 }
@@ -985,7 +1083,7 @@ function renderLowStockBanner(){
   const banner = document.getElementById('lowStockBanner');
   if(low.length===0){ banner.classList.remove('active'); return; }
   banner.classList.add('active');
-  document.getElementById('lowStockPills').innerHTML = low.map(s=>`<span class="low-stock-pill">${s.item} — ${s.currentQty}${s.unit==='oz'?'oz':' left'}</span>`).join('');
+  document.getElementById('lowStockPills').innerHTML = low.map(s=>`<span class="low-stock-pill">${esc(s.item)} — ${s.currentQty}${s.unit==='oz'?'oz':' left'}</span>`).join('');
 }
 
 function renderOrders(){
@@ -995,7 +1093,7 @@ function renderOrders(){
     const t = toDate(o.timestamp);
     const dateStr = (!t || isNaN(t.getTime())) ? '—' : t.toLocaleDateString('en-GB',{day:'2-digit',month:'short'});
     const timeStr = (!t || isNaN(t.getTime())) ? '—' : t.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
-    return `<tr><td style="font-family:'Space Mono',monospace;font-size:12px">${dateStr}</td><td style="font-family:'Space Mono',monospace;font-size:12px">${timeStr}</td><td style="font-size:15px;font-weight:600">${o.item}</td><td style="font-size:14px">${o.qty}</td><td style="color:var(--gold);font-weight:700;font-size:16px">&#8373;${o.lineTotal.toFixed(2)}</td><td style="font-size:13px">${o.staffInitials||'—'}</td><td style="font-family:'Space Mono',monospace;font-size:12px">${o.custId&&o.custId!=='—'?o.custId:'walk-in'}</td></tr>`;
+    return `<tr><td style="font-family:'Space Mono',monospace;font-size:12px">${dateStr}</td><td style="font-family:'Space Mono',monospace;font-size:12px">${timeStr}</td><td style="font-size:15px;font-weight:600">${esc(o.item)}</td><td style="font-size:14px">${o.qty}</td><td style="color:var(--gold);font-weight:700;font-size:16px">&#8373;${o.lineTotal.toFixed(2)}</td><td style="font-size:13px">${esc(o.staffInitials)||'—'}</td><td style="font-family:'Space Mono',monospace;font-size:12px">${o.custId&&o.custId!=='—'?esc(o.custId):'walk-in'}</td></tr>`;
   }).join('');
 }
 
@@ -1020,7 +1118,7 @@ function renderStockTabs(){
   tabs.forEach(t => {
     const btn = document.createElement('button');
     btn.className = 'tab-pill' + (activeStockCategory===t.key?' active':'');
-    btn.innerHTML = `${t.label}<span class="tab-count">${t.count}</span>`;
+    btn.innerHTML = `${esc(t.label)}<span class="tab-count">${t.count}</span>`;
     btn.addEventListener('click', () => setStockCategory(t.key));
     document.getElementById('stockTabs').appendChild(btn);
   });
@@ -1044,15 +1142,15 @@ function renderStock(){
   if(stock.length===0){ document.getElementById('stockBody').innerHTML = '<tr><td colspan="9" class="empty">No stock items match</td></tr>'; return; }
   document.getElementById('stockBody').innerHTML = stock.map(s=>`
     <tr class="${s.lowStock?'low-row':''}">
-      <td>${s.item}</td>
-      <td class="badge-unit">${s.category}</td>
-      <td class="badge-unit">${s.unit}</td>
+      <td>${esc(s.item)}</td>
+      <td class="badge-unit">${esc(s.category)}</td>
+      <td class="badge-unit">${esc(s.unit)}</td>
       <td style="font-family:'Space Mono',monospace">${s.currentQty}</td>
-      <td class="badge-unit">${s.unitsPerPack ? Math.floor(s.currentQty/s.unitsPerPack)+' '+(s.packLabel||'packs')+' + '+(s.currentQty%s.unitsPerPack) : '—'}</td>
+      <td class="badge-unit">${s.unitsPerPack ? Math.floor(s.currentQty/s.unitsPerPack)+' '+esc(s.packLabel||'packs')+' + '+(s.currentQty%s.unitsPerPack) : '—'}</td>
       <td style="font-family:'Space Mono',monospace">${s.parLevel}</td>
       <td style="font-family:'Space Mono',monospace">&#8373;${s.costPerUnit.toFixed(2)}</td>
-      <td style="font-size:11px;color:var(--text-dim)">${s.lastRestocked||'—'}</td>
-      <td style="font-size:11px;color:var(--text-dim)">${s.lastRestockedBy||'—'}</td>
+      <td style="font-size:11px;color:var(--text-dim)">${esc(s.lastRestocked)||'—'}</td>
+      <td style="font-size:11px;color:var(--text-dim)">${esc(s.lastRestockedBy)||'—'}</td>
     </tr>`).join('');
 }
 
@@ -1063,7 +1161,7 @@ function renderTopSellers(){
   el.innerHTML = top.map((s,i)=>`
     <div class="rank-row">
       <div class="rank-num">${i+1}</div>
-      <div class="rank-info"><div class="rank-name">${s.item}</div><div class="rank-sub">&#8373;${s.revenue.toFixed(2)} total revenue</div></div>
+      <div class="rank-info"><div class="rank-name">${esc(s.item)}</div><div class="rank-sub">&#8373;${s.revenue.toFixed(2)} total revenue</div></div>
       <div class="rank-value">${s.qty} sold</div>
     </div>`).join('');
 }
@@ -1074,8 +1172,8 @@ function renderStaleStock(){
   if(stale.length===0){ el.innerHTML = '<div class="empty">Nothing has gone 60+ days without a restock right now.</div>'; return; }
   el.innerHTML = stale.map(s=>`
     <div class="rank-row">
-      <div class="rank-info"><div class="rank-name">${s.item}</div><div class="rank-sub">${s.currentQty} ${s.unit} on hand · ${s.category}</div></div>
-      <div class="rank-value stale">${s.lastRestocked || 'never restocked'}</div>
+      <div class="rank-info"><div class="rank-name">${esc(s.item)}</div><div class="rank-sub">${s.currentQty} ${esc(s.unit)} on hand · ${esc(s.category)}</div></div>
+      <div class="rank-value stale">${esc(s.lastRestocked) || 'never restocked'}</div>
     </div>`).join('');
 }
 
@@ -1086,10 +1184,10 @@ function renderRestockLog(){
   el.innerHTML = log.map(r => `
     <tr>
       <td style="font-family:'Space Mono',monospace;font-size:11px">${r.timestamp}</td>
-      <td>${r.item}</td>
+      <td>${esc(r.item)}</td>
       <td style="color:var(--green);font-family:'Space Mono',monospace">+${r.qtyAdded}</td>
       <td style="font-family:'Space Mono',monospace">${r.newQty}</td>
-      <td>${r.restockedBy||'—'}</td>
+      <td>${esc(r.restockedBy)||'—'}</td>
     </tr>`).join('');
 }
 
@@ -1104,7 +1202,7 @@ function renderStaff(){
         <div class="staff-initials">${esc(s.initials)||'—'}</div>
         <div class="staff-name">${esc(s.name)||'(name not set)'}</div>
         <div class="staff-meta">${esc(s.workingDays)||'Days not set'}<br>${esc(s.workingHours)||'Hours not set'}</div>
-        <button class="btn" style="margin-top:10px;background:var(--green)" onclick="toggleOnDuty('${s.initials}', false)">&#9679; ON DUTY — TAP TO CHECK OUT</button>
+        <button class="btn" style="margin-top:10px;background:var(--green)" data-checkout="${esc(s.initials)}">&#9679; ON DUTY — TAP TO CHECK OUT</button>
       </div>`).join('');
   }
   populateCheckInSelect();
@@ -1134,7 +1232,7 @@ async function submitCheckIn(){
     resultEl.innerHTML = '<span class="flash">&#10003; Checked in.</span>';
     setTimeout(() => { resultEl.innerHTML = ''; }, 4000);
     loadData();
-  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">Could not check in: ' + e.message + '</span>'; }
+  }catch(e){ resultEl.innerHTML = '<span style="color:var(--red)">Could not check in: ' + esc(e.message) + '</span>'; }
 }
 
 async function toggleOnDuty(initials, newState){
@@ -1189,7 +1287,7 @@ function renderRestockMultiList(){
   const q = (document.getElementById('restockMultiSearch')?.value || '').toLowerCase();
   const items = restockStockItems.filter(i => i.toLowerCase().includes(q));
   if(items.length === 0){ listEl.innerHTML = '<div style="padding:10px;color:var(--muted);font-size:12px">No matching items</div>'; return; }
-  listEl.innerHTML = items.map(i => `<div class="combo-item restock-multi-row" data-val="${i.replace(/"/g,'&quot;')}" style="${restockMultiSelected.has(i)?'background:#FBF4E3;color:var(--gold);font-weight:700':''}">${restockMultiSelected.has(i)?'&#10003; ':''}${i}</div>`).join('');
+  listEl.innerHTML = items.map(i => `<div class="combo-item restock-multi-row" data-val="${esc(i)}" style="${restockMultiSelected.has(i)?'background:#FBF4E3;color:var(--gold);font-weight:700':''}">${restockMultiSelected.has(i)?'&#10003; ':''}${esc(i)}</div>`).join('');
   listEl.querySelectorAll('.restock-multi-row').forEach(el => {
     el.addEventListener('click', () => {
       const v = el.dataset.val;
@@ -1215,7 +1313,7 @@ function renderRestockCombo(query){
   if(matches.length === 0){
     listEl.innerHTML = '<div class="combo-empty">No matching stock items</div>';
   }else{
-    listEl.innerHTML = matches.slice(0,60).map(i => `<div class="combo-item" data-val="${i.replace(/"/g,'&quot;')}">${i}</div>`).join('');
+    listEl.innerHTML = matches.slice(0,60).map(i => `<div class="combo-item" data-val="${esc(i)}">${esc(i)}</div>`).join('');
     listEl.querySelectorAll('.combo-item').forEach(el => {
       el.addEventListener('mousedown', (e) => {
         e.preventDefault();
@@ -1279,7 +1377,7 @@ async function lookupCustomer(prefillQuery){
       resultEl.innerHTML = "No customer found matching that — they'll be registered next time they order.";
     }
   }catch(e){
-    resultEl.innerHTML = '<span style="color:var(--red)">Error: ' + (e.message||'connection failed') + '. Check your internet connection and try again.</span>';
+    resultEl.innerHTML = '<span style="color:var(--red)">Error: ' + esc(e.message||'connection failed') + '. Check your internet connection and try again.</span>';
     showApiError(e.message || 'Customer lookup failed.');
   }
 }
@@ -1298,7 +1396,7 @@ async function selectCustomerById(customerId){
     };
     await renderCustomerCard();
   }catch(e){
-    resultEl.innerHTML = '<span style="color:var(--red)">Error: ' + (e.message||'connection failed') + '</span>';
+    resultEl.innerHTML = '<span style="color:var(--red)">Error: ' + esc(e.message||'connection failed') + '</span>';
     showApiError(e.message || 'Customer lookup failed.');
   }
 }
@@ -1357,7 +1455,7 @@ async function claimReward(rewardName, pointsRequired){
     if(msgEl) msgEl.innerHTML = '<span style="color:var(--green);font-weight:700">&#10003; Redeemed — new balance ' + data.newTotal + ' pts</span>';
     await renderCustomerCard();
   }catch(e){
-    if(msgEl) msgEl.innerHTML = '<span style="color:var(--red)">' + (e.message||'Could not redeem') + '</span>';
+    if(msgEl) msgEl.innerHTML = '<span style="color:var(--red)">' + esc(e.message||'Could not redeem') + '</span>';
     else showApiError(e.message || 'Could not redeem reward.');
   }
 }
@@ -1388,7 +1486,7 @@ async function submitRestock(){
   if(!item || (!qtyAdded && !document.getElementById('restockPacks').value)){ resultEl.innerHTML = '<span style="color:var(--red)">Item name and a quantity (singles or packs) are required.</span>'; return; }
   if(!restockedBy){ resultEl.innerHTML = '<span style="color:var(--red)">Pick who is restocking from the dropdown.</span>'; return; }
   const existingStockItem = (barData.stock||[]).find(s => s.item.toLowerCase() === item.toLowerCase());
-  if(existingStockItem && existingStockItem.unit === 'oz'){ resultEl.innerHTML = '<span style="color:var(--red)">' + item + ' is a pour ingredient (oz) — it can\'t be restocked here, only sold through the cocktail itself.</span>'; return; }
+  if(existingStockItem && existingStockItem.unit === 'oz'){ resultEl.innerHTML = '<span style="color:var(--red)">' + esc(item) + ' is a pour ingredient (oz) — it can\'t be restocked here, only sold through the cocktail itself.</span>'; return; }
   resultEl.innerHTML = 'Saving...';
 
   const clientId = genClientId();
@@ -1425,7 +1523,7 @@ async function submitRestock(){
     setTimeout(() => { if(resultEl.innerHTML.indexOf(item) !== -1) resultEl.innerHTML = ''; }, 6000);
     loadData();
   }else{
-    resultEl.innerHTML = '<span style="color:var(--red)">' + result.error + '</span>';
+    resultEl.innerHTML = '<span style="color:var(--red)">' + esc(result.error) + '</span>';
   }
 }
 
@@ -1461,8 +1559,8 @@ async function submitRestockMulti(){
   const failedList = outcomes.filter(o => !o.ok);
 
   let html = '';
-  if(okList.length) html += `<div class="flash">&#10003; Restocked +${qtyAdded} each: ${okList.join(', ')}</div>`;
-  if(failedList.length) html += `<div style="color:var(--red)">Failed: ${failedList.map(o=>o.item+' — '+o.error).join(', ')}</div>`;
+  if(okList.length) html += `<div class="flash">&#10003; Restocked +${esc(qtyAdded)} each: ${esc(okList.join(', '))}</div>`;
+  if(failedList.length) html += `<div style="color:var(--red)">Failed: ${esc(failedList.map(o=>o.item+' — '+o.error).join(', '))}</div>`;
   resultEl.innerHTML = html;
 
   document.getElementById('restockQty').value = '';
@@ -1702,7 +1800,7 @@ function renderQuickSellPanel(){
 
   // v6.6: ADD-TO-EXISTING-TAB MODE — short-circuits the normal panel.
   if(addToTabId){
-    panel.innerHTML = `<div class="qs-title"><span>&#43; Adding to ${addToTabName}'s tab</span><button type="button" id="qsCancelAddToTab" style="font-size:11px;color:var(--muted);background:none;border:none">CANCEL</button></div>` +
+    panel.innerHTML = `<div class="qs-title"><span>&#43; Adding to ${esc(addToTabName)}'s tab</span><button type="button" id="qsCancelAddToTab" style="font-size:11px;color:var(--muted);background:none;border:none">CANCEL</button></div>` +
       (itemNames.length ? `<div class="cart-list" id="cartList">${cartRowsHtml}</div>` : '<div class="cart-empty-hint">Tap menu items to add them to this tab.</div>') +
       (itemNames.length ? `<div class="cart-subtotal-row"><span>Adding</span><span class="cart-subtotal-value">&#8373;${subtotal.toFixed(2)}</span></div><button class="btn" id="qsConfirmBtn" style="background:var(--purple);color:#fff">&#43; ADD ${itemNames.length} ITEM${itemNames.length>1?'S':''} TO TAB</button>` : '');
     wireCartRows();
@@ -1721,7 +1819,7 @@ function renderQuickSellPanel(){
   const staff = getServingStaff();
 
   const areaOptionsHtml = '<option value="">Select area...</option>' +
-    (barData.locationTypes||[]).map(l => `<option value="${l}">${l}</option>`).join('');
+    (barData.locationTypes||[]).map(l => `<option value="${esc(l)}">${esc(l)}</option>`).join('');
 
   panel.innerHTML = `
     <div class="qs-title"><span>&#128722; CART (${itemNames.length} item${itemNames.length>1?'s':''})</span><button type="button" class="cart-remove" id="qsClearCart" title="Clear cart" style="font-size:12px;color:var(--muted)">CLEAR</button></div>
@@ -1846,7 +1944,7 @@ async function submitBarTab(){
     resultEl.innerHTML = `<span class="flash">&#10003; Tab opened for ${esc(custName)} — ${esc(area)}${tableNumber?' '+esc(tableNumber):''}. It's now showing at the top of the dashboard until paid.</span>`;
     setTimeout(() => { clearCart(); loadData(); }, 1500);
   }catch(e){
-    resultEl.innerHTML = '<span style="color:var(--red)">' + e.message + '</span>';
+    resultEl.innerHTML = '<span style="color:var(--red)">' + esc(e.message) + '</span>';
     confirmBtn.disabled = false;
     confirmBtn.textContent = '\u2713 OPEN TAB — \u20b5' + total.toFixed(2);
   }
@@ -1873,6 +1971,7 @@ async function submitAddItemsToTab(){
   }
 }
 
+let qsSig = '', qsClientId = null;
 async function submitQuickSellCart(){
   const staffInitials = document.getElementById('qsStaff').value;
   const custQuery = document.getElementById('qsCustomer').value.trim();
@@ -1896,29 +1995,19 @@ async function submitQuickSellCart(){
   confirmBtn.textContent = 'Processing sale...';
   resultEl.innerHTML = '';
 
+  const sig = JSON.stringify([cart, staffInitials, payment, custQuery, newCustomerName]);
+  if(sig !== qsSig){ qsSig = sig; qsClientId = genClientId(); }   // same cart retried after a dropped connection = same id, so it can never double-sell
   const lineResults = [];
-  let firstError = null;
-
-  for(const itemName of itemNames){
-    const qty = cart[itemName];
-    const clientId = genClientId();
-    let result;
-    try{
-      const { data, error } = await supabaseClient.rpc('quick_sell_item', {
-        p_item: itemName, p_qty: qty, p_staff: staffInitials, p_payment: payment,
-        p_cust_query: custQuery || null, p_new_customer_name: newCustomerName || null, p_client_id: clientId
-      });
-      if(error) throw new Error(error.message);
-      result = { ok: true, data: { lineTotal: data.lineTotal, custId: data.custId, pointsNow: data.pointsNow, lowStockNames: data.lowStockNames || [] } };
-    }catch(e){
-      result = { ok: false, queued: false, error: e.message };
-    }
-    lineResults.push({ itemName, qty, result });
-    if(!result.ok && !result.queued && !firstError) firstError = result.error;
-  }
-
-  if(firstError && lineResults.every(r => !r.result.ok && !r.result.queued)){
-    resultEl.innerHTML = '<span style="color:var(--red)">' + firstError + '</span>';
+  try{
+    const { data, error } = await supabaseClient.rpc('quick_sell_cart', {
+      p_items: itemNames.map(n => ({ item: n, qty: cart[n] })), p_payment: payment, p_staff: staffInitials, p_client_id: qsClientId,
+      p_cust_query: custQuery || null, p_new_customer_name: newCustomerName || null, p_location: null });
+    if(error) throw new Error(error.message);
+    itemNames.forEach((n, idx) => lineResults.push({ itemName: n, qty: cart[n], result: { ok: true, data: {
+      lineTotal: idx === 0 ? (parseFloat(data.total) || 0) : 0, custId: data.custId, pointsNow: data.pointsNow, lowStockNames: idx === 0 ? (data.lowStockNames || []) : [] } } }));
+    qsSig = '';
+  }catch(e){
+    resultEl.innerHTML = '<span style="color:var(--red)">' + esc(e.message) + ' — nothing was recorded, you can tap CONFIRM again.</span>';
     confirmBtn.disabled = false;
     confirmBtn.textContent = '\u2713 CONFIRM SALE — \u20b5' + cartSubtotal().toFixed(2);
     return;
@@ -1961,35 +2050,38 @@ async function submitQuickSellCart(){
 // Reads through get_open_tabs() (locked down, same pattern as
 // get_bar_orders_recent) rather than a raw table select.
 let processingTabIds = new Set();
-async function renderOpenTabs(){
+let openTabsData = [];
+async function renderOpenTabs(fetchFresh){
   const el = document.getElementById('openTabsBody');
   if(!el) return;
   try{
-    const { data, error } = await supabaseClient.rpc('get_open_tabs');
-    if(error) throw new Error(error.message);
-    const tabs = data || [];
-    if(tabs.length === 0){ el.innerHTML = '<div class="empty">No open tabs right now.</div>'; return; }
+    if(fetchFresh !== false){
+      const { data, error } = await supabaseClient.rpc('get_open_tabs');
+      if(error) throw new Error(error.message);
+      openTabsData = data || [];
+    }
+    const all = openTabsData;
+    const tabs = all.filter(t => areaFilter === 'ALL' || t.area === areaFilter);
+    const cnt = document.getElementById('openTabsCount');
+    if(cnt){ cnt.textContent = tabs.length; cnt.classList.toggle('zero', tabs.length === 0); }
+    updateAreaTiles(); renderAreaChips();
+    if(tabs.length === 0){ el.innerHTML = '<div class="empty">' + (all.length ? 'No open tabs in this area.' : 'No open tabs right now.') + '</div>'; return; }
     el.innerHTML = tabs.map(t => {
-      const itemsStr = (t.items_json||[]).map(i=>`${i.qty} &times; ${i.item}`).join(', ');
+      const itemsStr = (t.items_json||[]).map(i=>`${esc(i.qty)} &times; ${esc(i.item)}`).join(', ');
       const isProcessing = processingTabIds.has(t.id);
       const tCreated = toDate(t.created_at);
       const mins = Math.max(0, Math.floor((Date.now() - (tCreated ? tCreated.getTime() : Date.now()))/60000));
-      return `<div class="tab-card">
-  <button class="tab-card-x" onclick="cancelTab('${t.id}')" title="Cancel tab">&times;</button>
-  <div class="tab-card-top">
-    <div><div class="tab-card-name">${t.customer_name}${t.customer_id?' &middot; '+t.customer_id:''}</div><div class="tab-card-phone">${t.customer_phone}</div></div>
-    <span class="tab-area-badge">${t.area||'—'}${t.table_number?' '+t.table_number:''}</span>
-  </div>
-  <div class="tab-card-items">${itemsStr}</div>
-  <div class="tab-card-footer">
-    <span class="tab-total">GHS ${parseFloat(t.total_ghs).toFixed(2)}</span>
-    <span class="tab-age">${t.staff_initials} &middot; ${mins} min</span>
-  </div>
-  <div class="tab-actions">
-    ${isProcessing ? '<button disabled>PROCESSING...</button>' : `
-      <button class="tab-pay-cash" onclick="payTab('${t.id}','Cash')">CASH</button>
-      <button class="tab-pay-momo" onclick="payTab('${t.id}','MoMo')">MOMO</button>
-      <button class="tab-add-items" style="background:var(--purple);color:#fff;flex:1 1 100%" onclick="startAddItemsToTab('${t.id}','${(t.customer_name||'').replace(/'/g,"\\'")}')">&#43; ADD ITEMS</button>`}
+      return `<div class="tc" data-tab-id="${esc(t.id)}" data-tab-name="${esc(t.customer_name)}">
+  <button class="xx" data-tab-act="cancel" title="Cancel tab">&times;</button>
+  <div class="nm">${esc(t.customer_name)}${t.customer_id?' &middot; '+esc(t.customer_id):''} ${areaTag(t.area)}${t.table_number?'<span class="atag" style="background:#F5C518;color:#141414;margin-left:3px">T'+esc(t.table_number)+'</span>':''}</div>
+  <div class="ph">${esc(t.customer_phone)}</div>
+  <div class="it">${itemsStr}</div>
+  <div class="ft"><b>GHS ${(parseFloat(t.total_ghs)||0).toFixed(2)}</b><span>${esc(t.staff_initials)} &middot; ${mins} min</span></div>
+  <div class="acts">
+    ${isProcessing ? '<button class="abtn" disabled>PROCESSING...</button>' : `
+      <button class="abtn cash" data-tab-act="Cash">CASH</button>
+      <button class="abtn momo" data-tab-act="MoMo">MOMO</button>
+      <button class="abtn add" data-tab-act="add">+ ITEMS</button>`}
   </div>
 </div>`;
     }).join('');
@@ -2001,15 +2093,15 @@ async function renderOpenTabs(){
 
 async function payTab(tabId, method){
   processingTabIds.add(tabId);
-  renderOpenTabs();
+  renderOpenTabs(false);
   try{
-    const { data, error } = await supabaseClient.rpc('close_bar_tab', { p_tab_id: tabId, p_payment: method, p_closed_by: null });
+    const { data, error } = await supabaseClient.rpc('close_bar_tab', { p_tab_id: tabId, p_payment: method, p_closed_by: (typeof stickyStaff === 'function' ? stickyStaff() : '') || null });
     if(error) throw new Error(error.message);
     processingTabIds.delete(tabId);
     loadData();
   }catch(e){
     processingTabIds.delete(tabId);
-    renderOpenTabs();
+    renderOpenTabs(false);
     showToast('Could not mark tab paid: ' + e.message, true);
   }
 }
@@ -2017,7 +2109,7 @@ async function payTab(tabId, method){
 async function cancelTab(tabId){
   if(!confirm('Cancel this tab? This cannot be undone.')) return;
   processingTabIds.add(tabId);
-  renderOpenTabs();
+  renderOpenTabs(false);
   try{
     const { error } = await supabaseClient.rpc('cancel_bar_tab', { p_tab_id: tabId });
     if(error) throw new Error(error.message);
@@ -2025,7 +2117,7 @@ async function cancelTab(tabId){
     renderOpenTabs();
   }catch(e){
     processingTabIds.delete(tabId);
-    renderOpenTabs();
+    renderOpenTabs(false);
     showToast('Could not cancel tab: ' + e.message, true);
   }
 }
@@ -2092,13 +2184,13 @@ Low stock (${lowStock.length}):${lowStock.length ? '\n' + lowStock.map(s=>`  ${s
       <div class="shift-summary-row"><span>Items sold</span><span style="font-family:'Space Mono',monospace">${totalItems}</span></div>
       <div class="shift-summary-row"><span>Orders</span><span style="font-family:'Space Mono',monospace">${orders.length}</span></div>
       <h4>By Staff</h4>
-      ${Object.keys(byStaff).map(s=>`<div class="shift-summary-row"><span>${s}</span><span style="font-family:'Space Mono',monospace">&#8373;${byStaff[s].revenue.toFixed(2)} · ${byStaff[s].items} items</span></div>`).join('')}
+      ${Object.keys(byStaff).map(s=>`<div class="shift-summary-row"><span>${esc(s)}</span><span style="font-family:'Space Mono',monospace">&#8373;${byStaff[s].revenue.toFixed(2)} · ${byStaff[s].items} items</span></div>`).join('')}
       <h4>By Payment Method</h4>
-      ${Object.keys(byPayment).map(p=>`<div class="shift-summary-row"><span>${p}</span><span style="font-family:'Space Mono',monospace">&#8373;${byPayment[p].toFixed(2)}</span></div>`).join('')}
+      ${Object.keys(byPayment).map(p=>`<div class="shift-summary-row"><span>${esc(p)}</span><span style="font-family:'Space Mono',monospace">&#8373;${byPayment[p].toFixed(2)}</span></div>`).join('')}
       <h4>Top Items Today</h4>
-      ${topItems.map(i=>`<div class="shift-summary-row"><span>${i.item}</span><span style="font-family:'Space Mono',monospace">${i.qty} sold</span></div>`).join('')}
+      ${topItems.map(i=>`<div class="shift-summary-row"><span>${esc(i.item)}</span><span style="font-family:'Space Mono',monospace">${i.qty} sold</span></div>`).join('')}
       <h4>Low Stock (${lowStock.length})</h4>
-      ${lowStock.length ? lowStock.map(s=>`<div class="shift-summary-row" style="color:var(--red)"><span>${s.item}</span><span style="font-family:'Space Mono',monospace">${s.currentQty}${s.unit}</span></div>`).join('') : '<div class="metric-detail-empty">None</div>'}
+      ${lowStock.length ? lowStock.map(s=>`<div class="shift-summary-row" style="color:var(--red)"><span>${esc(s.item)}</span><span style="font-family:'Space Mono',monospace">${s.currentQty}${s.unit}</span></div>`).join('') : '<div class="metric-detail-empty">None</div>'}
       <div class="restock-grid" style="margin-top:12px">
         <button class="btn" style="background:var(--teal);color:#0a0a0a" onclick="sendShiftSummaryWhatsApp()">&#128241; SEND TO MANAGER — WHATSAPP</button>
         <button class="btn" style="background:var(--border);color:var(--text)" onclick="sendShiftSummaryEmail()">&#128231; SEND TO MANAGER — EMAIL</button>
@@ -2197,18 +2289,35 @@ let orderStaffSelections = {};
 let processingOrderIds = new Set();
 
 let sharedAudioCtx = null;
-function playOrderBeep(){
+let soundOn = lsGet('whgh_bar_sound') !== 'off';
+// Browsers refuse to play audio until the page has had a tap/click, so the very
+// first beep of a shift could silently fail. Unlock on the first interaction.
+function unlockAudio(){
   try{
     if(!sharedAudioCtx) sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if(sharedAudioCtx.state === 'suspended') sharedAudioCtx.resume();
-    const osc = sharedAudioCtx.createOscillator();
-    const gain = sharedAudioCtx.createGain();
-    osc.connect(gain); gain.connect(sharedAudioCtx.destination);
-    osc.frequency.value = 880;
-    gain.gain.setValueAtTime(0.15, sharedAudioCtx.currentTime);
-    osc.start(); osc.stop(sharedAudioCtx.currentTime + 0.18);
-    osc.onended = () => { osc.disconnect(); gain.disconnect(); };
+  }catch(e){}
+}
+document.addEventListener('pointerdown', unlockAudio, { once: true });
+function playOrderBeep(){
+  if(!soundOn) return;
+  try{
+    unlockAudio(); if(!sharedAudioCtx) return;
+    [880, 1175].forEach(function(f, i){
+      const osc = sharedAudioCtx.createOscillator(), gain = sharedAudioCtx.createGain();
+      osc.connect(gain); gain.connect(sharedAudioCtx.destination); osc.frequency.value = f;
+      const t0 = sharedAudioCtx.currentTime + i * 0.2;
+      gain.gain.setValueAtTime(0.15, t0); gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.18);
+      osc.start(t0); osc.stop(t0 + 0.19);
+      osc.onended = () => { osc.disconnect(); gain.disconnect(); };
+    });
   }catch(e){ }
+}
+function paintSound(){ const b = document.getElementById('soundBtn'); if(!b) return; b.innerHTML = soundOn ? '&#128276; SOUND ON' : '&#128277; SOUND OFF'; b.classList.toggle('off', !soundOn); }
+function toggleSound(){ soundOn = !soundOn; lsSet('whgh_bar_sound', soundOn ? 'on' : 'off'); paintSound(); if(soundOn){ unlockAudio(); playOrderBeep(); } }
+function updateTitleCount(){
+  const n = (tableOrdersData.active||[]).concat(foodOrdersData.active||[]).filter(o => o.status === 'Placed').length;
+  document.title = (n ? '(' + n + ') ' : '') + 'The White House Events & More — Bar Dashboard';
 }
 
 function shapeSupabaseOrderRow(r){
@@ -2359,85 +2468,107 @@ function activeOrdersSignature(active){
   return JSON.stringify((active||[]).map(o => [o.orderId, o.status, o.total, o.payment, o.locationType, o.locationDetail, o.customerName, JSON.stringify(o.items), o.comboStatus||'']));
 }
 
-function renderTableOrders(){
-  const el = document.getElementById('tableOrdersBody');
-  const active = (tableOrdersData.active || []).slice().sort((a,b) => {
+// ---- area helpers (v7.1) ----
+let areaFilter = 'ALL';
+const LATE_MIN = 8;
+function areaClass(t){ return t === 'VIP Area' ? 'a-vip' : t === 'Stage 2 Area' ? 'a-stage2' : ''; }
+function areaTag(t){ return t ? '<span class="atag ' + areaClass(t) + '">' + esc(t).toUpperCase() + '</span>' : ''; }
+function ageMinutes(ts){ const t = toDate(ts); return (t && !isNaN(t.getTime())) ? Math.max(0, Math.floor((Date.now() - t.getTime())/60000)) : 0; }
+function stickyStaff(){ const v = lsGet('whgh_bar_last_staff') || '', on = getServingStaff(); if(on.some(s => s.initials === v)) return v; return on.length === 1 ? on[0].initials : ''; }
+
+function setAreaFilter(a){
+  areaFilter = a;
+  lastActiveSignature = null; lastFoodActiveSignature = null;
+  renderTableOrders(); renderFoodOrders(); renderOpenTabs(false);
+}
+function renderAreaChips(){
+  const el = document.getElementById('areaChips'); if(!el) return;
+  const counts = {};
+  (tableOrdersData.active||[]).concat(foodOrdersData.active||[]).forEach(o => { counts[o.locationType] = (counts[o.locationType]||0) + 1; });
+  (openTabsData||[]).forEach(t => { if(t.area) counts[t.area] = (counts[t.area]||0) + 1; });
+  const total = Object.keys(counts).reduce((n,k) => n + counts[k], 0);
+  const areas = Object.keys(counts).filter(k => k && k !== 'VIP Area' && k !== 'Stage 2 Area').sort();
+  const list = ['ALL', 'VIP Area', 'Stage 2 Area'].concat(areas);
+  if(areaFilter !== 'ALL' && list.indexOf(areaFilter) === -1) list.push(areaFilter);
+  el.innerHTML = '<span class="lbl">SHOW</span>' + list.map(a => `<button class="achip ${areaClass(a)}${areaFilter===a?' active':''}" data-area="${esc(a)}">${a==='ALL'?'ALL AREAS':esc(a)}<span class="n">${a==='ALL'?total:(counts[a]||0)}</span></button>`).join('');
+}
+
+const STAGE_PILL = {'Placed':['placed','NEW'],'Preparing':['preparing','PREPARING'],'Delivered - Awaiting Payment':['delivered','AWAITING PAY']};
+function orderCardHtml(o, cfg){
+  const id = o.orderId;
+  const isProcessing = cfg.proc.has(id);
+  const sel = cfg.sels[id] || (o.handledBy && getServingStaff().some(s => s.initials === o.handledBy) ? o.handledBy : '') || stickyStaff();
+  const pill = STAGE_PILL[o.status] || ['placed', esc(o.status)];
+  const late = o.status === 'Placed' && ageMinutes(o.timestamp) >= LATE_MIN;
+  const isNew = o.status === 'Placed' && !cfg.first() && ageMinutes(o.timestamp) < 1;
+  let act = '';
+  if(!isProcessing){
+    if(o.status === 'Placed') act = '<button class="abtn" data-oact="Preparing">START</button>';
+    else if(o.status === 'Preparing') act = '<button class="abtn" data-oact="Delivered - Awaiting Payment">DELIVERED</button>';
+    else act = '<button class="abtn" data-oact="Paid">&#10003; ' + (o.payment === 'MoMo' ? 'MOMO RECEIVED' : 'CASH RECEIVED') + '</button>';
+    act += '<button class="abtn x" data-oact="Cancelled" title="Cancel order">&times;</button>';
+  }else act = '<button class="abtn" disabled>PROCESSING…</button>';
+  const momoIn = !isProcessing && o.status === 'Delivered - Awaiting Payment' && o.payment === 'MoMo' ? `<input class="momo" id="${cfg.momoPrefix}${esc(id)}" placeholder="MoMo reference / note (optional)">` : '';
+  const momoNote = cfg.src === 'table_orders' && o.payment === 'MoMo' ? `<div class="oc-note">&#128241; MoMo ${esc(barData.momoNumber||'(number not set)')}${barData.momoName?' ('+esc(barData.momoName)+')':''} — GHS ${o.total.toFixed(2)}</div>` : '';
+  const combo = o.comboStatus ? `<div class="oc-combo">${cfg.src === 'table_orders' ? '&#127859; ' + esc(o.comboLabel) + ' also ordered — kitchen' : '&#127864; ' + esc(o.comboLabel) + ' also ordered — bar'}: <b>${esc(o.comboStatus)}</b></div>` : '';
+  return `<div class="oc st-${o.status==='Placed'?'placed':o.status==='Preparing'?'preparing':'delivered'}${late?' late':''}${isNew?' is-new':''}${isProcessing?' busy':''}" data-oid="${esc(id)}" data-ts="${esc(o.timestamp)}" data-st="${esc(o.status)}">
+    <div class="oc-top"><span class="oc-loc">${o.locationType==='Table' ? 'Table ' + esc(o.locationDetail||'?') : (o.locationDetail ? 'T' + esc(o.locationDetail) : '')}</span>${areaTag(o.locationType)}<span class="kind${cfg.src==='canteen_orders'?' food':''}">${cfg.src==='canteen_orders'?'FOOD':'DRINKS'}</span><span class="spill ${pill[0]}">${pill[1]}</span><span class="oc-age">${esc(orderAge(o.timestamp))}</span></div>
+    <div class="oc-items">${(o.items||[]).map(i => esc(i.qty) + ' &times; ' + esc(i.item)).join(', ')}</div>
+    <div class="oc-meta"><span class="nm">${esc(o.customerName) || 'no name given'}</span><span class="pay">${esc(o.payment)}</span><span class="tot">GHS ${o.total.toFixed(2)}</span></div>
+    ${momoNote}${combo}
+    <div class="oc-foot">${momoIn}<select data-osel="1" class="${sel?'':'need'}"${isProcessing?' disabled':''}>${staffOptionsHtmlFor(sel)}</select>${act}</div>
+  </div>`;
+}
+function staffOptionsHtmlFor(selected){
+  return '<option value="">Staff…</option>' + getServingStaff().map(s => `<option value="${esc(s.initials)}"${selected===s.initials?' selected':''}>${esc(s.initials)}${s.name?' — '+esc(s.name):''}</option>`).join('');
+}
+
+function renderOrderPanel(cfg){
+  const el = document.getElementById(cfg.elId);
+  const all = (cfg.data().active || []).slice().sort((a,b) => {
     const order = {'Placed':0, 'Preparing':1, 'Delivered - Awaiting Payment':2};
     return (order[a.status]??3) - (order[b.status]??3) || (toDate(a.timestamp)?.getTime()||0) - (toDate(b.timestamp)?.getTime()||0);
   });
+  const active = all.filter(o => areaFilter === 'ALL' || o.locationType === areaFilter);
+  const cnt = document.getElementById(cfg.countId);
+  if(cnt){ cnt.textContent = active.length; cnt.classList.toggle('zero', active.length === 0); }
 
-  const staffList = getServingStaff();
-  const staffSig = staffList.map(s=>s.initials).sort().join(',');
-  const signature = activeOrdersSignature(active) + '|proc:' + Array.from(processingOrderIds).sort().join(',') + '|staff:' + staffSig;
-  if(signature === lastActiveSignature){
-    updateOrderAges();
+  const staffSig = getServingStaff().map(s=>s.initials).sort().join(',');
+  const signature = activeOrdersSignature(active) + '|proc:' + Array.from(cfg.proc).sort().join(',') + '|staff:' + staffSig + '|area:' + areaFilter + '|sticky:' + stickyStaff();
+  if(signature === cfg.getSig()){
+    el.querySelectorAll('.oc').forEach(card => {
+      const ts = card.dataset.ts, ageEl = card.querySelector('.oc-age');
+      if(ts && ageEl) ageEl.textContent = orderAge(ts);
+      card.classList.toggle('late', card.dataset.st === 'Placed' && ageMinutes(ts) >= LATE_MIN);
+    });
     return;
   }
-  lastActiveSignature = signature;
-
-  if(active.length === 0){ el.innerHTML = '<div class="empty">No active table orders right now.</div>'; return; }
-
-  const staffOptionsHtml = (selected) => '<option value="">Select staff...</option>' +
-    staffList.map(s => `<option value="${esc(s.initials)}" ${selected===s.initials?'selected':''}>${esc(s.initials)}${s.name?' — '+esc(s.name):''}</option>`).join('');
-
-  el.innerHTML = active.map(o => {
-    const itemsHtml = (o.items||[]).map(i => `${i.qty} &times; ${esc(i.item)}`).join(', ');
-    const isNew = o.status === 'Placed' && !tableOrdersFirstLoad;
-    const isProcessing = processingOrderIds.has(o.orderId);
-    const selectedStaff = orderStaffSelections[o.orderId] || '';
-
-    let actionsHtml = '';
-    if(isProcessing){
-      actionsHtml = `<button class="oa-primary" disabled>PROCESSING...</button>`;
-    }else{
-      if(o.status === 'Placed'){
-        actionsHtml = `<button class="oa-primary" onclick="tableOrderAction('${o.orderId}','Preparing')">START PREPARING</button>`;
-      }else if(o.status === 'Preparing'){
-        actionsHtml = `<button class="oa-primary" onclick="tableOrderAction('${o.orderId}','Delivered - Awaiting Payment')">MARK DELIVERED</button>`;
-      }else if(o.status === 'Delivered - Awaiting Payment'){
-        if(o.payment === 'MoMo'){
-          actionsHtml = `<input class="order-momo-input" id="momoRef_${o.orderId}" placeholder="MoMo reference / note (optional)">
-            <button class="oa-primary" onclick="tableOrderAction('${o.orderId}','Paid')">&#10003; CONFIRM MOMO RECEIVED</button>`;
-        }else{
-          actionsHtml = `<button class="oa-primary" onclick="tableOrderAction('${o.orderId}','Paid')">&#10003; CONFIRM CASH RECEIVED</button>`;
-        }
-      }
-      actionsHtml += `<button class="oa-cancel" onclick="tableOrderAction('${o.orderId}','Cancelled')">CANCEL</button>`;
-    }
-
-    const comboHtml = o.comboStatus ? `<div style="font-size:11px;color:var(--teal);background:#FCEEF3;border:1px solid var(--teal);border-radius:6px;padding:6px 10px;margin:6px 0">&#127859; ${o.comboLabel} also ordered — kitchen: <b>${o.comboStatus}</b> (${o.comboRefId})</div>` : '';
-    const momoHtml = o.payment === 'MoMo' ? `<div style="font-size:13px;font-weight:800;color:var(--gold);background:#FFF0A8;border:1px solid var(--gold-dim);border-radius:6px;padding:8px 10px;margin:6px 0">&#128241; PAY BY MOMO — check ${barData.momoNumber||'(number not set)'}${barData.momoName?' ('+barData.momoName+')':''} for GHS ${o.total.toFixed(2)}</div>` : '';
-    return `<div class="order-card ${statusClass(o.status)}${isNew && o.status==='Placed' ? ' is-new':''}${isProcessing?' is-processing':''}" data-timestamp="${o.timestamp}">
-      <div class="order-card-top">
-        <div><span class="order-card-table">${locationLabel(o)}</span> &nbsp; <span class="order-status-pill ${statusPillClass(o.status)}">${o.status}</span>
-          <div style="font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;margin-top:2px">Placed ${fmtDateTime(o.timestamp)}</div>
-        </div>
-        <div class="order-card-age">${orderAge(o.timestamp)}</div>
-      </div>
-      <div class="order-items-list">${itemsHtml}</div>
-      <div class="order-items-list" style="margin-top:-4px;color:var(--text-dim)">${esc(o.customerName) || 'no name given'}</div>
-      ${momoHtml}
-      ${comboHtml}
-      <div class="order-card-footer">
-        <span class="order-total">GHS ${o.total.toFixed(2)}</span>
-        <span class="order-pay-badge">${o.payment}</span>
-      </div>
-      <div class="qs-label" style="margin-top:10px">Staff handling this order (required)</div>
-      <select class="order-staff-select" id="staffSel_${o.orderId}" ${isProcessing?'disabled':''} onchange="orderStaffSelections['${o.orderId}']=this.value">
-        ${staffOptionsHtml(selectedStaff)}
-      </select>
-      <div class="order-actions">${actionsHtml}</div>
-    </div>`;
-  }).join('');
+  cfg.setSig(signature);
+  const keepMomo = {}; el.querySelectorAll('.momo').forEach(i => { keepMomo[i.id] = i.value; });
+  if(active.length === 0){ el.innerHTML = '<div class="empty">' + (all.length ? 'No active orders in this area.' : cfg.emptyText) + '</div>'; return; }
+  el.innerHTML = active.map(o => orderCardHtml(o, cfg)).join('');
+  el.querySelectorAll('.momo').forEach(i => { if(keepMomo[i.id] !== undefined) i.value = keepMomo[i.id]; });
+  // whatever the select shows (incl. the sticky default) counts as the selection
+  el.querySelectorAll('.oc').forEach(c => { const sl = c.querySelector('select'); if(sl && sl.value) cfg.sels[c.dataset.oid] = sl.value; });
 }
 
-function updateOrderAges(){
-  document.querySelectorAll('#tableOrdersBody .order-card').forEach(card => {
-    const ts = card.dataset.timestamp;
-    const ageEl = card.querySelector('.order-card-age');
-    if(ts && ageEl) ageEl.textContent = orderAge(ts);
-  });
-}
+const TABLE_PANEL = {
+  src: 'table_orders', elId: 'tableOrdersBody', countId: 'tableOrdersCount', momoPrefix: 'momoRef_',
+  emptyText: 'No active table orders right now.',
+  data: () => tableOrdersData, get sels(){ return orderStaffSelections; }, get proc(){ return processingOrderIds; },
+  first: () => tableOrdersFirstLoad,
+  getSig: () => lastActiveSignature, setSig: v => { lastActiveSignature = v; }
+};
+const FOOD_PANEL = {
+  src: 'canteen_orders', elId: 'foodOrdersBody', countId: 'foodOrdersCount', momoPrefix: 'foodMomoRef_',
+  emptyText: 'No active food orders right now.',
+  data: () => foodOrdersData, get sels(){ return foodOrderStaffSelections; }, get proc(){ return processingFoodOrderIds; },
+  first: () => foodOrdersFirstLoad,
+  getSig: () => lastFoodActiveSignature, setSig: v => { lastFoodActiveSignature = v; }
+};
+function renderTableOrders(){ renderOrderPanel(TABLE_PANEL); updateAreaTiles(); renderAreaChips(); updateTitleCount(); }
+
+function updateOrderAges(){ /* ages are refreshed inside renderOrderPanel */ }
 
 async function tableOrderAction(orderId, newStatus){
   if(processingOrderIds.has(orderId)) return;
@@ -2490,7 +2621,8 @@ async function tableOrderAction(orderId, newStatus){
 function scheduleNext(fn, baseMs, jitterMs){
   const delay = baseMs + Math.random() * jitterMs;
   setTimeout(function(){
-    Promise.resolve(fn()).catch(function(){}).finally(function(){ scheduleNext(fn, baseMs, jitterMs); });
+    // a hidden tab doesn't need live polling — it refreshes the moment it's shown again
+    Promise.resolve(document.hidden ? null : fn()).catch(function(){}).finally(function(){ scheduleNext(fn, baseMs, jitterMs); });
   }, delay);
 }
 
@@ -2538,79 +2670,7 @@ async function loadFoodOrders(){
   }
 }
 
-function renderFoodOrders(){
-  const el = document.getElementById('foodOrdersBody');
-  const active = (foodOrdersData.active || []).slice().sort((a,b) => {
-    const order = {'Placed':0, 'Preparing':1, 'Delivered - Awaiting Payment':2};
-    return (order[a.status]??3) - (order[b.status]??3) || (toDate(a.timestamp)?.getTime()||0) - (toDate(b.timestamp)?.getTime()||0);
-  });
-
-  const staffList = getServingStaff();
-  const staffSig = staffList.map(s=>s.initials).sort().join(',');
-  const signature = activeOrdersSignature(active) + '|proc:' + Array.from(processingFoodOrderIds).sort().join(',') + '|staff:' + staffSig;
-  if(signature === lastFoodActiveSignature){
-    document.querySelectorAll('#foodOrdersBody .order-card').forEach(card => {
-      const ts = card.dataset.timestamp;
-      const ageEl = card.querySelector('.order-card-age');
-      if(ts && ageEl) ageEl.textContent = orderAge(ts);
-    });
-    return;
-  }
-  lastFoodActiveSignature = signature;
-
-  if(active.length === 0){ el.innerHTML = '<div class="empty">No active food orders right now.</div>'; return; }
-
-  const staffOptionsHtml = (selected) => '<option value="">Select staff...</option>' +
-    staffList.map(s => `<option value="${esc(s.initials)}" ${selected===s.initials?'selected':''}>${esc(s.initials)}${s.name?' — '+esc(s.name):''}</option>`).join('');
-
-  el.innerHTML = active.map(o => {
-    const itemsHtml = (o.items||[]).map(i => `${i.qty} &times; ${esc(i.item)}`).join(', ');
-    const isNew = o.status === 'Placed' && !foodOrdersFirstLoad;
-    const isProcessing = processingFoodOrderIds.has(o.orderId);
-    const selectedStaff = foodOrderStaffSelections[o.orderId] || '';
-
-    let actionsHtml = '';
-    if(isProcessing){
-      actionsHtml = `<button class="oa-primary" disabled>PROCESSING...</button>`;
-    }else{
-      if(o.status === 'Placed'){
-        actionsHtml = `<button class="oa-primary" onclick="foodOrderAction('${o.orderId}','Preparing')">START PREPARING</button>`;
-      }else if(o.status === 'Preparing'){
-        actionsHtml = `<button class="oa-primary" onclick="foodOrderAction('${o.orderId}','Delivered - Awaiting Payment')">MARK DELIVERED</button>`;
-      }else if(o.status === 'Delivered - Awaiting Payment'){
-        if(o.payment === 'MoMo'){
-          actionsHtml = `<input class="order-momo-input" id="foodMomoRef_${o.orderId}" placeholder="MoMo reference / note (optional)">
-            <button class="oa-primary" onclick="foodOrderAction('${o.orderId}','Paid')">&#10003; CONFIRM MOMO RECEIVED</button>`;
-        }else{
-          actionsHtml = `<button class="oa-primary" onclick="foodOrderAction('${o.orderId}','Paid')">&#10003; CONFIRM CASH RECEIVED</button>`;
-        }
-      }
-      actionsHtml += `<button class="oa-cancel" onclick="foodOrderAction('${o.orderId}','Cancelled')">CANCEL</button>`;
-    }
-
-    const comboHtml = o.comboStatus ? `<div style="font-size:11px;color:var(--gold);background:#FBF4E3;border:1px solid var(--gold-dim);border-radius:6px;padding:6px 10px;margin:6px 0">&#127864; ${o.comboLabel} also ordered — bar: <b>${o.comboStatus}</b> (${o.comboRefId})</div>` : '';
-    return `<div class="order-card ${statusClass(o.status)}${isNew && o.status==='Placed' ? ' is-new':''}${isProcessing?' is-processing':''}" data-timestamp="${o.timestamp}">
-      <div class="order-card-top">
-        <div><span class="order-card-table">${locationLabel(o)}</span> &nbsp; <span class="order-status-pill ${statusPillClass(o.status)}">${o.status}</span>
-          <div style="font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;margin-top:2px">Placed ${fmtDateTime(o.timestamp)}</div>
-        </div>
-        <div class="order-card-age">${orderAge(o.timestamp)}</div>
-      </div>
-      <div class="order-items-list">${itemsHtml}</div>
-      <div class="order-items-list" style="margin-top:-4px;color:var(--text-dim)">${esc(o.customerName) || 'no name given'}</div>
-      ${comboHtml}
-      <div class="order-card-footer">
-        <span class="order-total">GHS ${o.total.toFixed(2)}</span>
-        <span class="order-pay-badge">${o.payment}</span>
-      </div>
-      <div class="qs-label" style="margin-top:10px">Staff handling this order (required)</div>
-      <select class="order-staff-select" id="foodStaffSel_${o.orderId}" ${isProcessing?'disabled':''} onchange="foodOrderStaffSelections['${o.orderId}']=this.value">
-        ${staffOptionsHtml(selectedStaff)}
-      </select>
-      <div class="order-actions">${actionsHtml}</div>
-    </div>`;
-  }).join('');
-}
+function renderFoodOrders(){ renderOrderPanel(FOOD_PANEL); updateAreaTiles(); renderAreaChips(); updateTitleCount(); }
 
 async function foodOrderAction(orderId, newStatus){
   if(processingFoodOrderIds.has(orderId)) return;
@@ -2673,13 +2733,126 @@ function maybeQuietHourReload(){
 }
 setInterval(maybeQuietHourReload, 60000);
 
+// delegated clicks: nothing built from data is ever placed inside an onclick="" string
+document.addEventListener('click', function(e){
+  const chip = e.target.closest('.achip'); if(chip){ setAreaFilter(chip.dataset.area); return; }
+  const oact = e.target.closest('[data-oact]');
+  if(oact){
+    const card = oact.closest('.oc'); const host = oact.closest('#tableOrdersBody, #foodOrdersBody');
+    if(card && host){ (host.id === 'tableOrdersBody' ? tableOrderAction : foodOrderAction)(card.dataset.oid, oact.dataset.oact); }
+    return;
+  }
+  const tact = e.target.closest('[data-tab-act]');
+  if(tact){
+    const card = tact.closest('.tc'); if(!card) return;
+    const a = tact.dataset.tabAct;
+    if(a === 'cancel') cancelTab(card.dataset.tabId);
+    else if(a === 'add') startAddItemsToTab(card.dataset.tabId, card.dataset.tabName);
+    else payTab(card.dataset.tabId, a);
+    return;
+  }
+  const co = e.target.closest('[data-checkout]'); if(co){ toggleOnDuty(co.dataset.checkout, false); }
+});
+document.addEventListener('change', function(e){
+  const sl = e.target.closest('select[data-osel]'); if(!sl) return;
+  const card = sl.closest('.oc'); const host = sl.closest('#tableOrdersBody, #foodOrdersBody'); if(!card || !host) return;
+  (host.id === 'tableOrdersBody' ? orderStaffSelections : foodOrderStaffSelections)[card.dataset.oid] = sl.value;
+  sl.classList.toggle('need', !sl.value);
+  if(sl.value) lsSet('whgh_bar_last_staff', sl.value);
+});
+document.addEventListener('visibilitychange', function(){ if(!document.hidden){ loadData(); loadTableOrders(); loadFoodOrders(); } });
+setInterval(function(){ if(!document.hidden){ renderTableOrders(); renderFoodOrders(); } }, 30000);   // keeps "x min" ages and late flags moving
+
+// ---------- stock by location + transfers ----------
+let locRows = [], locTransfers = [], locBusy = false, locClient = genClientId();
+const LOC_KEY = {'Main Bar':'main','VIP Area':'vip','Stage 2 Area':'stage2'};
+function rnd(n){ return Math.round((parseFloat(n)||0) * 100) / 100; }
+async function loadLoc(){
+  try{
+    const [a, b] = await Promise.all([supabaseClient.rpc('get_stock_by_location'), supabaseClient.rpc('get_stock_transfers', { p_limit: 25, p_area: null })]);
+    if(a.error) throw new Error(a.error.message);
+    locRows = a.data || []; locTransfers = b.error ? locTransfers : (b.data || []);
+    renderLoc();
+  }catch(e){ const el = document.getElementById('locBody'); if(el && !locRows.length) el.innerHTML = '<tr><td colspan="5" class="empty">' + esc(e.message) + '</td></tr>'; }
+}
+function fillLocStaff(){
+  const sel = document.getElementById('locBy'); if(!sel) return;
+  const on = getServingStaff(), cur = sel.value;
+  sel.innerHTML = '<option value="">Done by... (required)</option>' + on.map(s => '<option value="' + esc(s.initials) + '">' + esc(s.initials) + (s.fullName ? ' — ' + esc(s.fullName) : (s.name ? ' — ' + esc(s.name) : '')) + '</option>').join('');
+  const last = lsGet('whgh_bar_last_staff') || '';
+  if(on.some(s => s.initials === cur)) sel.value = cur; else if(on.some(s => s.initials === last)) sel.value = last; else if(on.length === 1) sel.value = on[0].initials;
+}
+function renderLoc(){
+  const q = (document.getElementById('locSearch').value || '').trim().toLowerCase(), f = document.getElementById('locFilter').value;
+  const isLow = (qty, par) => qty <= par;
+  let rows = locRows.filter(r => !q || String(r.item).toLowerCase().indexOf(q) !== -1);
+  if(f === 'HELD') rows = rows.filter(r => r.has_vip || r.has_stage2);
+  if(f === 'LOW') rows = rows.filter(r => isLow(+r.main_qty, +r.main_par) || (r.has_vip && isLow(+r.vip_qty, +r.vip_par)) || (r.has_stage2 && isLow(+r.stage2_qty, +r.stage2_par)));
+  const cell = (qty, par, has) => { if(has === false) return '<td class="mono" style="color:var(--muted)">—</td>'; const bad = isLow(+qty, +par); return '<td class="mono" style="' + (bad ? 'color:var(--red);font-weight:700' : '') + '" title="par ' + rnd(par) + '">' + rnd(qty) + '</td>'; };
+  document.getElementById('locBody').innerHTML = rows.length ? rows.slice(0, 200).map(r =>
+    '<tr><td>' + esc(r.item) + ' <span style="color:var(--muted);font-size:10px">' + esc(r.unit) + '</span></td>' + cell(r.main_qty, r.main_par) + cell(r.vip_qty, r.vip_par, r.has_vip) + cell(r.stage2_qty, r.stage2_par, r.has_stage2) + '<td class="mono"><b>' + rnd(r.total_qty) + '</b></td></tr>').join('')
+    : '<tr><td colspan="5" class="empty">Nothing to show.</td></tr>';
+  const sel = document.getElementById('locItem'), cur = sel.value;
+  sel.innerHTML = '<option value="">Choose item...</option>' + locRows.map(r => '<option value="' + esc(r.item) + '">' + esc(r.item) + ' — main ' + rnd(r.main_qty) + ' · VIP ' + rnd(r.vip_qty) + ' · S2 ' + rnd(r.stage2_qty) + '</option>').join('');
+  if(locRows.some(r => r.item === cur)) sel.value = cur;
+  fillLocStaff();
+  document.getElementById('locLog').innerHTML = locTransfers.length ? locTransfers.map(x =>
+    '<tr><td style="font-size:11px">' + esc(x.item) + '<br><span style="color:var(--muted);font-size:10px">' + esc(x.from_loc) + ' &#8594; ' + esc(x.to_loc) + ' · ' + esc(new Date(toDate(x.created_at)).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})) + ' · ' + esc(x.staff_initials) + (x.note ? ' · ' + esc(x.note) : '') + '</span></td><td class="mono" style="text-align:right">' + rnd(x.qty) + '</td></tr>').join('')
+    : '<tr><td class="empty">No transfers yet.</td></tr>';
+}
+async function submitLocTransfer(){
+  if(locBusy) return;
+  const dir = document.getElementById('locDir').value.split('|'), from = dir[0], to = dir[1];
+  const item = document.getElementById('locItem').value, qty = parseFloat(document.getElementById('locQty').value), by = document.getElementById('locBy').value;
+  const res = document.getElementById('locRes');
+  if(!item){ res.innerHTML = '<span style="color:var(--red)">Choose an item.</span>'; return; }
+  if(!(qty > 0)){ res.innerHTML = '<span style="color:var(--red)">Enter a quantity above 0.</span>'; return; }
+  if(!by){ res.innerHTML = '<span style="color:var(--red)">Pick who is doing the transfer.</span>'; return; }
+  const row = locRows.find(r => r.item === item);
+  if(row && qty > (+row[LOC_KEY[from] + '_qty'])){ res.innerHTML = '<span style="color:var(--red)">' + esc(from) + ' only has ' + rnd(row[LOC_KEY[from] + '_qty']) + ' ' + esc(row.unit) + '.</span>'; return; }
+  locBusy = true; document.getElementById('locBtn').disabled = true; res.textContent = 'Saving...';
+  try{
+    const parV = document.getElementById('locPar').value;
+    const r = await supabaseClient.rpc('transfer_stock', { p_item: item, p_qty: qty, p_from: from, p_to: to, p_staff: by, p_client_id: locClient,
+      p_note: document.getElementById('locNote').value.trim() || null, p_par: parV !== '' ? parseFloat(parV) : null });
+    if(r.error) throw new Error(r.error.message);
+    res.innerHTML = '<span style="color:var(--green)">&#10003; ' + esc(item) + ': ' + esc(from) + ' now ' + rnd(r.data.from_qty) + ' · ' + esc(to) + ' now ' + rnd(r.data.to_qty) + '</span>';
+    ['locQty','locPar','locNote'].forEach(id => { document.getElementById(id).value = ''; });
+    locClient = genClientId(); lsSet('whgh_bar_last_staff', by);
+    loadLoc(); loadData();
+  }catch(e){ res.innerHTML = '<span style="color:var(--red)">' + esc(e.message) + '</span>'; }
+  finally{ locBusy = false; document.getElementById('locBtn').disabled = false; }
+}
+
+// keep the transfer form's staff list in step with every data refresh
+const _loadDataBase = loadData;
+loadData = async function(){ const r = await _loadDataBase.apply(this, arguments); try{ fillLocStaff(); }catch(e){} return r; };
+
+paintSound();
 loadData();
+loadLoc();
+scheduleNext(loadLoc, 30000, 8000);
+setInterval(fillLocStaff, 10000);
 scheduleNext(loadData, 25000, 10000);
 loadTableOrders();
 scheduleNext(loadTableOrders, 8000, 4000);
 loadFoodOrders();
 scheduleNext(loadFoodOrders, 8000, 4000);
 scheduleNext(renderOpenTabs, 20000, 5000);
+
+// instant updates: Supabase Realtime nudges the same loaders the polling uses (polling stays on as the safety net)
+(function(){
+  if(!supabaseClient.channel) return;
+  let tm = null;
+  const nudge = function(){ clearTimeout(tm); tm = setTimeout(function(){ if(document.hidden) return; loadTableOrders(); loadFoodOrders(); renderOpenTabs(true); }, 400); };
+  try{
+    supabaseClient.channel('live-queues')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'table_orders' }, nudge)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'canteen_orders' }, nudge)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'open_tabs' }, nudge)
+      .subscribe();
+  }catch(e){}
+})();
 </script>
 <div class="toast" id="toast"></div>
 </body>
