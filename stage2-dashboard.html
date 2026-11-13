@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+  THE WHITE HOUSE EVENTS & MORE — STAGE 2 AREA DASHBOARD (v1.0)
+
+  NEW FILE. A dedicated live screen for ONE area of the venue (Stage 2 Area).
+  It reads the exact same Supabase tables the master bar-dashboard.html reads
+  (table_orders = drinks/bar items, canteen_orders = food, open_tabs, bar_stock,
+  restock_log, staff), just filtered to location_type = 'Stage 2 Area'.
+  Nothing is copied or duplicated: an order placed from Stage 2 Area lands once
+  in table_orders / canteen_orders and shows on BOTH this screen and the master
+  bar dashboard. Actions taken on either screen update the same row.
+
+  What it does:
+    - Live order queue for this area (drinks + food), newest-need first, with
+      a beep + flashing card + tab-title counter for every new order.
+    - Compact cards: staff picker, one primary action, cancel — all on the card.
+      The staff picker remembers the last person used on this device.
+    - Open bar tabs for this area (pay by cash / MoMo, or cancel).
+    - Stock watch: works out which bar_stock items this area's orders consume,
+      flags LOW / OUT against par level, and has a restock form (restock_item).
+    - Area sales for the current shift, top sellers, recently completed orders
+      with stage timings, and staff on duty / check-in.
+
+  Stock note: bar_stock is ONE shared stock for the whole venue (it has no area
+  column), so levels shown here are venue-wide levels for the items this area
+  sells. "Sold here" counts what this area has ordered in the last ~7 days.
+  Cocktail-type items (Cocktail, Mocktail, Milkshake, Smoothie, Juice,
+  VIP Special) are sales-only in the database and never reduce stock, so they
+  are not part of the stock watch — same rule as the master dashboard.
+
+  Zero database changes are required for this page.
+-->
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The White House Events &amp; More — STAGE 2 AREA Dashboard</title>
+<meta name="theme-color" content="#0A0A0A">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#F8F7F3;--surface:#FBF7EC;--card:#FFFFFF;--border:#E2D9C6;--gold:#8F6B1E;--gold-dim:#6E5216;--champagne:#C9A24B;--pink:#B5436F;--red:#B42318;--green:#177A3C;--purple:#5B3FA8;--text:#141414;--text-dim:#444;--muted:#6B6B6B;--accent:#B5436F;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:radial-gradient(1200px 500px at 50% -120px,#fff 0%,rgba(255,255,255,0) 70%),var(--bg);color:var(--text);font-family:'Syne',sans-serif;min-height:100vh;}
+::selection{background:#FFE680;color:#0A0A0A;}
+.header{background:linear-gradient(180deg,#1E1E1E 0%,#0A0A0A 100%);border-bottom:2px solid var(--accent);padding:10px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;flex-wrap:wrap;gap:8px;box-shadow:0 6px 22px -10px rgba(0,0,0,.55);}
+.brand{display:flex;align-items:center;gap:12px;}
+.brand-logo{height:34px;width:auto;border-radius:6px;display:block;}
+.logo{font-size:16px;font-weight:800;letter-spacing:1px;color:#EBCB73;line-height:1.2;}
+.logo span{display:block;color:#fff;font-weight:700;font-size:11px;letter-spacing:3px;margin-top:2px;}
+.logo span b{color:var(--accent);filter:brightness(1.5);}
+.header-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.nav-link{font-size:11px;font-weight:700;letter-spacing:.5px;color:#F3EEE0;text-decoration:none;padding:6px 11px;border:1px solid rgba(235,203,115,.5);border-radius:16px;background:rgba(255,255,255,.08);white-space:nowrap;}
+.nav-link:hover{background:#C9A24B;color:#0A0A0A;}
+.conn{font-size:11px;font-family:'Space Mono',monospace;padding:4px 10px;border-radius:20px;background:rgba(255,255,255,.08);color:#F3EEE0;border:1px solid transparent;white-space:nowrap;}
+.conn.online{color:#8DE8B0;border-color:#8DE8B0;}
+.conn.offline{color:#FFA39A;border-color:#FFA39A;}
+.last-refresh{font-size:11px;color:#CFC8B5;font-family:'Space Mono',monospace;white-space:nowrap;}
+.hbtn{background:rgba(255,255,255,.12);border:1px solid rgba(235,203,115,.6);color:#fff;padding:6px 12px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.5px;font-family:'Syne',sans-serif;white-space:nowrap;}
+.hbtn:hover{background:#C9A24B;color:#0A0A0A;}
+.hbtn.off{opacity:.55;}
+.main{padding:14px 20px 40px;max-width:1500px;margin:0 auto;}
+@media(min-width:1800px){.main{max-width:1900px;padding:18px 40px 40px;}}
+
+.banner{display:none;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;line-height:1.5;}
+.banner.active{display:block;}
+.banner.err{background:#FBF3E1;border:1px solid var(--gold-dim);color:#5C4410;}
+.banner.low{background:#FDECEA;border:1px solid var(--red);}
+.banner .b-title{color:var(--red);font-weight:800;font-size:12px;letter-spacing:1px;margin-bottom:4px;}
+.pill-low{display:inline-block;background:#fff;border:1px solid var(--red);color:#8A1C13;padding:3px 10px;border-radius:20px;font-size:11px;margin:2px 4px 0 0;font-family:'Space Mono',monospace;cursor:pointer;}
+.pill-low:hover{background:#FBD9D5;}
+
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px;}
+.tile{background:#fff;border:1px solid var(--border);border-radius:8px;padding:12px 14px;position:relative;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.05);}
+.tile::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--c,var(--gold));}
+.tile.t-accent{--c:var(--accent);} .tile.t-red{--c:var(--red);} .tile.t-green{--c:var(--green);} .tile.t-gold{--c:var(--gold);}
+.tile .lbl{font-size:9.5px;font-weight:700;letter-spacing:1.8px;color:var(--muted);margin-bottom:6px;}
+.tile .val{font-size:26px;font-weight:800;font-family:'Space Mono',monospace;line-height:1;color:var(--c,var(--gold));}
+.tile .sub{font-size:10.5px;color:var(--text-dim);margin-top:5px;}
+
+.card{background:#fff;border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:12px;box-shadow:0 1px 2px rgba(0,0,0,.05),0 14px 28px -20px rgba(0,0,0,.28);}
+.card-title{font-size:10.5px;font-weight:800;letter-spacing:1.8px;color:#141414;margin-bottom:10px;text-transform:uppercase;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.card-title .hint{font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0;font-size:11px;}
+.card-title .count{background:var(--accent);color:#fff;border-radius:10px;padding:1px 8px;font-family:'Space Mono',monospace;font-size:10.5px;letter-spacing:0;}
+.card-title .count.zero{background:#E2D9C6;color:var(--muted);}
+.empty{text-align:center;padding:14px;color:var(--muted);font-size:12px;}
+.two-col{display:grid;grid-template-columns:1.25fr 1fr;gap:12px;}
+@media(max-width:1000px){.two-col{grid-template-columns:1fr;}}
+
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;}
+.chip{background:#fff;border:1px solid var(--border);color:var(--text-dim);padding:5px 12px;border-radius:16px;font-size:11px;font-weight:700;cursor:pointer;font-family:'Syne',sans-serif;}
+.chip:hover{border-color:#C9A24B;color:#141414;}
+.chip.active{background:linear-gradient(180deg,#2B2B2B,#0A0A0A);color:#fff;border-color:#0A0A0A;}
+.chip .n{opacity:.7;margin-left:4px;font-family:'Space Mono',monospace;}
+
+/* ---- compact order cards ---- */
+.ogrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:8px;align-items:start;}
+.oc{background:#FCF9F0;border:1px solid var(--border);border-left:4px solid var(--champagne);border-radius:7px;padding:8px 10px;transition:opacity .15s;}
+.oc.st-placed{border-left-color:var(--champagne);}
+.oc.st-preparing{border-left-color:var(--pink);}
+.oc.st-delivered{border-left-color:#A0702A;}
+.oc.late{border-color:var(--red);border-left-color:var(--red);}
+.oc.busy{opacity:.5;pointer-events:none;}
+.oc.is-new{animation:flash 1.4s ease-in-out 3;}
+@keyframes flash{0%,100%{background:#FCF9F0;}50%{background:#FFF1A8;}}
+.oc-top{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.oc-loc{font-weight:800;font-size:15px;}
+.kind{font-size:8.5px;font-weight:800;letter-spacing:.8px;padding:2px 6px;border-radius:4px;background:#141414;color:#fff;}
+.kind.food{background:var(--gold);}
+.spill{font-size:8.5px;font-weight:800;letter-spacing:.6px;padding:2px 7px;border-radius:10px;}
+.spill.placed{background:#FFF0A8;color:var(--gold);}
+.spill.preparing{background:#F9DCE8;color:var(--pink);}
+.spill.delivered{background:#F3E4C0;color:#7A5A14;}
+.oc-age{margin-left:auto;font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;}
+.oc.late .oc-age{color:var(--red);font-weight:700;}
+.oc-items{font-size:12.5px;line-height:1.4;margin:4px 0 3px;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;}
+.oc-meta{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-dim);}
+.oc-meta .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.oc-meta .tot{font-family:'Space Mono',monospace;font-weight:800;color:var(--gold);font-size:14px;}
+.oc-meta .pay{font-family:'Space Mono',monospace;font-size:10.5px;color:var(--muted);}
+.oc-note{font-size:11px;font-weight:800;color:var(--gold);background:#FFF0A8;border:1px solid var(--gold-dim);border-radius:5px;padding:4px 7px;margin-top:5px;}
+.oc-foot{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;align-items:stretch;}
+.oc-foot select{flex:1 1 90px;min-width:0;background:#fff;border:1px solid #CBC2AC;border-radius:5px;padding:6px 6px;font-size:13px;font-family:'Syne',sans-serif;color:var(--text);}
+.oc-foot select.need{border-color:var(--red);}
+.oc-foot .momo{flex:1 1 100%;background:#fff;border:1px solid var(--pink);border-radius:5px;padding:6px 8px;font-size:13px;font-family:'Syne',sans-serif;}
+.abtn{background:linear-gradient(180deg,#2B2B2B,#0A0A0A);color:#fff;border:none;border-radius:5px;padding:6px 10px;font-size:10.5px;font-weight:800;letter-spacing:.4px;cursor:pointer;font-family:'Syne',sans-serif;box-shadow:inset 0 0 0 1px rgba(235,203,115,.4);white-space:nowrap;}
+.abtn:hover{background:linear-gradient(180deg,#3A3A3A,#141414);}
+.abtn.x{background:#fff;color:var(--red);box-shadow:none;border:1px solid var(--red);padding:6px 8px;}
+.abtn.cash{background:var(--green);box-shadow:none;} .abtn.momo{background:var(--pink);box-shadow:none;}
+.abtn:disabled{opacity:.5;cursor:not-allowed;}
+
+/* ---- tabs ---- */
+.tgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;}
+.tc{background:#FCF9F0;border:1.5px solid var(--champagne);border-radius:7px;padding:7px 10px;position:relative;}
+.tc .nm{font-weight:800;font-size:12.5px;padding-right:18px;}
+.tc .ph{font-size:10px;color:var(--text-dim);font-family:'Space Mono',monospace;}
+.tc .it{font-size:11px;color:var(--text-dim);margin:3px 0;line-height:1.35;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
+.tc .ft{display:flex;justify-content:space-between;align-items:center;font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;}
+.tc .ft b{font-size:13px;color:var(--gold);}
+.tc .acts{display:flex;gap:5px;margin-top:5px;}
+.tc .acts .abtn{flex:1;}
+.tc .xx{position:absolute;top:4px;right:6px;background:none;border:none;color:var(--red);font-size:16px;line-height:1;cursor:pointer;}
+.tag-tbl{display:inline-block;background:#F5C518;color:#141414;font-weight:800;font-size:10px;padding:1px 8px;border-radius:10px;margin-left:4px;}
+
+/* ---- tables/lists ---- */
+table{width:100%;border-collapse:collapse;font-size:12px;}
+th{text-align:left;padding:6px 8px;color:var(--muted);font-weight:700;letter-spacing:1px;border-bottom:1px solid var(--border);font-size:9.5px;position:sticky;top:0;background:#fff;z-index:2;}
+td{padding:6px 8px;border-bottom:1px solid #ECE6D8;}
+tbody tr:hover td{background:#FBF5E4;}
+tr.out td{color:var(--red);font-weight:700;background:#FEF3F1;}
+tr.low td{color:var(--red);background:#FEF3F1;}
+.scroll{max-height:340px;overflow-y:auto;}
+.mono{font-family:'Space Mono',monospace;}
+.st-badge{font-size:9px;font-weight:800;letter-spacing:.6px;padding:2px 8px;border-radius:10px;}
+.st-badge.ok{background:#DDF3E3;color:var(--green);} .st-badge.low{background:#FBD9D5;color:var(--red);} .st-badge.out{background:var(--red);color:#fff;}
+.rrow{display:flex;align-items:center;gap:10px;padding:6px 2px;border-bottom:1px solid #ECE6D8;font-size:12px;}
+.rrow:last-child{border-bottom:none;}
+.rrow .rn{font-family:'Space Mono',monospace;font-weight:800;font-size:12px;color:var(--muted);width:18px;}
+.rrow .ri{flex:1;min-width:0;}
+.rrow .ri small{display:block;color:var(--muted);font-size:10px;font-family:'Space Mono',monospace;}
+.rrow .rv{font-family:'Space Mono',monospace;font-weight:700;font-size:11.5px;color:var(--pink);text-align:right;}
+
+/* ---- forms ---- */
+.fgrid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px;}
+.in{background:#fff;border:1px solid #CBC2AC;border-radius:6px;padding:8px 10px;color:var(--text);font-size:16px;font-family:'Syne',sans-serif;width:100%;outline:none;}
+.in:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(201,162,75,.25);}
+.btn{background:linear-gradient(180deg,#2B2B2B,#0A0A0A);color:#fff;border:none;padding:10px 16px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:800;letter-spacing:1px;font-family:'Syne',sans-serif;width:100%;box-shadow:inset 0 0 0 1px rgba(235,203,115,.4);}
+.btn:disabled{opacity:.5;cursor:not-allowed;}
+.btn.teal{background:var(--pink);box-shadow:none;}
+.res{font-size:12px;margin-top:6px;min-height:14px;}
+.ok{color:var(--green);font-weight:700;} .bad{color:var(--red);}
+.staff-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
+.sc{display:flex;align-items:center;gap:6px;background:#FCF9F0;border:1px solid var(--border);border-left:3px solid var(--purple);border-radius:6px;padding:5px 8px;font-size:12px;}
+.sc b{color:var(--purple);font-family:'Space Mono',monospace;font-size:11px;}
+.sc button{background:none;border:none;color:var(--red);font-size:10px;font-weight:800;cursor:pointer;font-family:'Syne',sans-serif;}
+.toast{position:fixed;bottom:20px;right:20px;background:linear-gradient(180deg,#2B2B2B,#0A0A0A);color:#fff;border-left:4px solid #F5C518;padding:11px 16px;border-radius:6px;font-size:12.5px;font-weight:700;opacity:0;transform:translateY(20px);transition:all .3s;z-index:999;pointer-events:none;max-width:340px;}
+.toast.show{opacity:1;transform:translateY(0);}
+.toast.err{background:var(--red);border-left-color:#fff;}
+@media(max-width:600px){.main{padding:10px 10px 40px;}.header{padding:8px 10px;}.tile .val{font-size:22px;}.fgrid{grid-template-columns:1fr;}}
+
+/* v2.0: quick sell / new order + transfers */
+.pos{display:none;border:1px solid var(--accent);} .pos.open{display:block;}
+.pos-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:12px;}
+.pos-list{max-height:300px;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(138px,1fr));gap:6px;align-content:start;padding:2px;}
+.mi{background:#fff;border:1px solid var(--border);border-radius:7px;padding:7px 8px;text-align:left;cursor:pointer;font-family:'Syne',sans-serif;font-size:12px;font-weight:700;color:var(--text);line-height:1.2;}
+.mi:hover{border-color:#C9A24B;background:#FFFBEF;} .mi small{display:block;font-weight:400;color:var(--muted);font-size:10px;margin-top:3px;font-family:'Space Mono',monospace;}
+.mi.out{border-color:#E8B4AE;background:#FFF4F2;} .mi.out small{color:var(--red);font-weight:700;} .mi.food{border-left:3px solid var(--pink);}
+.pos-cart{border:1px solid var(--border);border-radius:7px;padding:8px;background:var(--surface);min-height:90px;max-height:240px;overflow-y:auto;margin-bottom:8px;}
+.cr{display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px dashed var(--border);font-size:12px;} .cr:last-child{border-bottom:none;}
+.cr .nm{flex:1;font-weight:700;} .cr .q{display:flex;align-items:center;gap:4px;font-family:'Space Mono',monospace;}
+.cr .q button{width:24px;height:24px;border-radius:5px;border:1px solid var(--border);background:#fff;cursor:pointer;font-weight:800;}
+.cr .pr{width:70px;text-align:right;font-family:'Space Mono',monospace;font-size:11px;}
+.seg{display:flex;gap:6px;margin-bottom:6px;} .seg button{flex:1;padding:8px;border-radius:6px;border:1px solid var(--border);background:#fff;font-weight:800;font-size:12px;cursor:pointer;font-family:'Syne',sans-serif;}
+.seg button.on.cash{background:var(--green);color:#fff;border-color:var(--green);} .seg button.on.momo{background:var(--pink);color:#fff;border-color:var(--pink);}
+.pos-total{display:flex;justify-content:space-between;font-weight:800;font-size:14px;margin:4px 0 8px;font-family:'Space Mono',monospace;}
+.btn.sell{background:var(--green);box-shadow:none;margin-bottom:6px;} .btn.queue{background:var(--accent);box-shadow:none;}
+.st-badge.none{background:#EEE;color:#777;}
+.mini{font-size:11px;} .mini td,.mini th{padding:4px 6px;}
+@media(max-width:900px){.pos-grid{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="brand">
+    <img src="logo.jpg" alt="The White House Events & More" class="brand-logo" onerror="this.style.display='none'">
+    <div class="logo">THE WHITE HOUSE EVENTS &amp; MORE <span><b>STAGE 2 AREA</b> DASHBOARD</span></div>
+  </div>
+  <div class="header-right">
+    <a class="nav-link" href="bar-dashboard.html">&#9664; MASTER BAR</a>
+    <a class="nav-link" href="vip-dashboard.html">VIP AREA &#9654;</a>
+    <a class="nav-link" href="revenue.html" target="_blank" rel="noopener">REVENUE &amp; REPORTS</a>
+    <span class="conn" id="conn">&#9679; checking...</span>
+    <span class="last-refresh" id="lastRefresh">Loading...</span>
+    <button class="hbtn" id="posBtn" data-act="pos" style="background:#C9A24B;color:#0A0A0A">&#65291; SELL / ORDER</button>
+    <button class="hbtn" id="soundBtn" onclick="toggleSound()">&#128276; SOUND ON</button>
+    <button class="hbtn" onclick="loadAll()">&#8635; REFRESH</button>
+  </div>
+</div>
+
+<div class="main">
+  <div class="banner err" id="errBanner"></div>
+  <div class="banner low" id="lowBanner"><div class="b-title">&#9888; LOW IN STAGE 2 AREA — TOP UP FROM MAIN BAR</div><div id="lowPills"></div></div>
+
+  <div class="tiles" id="tiles"></div>
+
+  <div class="card pos" id="posCard">
+    <div class="card-title">&#9889; QUICK SELL / NEW ORDER — STAGE 2 AREA <span class="hint">sales draw from this area's own stock</span></div>
+    <div class="pos-grid">
+      <div>
+        <input class="in" id="posSearch" placeholder="Search drinks &amp; food..." autocomplete="off" style="margin-bottom:8px">
+        <div class="pos-list" id="posList"></div>
+      </div>
+      <div>
+        <div class="pos-cart" id="posCart"></div>
+        <div class="pos-total"><span>TOTAL</span><span id="posTotal">GHS 0.00</span></div>
+        <div class="fgrid"><select class="in" id="posStaff"><option value="">Staff...</option></select><div class="seg" id="posPay" style="margin:0"></div></div>
+        <div class="fgrid"><input class="in" id="posName" placeholder="Customer name (orders)"><input class="in" id="posPhone" type="tel" inputmode="tel" placeholder="Phone (orders)"></div>
+        <input class="in" id="posTable" placeholder="Table / seat (optional)" style="margin-bottom:8px">
+        <button class="btn sell" data-act="psell" id="posSellBtn">&#10003; SELL NOW — PAID</button>
+        <button class="btn queue" data-act="pqueue" id="posQueueBtn">SEND AS ORDER (to queue)</button>
+        <div class="res" id="posRes"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" id="ordersCard">
+    <div class="card-title">&#128203; LIVE ORDERS — STAGE 2 AREA <span class="count zero" id="ordersCount">0</span><span class="hint">drinks + food, same orders the master bar &amp; kitchen see</span></div>
+    <div class="chips" id="orderChips"></div>
+    <div class="ogrid" id="ordersGrid"><div class="empty">Loading orders...</div></div>
+  </div>
+
+  <div class="card" id="tabsCard">
+    <div class="card-title">&#128221; OPEN TABS — STAGE 2 AREA <span class="count zero" id="tabsCount">0</span><span class="hint">pay when they finish — stays here until paid</span></div>
+    <div class="tgrid" id="tabsGrid"><div class="empty">Loading tabs...</div></div>
+  </div>
+
+  <div class="two-col">
+    <div>
+      <div class="card">
+        <div class="card-title">&#128230; STOCK WATCH <span class="hint">this area's own stock &mdash; Main Bar column is for reference only</span></div>
+        <div class="chips" id="stockChips"></div>
+        <div class="scroll"><table><thead><tr><th>ITEM</th><th>UNIT</th><th>HERE</th><th>MAIN BAR</th><th>PAR</th><th>ORDERED</th><th>STATUS</th><th></th></tr></thead><tbody id="stockBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody></table></div>
+      </div>
+      <div class="card">
+        <div class="card-title">&#9203; RECENTLY COMPLETED <span class="hint">stage timings, most recent first</span></div>
+        <div class="scroll" id="doneBody"><div class="empty">Loading...</div></div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="card-title">&#128176; STAGE 2 AREA SALES — THIS SHIFT</div>
+        <div id="salesBody"><div class="empty">Loading...</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">&#128293; TOP SELLERS HERE <span class="hint">last ~7 days</span></div>
+        <div id="topBody"><div class="empty">Loading...</div></div>
+      </div>
+      <div class="card" id="restockCard">
+        <div class="card-title">&#128666; STOCK TRANSFER <span class="hint">move stock between Main Bar and STAGE 2 AREA &mdash; counted once, never twice</span></div>
+        <select class="in" id="trDir" style="margin-bottom:6px"><option value="in">Main Bar &#8594; STAGE 2 AREA (receive)</option><option value="out">STAGE 2 AREA &#8594; Main Bar (return)</option></select>
+        <select class="in" id="trItem" style="margin-bottom:6px"><option value="">Choose item...</option></select>
+        <div class="fgrid"><input class="in" id="trQty" type="number" inputmode="decimal" min="0" placeholder="Quantity"><input class="in" id="trPar" type="number" inputmode="decimal" min="0" placeholder="Par level here (optional)"></div>
+        <div class="fgrid"><select class="in" id="trBy"><option value="">Done by... (required)</option></select><input class="in" id="trNote" placeholder="Note (optional)"></div>
+        <button class="btn" data-act="transfer">TRANSFER</button>
+        <div class="res" id="trRes"></div>
+        <div style="margin-top:8px;font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--muted)">RECENT TRANSFERS</div>
+        <div id="trList"><div class="empty">Loading...</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">&#129489;&#8205;&#128188; STAFF ON DUTY <span class="hint">shared check-in with the bar</span></div>
+        <div class="staff-chips" id="staffChips"></div>
+        <div style="display:flex;gap:6px"><select class="in" id="ciSel" style="flex:1"><option value="">Check in...</option></select><button class="btn" style="width:auto" onclick="checkIn()">CHECK IN</button></div>
+        <div class="res" id="ciRes"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const SUPABASE_URL = 'https://crvuzkyfrqbfmamegxjx.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNydnV6a3lmcnFiZm1hbWVneGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0MzI5NjQsImV4cCI6MjEwMDAwODk2NH0.gMsv3yvw6plDCherA2YdU4UgWRMXUc9H1Hr_IdR9GxA';
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const AREA = 'Stage 2 Area';
+const AREA_TITLE = 'STAGE 2 AREA';
+const SLUG = 'stage2';
+const BASE_TITLE = document.title;
+const COCKTAIL_CATS = ['Cocktail','Mocktail','Milkshake','Smoothie','Juice','VIP Special'];
+const STATUS_ORDER = {'Placed':0,'Preparing':1,'Delivered - Awaiting Payment':2};
+const LATE_MIN = 8;            // a NEW order older than this turns red
+const STAGE_PILL = {'Placed':['placed','NEW'],'Preparing':['preparing','PREPARING'],'Delivered - Awaiting Payment':['delivered','AWAITING PAY']};
+const LAST_STAFF_KEY = 'whgh_' + SLUG + '_last_staff';
+const SOUND_KEY = 'whgh_' + SLUG + '_sound';
+
+// ---------- helpers ----------
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function $(id){ return document.getElementById(id); }
+function genId(){ return (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : 'cid-' + Date.now() + '-' + Math.random().toString(36).slice(2); }
+// Old-Safari-safe parser for Postgres timestamps (same fix as the master dashboard).
+function toDate(v){
+  if(v === null || v === undefined || v === '') return null;
+  if(v instanceof Date) return v;
+  let s = String(v).trim();
+  if(s.indexOf('T') === -1) s = s.replace(' ', 'T');
+  const m = s.match(/T\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[+-]\d{2}(:?\d{2})?)?$/);
+  if(!(m && m[2])) s += 'Z';
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? new Date(v) : d;
+}
+function ms(v){ const d = toDate(v); const t = d ? d.getTime() : NaN; return isNaN(t) ? 0 : t; }
+function ageMin(ts){ const t = ms(ts); return t ? Math.max(0, Math.floor((Date.now() - t) / 60000)) : 0; }
+function ageText(ts){ if(!ms(ts)) return ''; const m = ageMin(ts); return m < 1 ? 'just now' : m + ' min'; }
+function dur(a, b){ const x = ms(a), y = ms(b); if(!x || !y || y < x) return null; const m = Math.round((y - x) / 60000); if(m < 1) return '<1 min'; if(m < 60) return m + ' min'; return Math.floor(m/60) + 'h ' + (m % 60 ? (m % 60) + 'm' : ''); }
+function fmtDT(ts){ const d = toDate(ts); if(!d || isNaN(d.getTime())) return ''; return d.toLocaleDateString('en-GB',{day:'2-digit',month:'short'}) + ', ' + d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}); }
+function money(n){ return 'GHS ' + (parseFloat(n)||0).toFixed(2); }
+function toast(msg, isErr){ const t = $('toast'); t.textContent = msg; t.classList.toggle('err', !!isErr); t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(()=>t.classList.remove('show'), 3400); }
+function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+function lsSet(k, v){ try{ localStorage.setItem(k, v); }catch(e){} }
+function scheduleNext(fn, base, jitter){
+  setTimeout(function(){ Promise.resolve(document.hidden ? null : fn()).catch(function(){}).finally(function(){ scheduleNext(fn, base, jitter); }); }, base + Math.random() * jitter);
+}
+function showErr(msg){ const el = $('errBanner'); el.innerHTML = "<b>&#9888; Can't reach Supabase:</b> " + esc(msg) + ' — check the connection and tap Refresh.'; el.classList.add('active'); }
+function clearErr(){ $('errBanner').classList.remove('active'); }
+function setConn(){ const el = $('conn'); const on = navigator.onLine; el.textContent = on ? '● online' : '● offline'; el.className = 'conn ' + (on ? 'online' : 'offline'); }
+window.addEventListener('online', function(){ setConn(); loadAll(); });
+window.addEventListener('offline', setConn);
+
+// ---------- sound (unlocks on first tap — browsers block audio until then) ----------
+let audioCtx = null, soundOn = lsGet(SOUND_KEY) !== 'off';
+function unlockAudio(){
+  try{ if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); if(audioCtx.state === 'suspended') audioCtx.resume(); }catch(e){}
+}
+document.addEventListener('pointerdown', unlockAudio, { once: true });
+function beep(){
+  if(!soundOn) return;
+  try{
+    unlockAudio(); if(!audioCtx) return;
+    [880, 1175].forEach(function(f, i){
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.connect(g); g.connect(audioCtx.destination); o.frequency.value = f;
+      const t0 = audioCtx.currentTime + i * 0.2;
+      g.gain.setValueAtTime(0.15, t0); g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.18);
+      o.start(t0); o.stop(t0 + 0.19); o.onended = function(){ o.disconnect(); g.disconnect(); };
+    });
+  }catch(e){}
+}
+function toggleSound(){ soundOn = !soundOn; lsSet(SOUND_KEY, soundOn ? 'on' : 'off'); paintSound(); if(soundOn){ unlockAudio(); beep(); } }
+function paintSound(){ const b = $('soundBtn'); b.innerHTML = soundOn ? '&#128276; SOUND ON' : '&#128277; SOUND OFF'; b.classList.toggle('off', !soundOn); }
+
+// ---------- state ----------
+const COL = SLUG === 'vip' ? 'vip' : 'stage2';
+let S = { drinks: [], food: [], tabs: [], stock: [], menu: [], transfers: [], recipes: {}, staff: [], shiftStart: 0, momoNumber: '', momoName: '' };
+let orderFilter = 'ALL', stockFilter = 'AREA';
+let busy = new Set(), staffSel = {}, seen = new Set(), firstOrders = true, lastOrderSig = null, lastTabSig = null;
+let tabBusy = new Set();
+
+function onDuty(){ return (S.staff||[]).filter(s => s.active && s.on_duty && s.initials && String(s.initials).trim()); }
+// default staff for new cards: whoever was used last on this device (if still checked in), else the only person on duty
+function lastStaff(){ const v = lsGet(LAST_STAFF_KEY) || '', on = onDuty(); if(on.some(s => s.initials === v)) return v; return on.length === 1 ? on[0].initials : ''; }
+function staffOptions(sel){
+  return '<option value="">Staff…</option>' + onDuty().map(s => '<option value="' + esc(s.initials) + '"' + (sel === s.initials ? ' selected' : '') + '>' + esc(s.initials) + (s.full_name ? ' — ' + esc(s.full_name) : '') + '</option>').join('');
+}
+
+function shape(r, src){
+  return { src: src, orderId: r.order_id, loc: r.location_detail || '', items: Array.isArray(r.items_json) ? r.items_json : [],
+    total: parseFloat(r.total_ghs) || 0, payment: r.payment_method || '', status: r.status, customer: r.customer_name || '', phone: r.customer_phone || '',
+    handledBy: r.handled_by || '', ts: r.created_at, preparingAt: r.preparing_at, deliveredAt: r.delivered_at, paidAt: r.paid_at, cancelledAt: r.cancelled_at };
+}
+function allOrders(){ return S.drinks.concat(S.food); }
+function activeOrders(){ return allOrders().filter(o => o.status !== 'Paid' && o.status !== 'Cancelled'); }
+function locLabel(o){ return o.loc ? 'Table ' + esc(o.loc) : esc(AREA); }
+
+// ---------- loading ----------
+async function loadOrders(){
+  try{
+    const q = t => db.from(t).select('*').eq('location_type', AREA).eq('archived', false).order('created_at', { ascending: false }).limit(150);
+    const [a, b, tabsRes] = await Promise.all([q('table_orders'), q('canteen_orders'), db.rpc('get_open_tabs')]);
+    if(a.error) throw new Error(a.error.message);
+    if(b.error) throw new Error(b.error.message);
+    S.drinks = (a.data||[]).map(r => shape(r, 'table_orders'));
+    S.food = (b.data||[]).map(r => shape(r, 'canteen_orders'));
+    S.tabs = tabsRes.error ? S.tabs : (tabsRes.data||[]).filter(t => t.area === AREA);
+
+    const act = activeOrders();
+    const ids = new Set(act.map(o => o.src + ':' + o.orderId));
+    if(!firstOrders && act.some(o => o.status === 'Placed' && !seen.has(o.src + ':' + o.orderId))) beep();
+    seen = ids; firstOrders = false;
+    Object.keys(staffSel).forEach(k => { if(!ids.has(k)) delete staffSel[k]; });
+    busy.forEach(k => { if(!ids.has(k)) busy.delete(k); });
+
+    clearErr(); setConn();
+    $('lastRefresh').textContent = 'Updated ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    renderAll();
+  }catch(e){
+    $('lastRefresh').textContent = 'Offline — see message';
+    showErr(e.message || 'Could not load orders.');
+  }
+}
+
+async function loadRef(){
+  try{
+    const [stockRes, recRes, foodRes, staffRes, setRes, trRes] = await Promise.all([
+      db.rpc('get_stock_by_location'),
+      db.from('bar_recipes').select('item_name, category, price_ghs, ingredient_1, qty_1, ingredient_2, qty_2, ingredient_3, qty_3, ingredient_4, qty_4'),
+      db.from('food_menu').select('item_name, category, price_ghs, ingredient_1, qty_1, ingredient_2, qty_2, ingredient_3, qty_3, ingredient_4, qty_4'),
+      db.from('staff').select('id, initials, full_name, active, on_duty, slot').order('slot'),
+      db.from('venue_settings').select('key, value'),
+      db.rpc('get_stock_transfers', { p_limit: 12, p_area: AREA })
+    ]);
+    [stockRes, recRes, foodRes, staffRes, setRes].forEach(r => { if(r.error) throw new Error(r.error.message); });
+    S.stock = (stockRes.data||[]).map(s => ({ item: s.item, unit: s.unit || 'unit', qty: parseFloat(s[COL + '_qty'])||0, par: parseFloat(s[COL + '_par'])||0,
+      main: parseFloat(s.main_qty)||0, has: !!s['has_' + COL] }));
+    const rec = {}, menu = [];
+    const addR = (rows, kind) => (rows||[]).forEach(r => {
+      if(!r.item_name) return;
+      const ings = [];
+      for(let i = 1; i <= 4; i++){ const n = r['ingredient_' + i], q = parseFloat(r['qty_' + i]); if(n && q) ings.push({ name: String(n).trim().toLowerCase(), qty: q }); }
+      rec[String(r.item_name).trim().toLowerCase()] = { category: r.category || '', ings: ings, price: parseFloat(r.price_ghs) || 0, kind: kind, name: r.item_name };
+      menu.push({ name: r.item_name, cat: r.category || 'Other', price: parseFloat(r.price_ghs) || 0, kind: kind });
+    });
+    addR(recRes.data, 'drink'); addR(foodRes.data, 'food');
+    S.recipes = rec; S.menu = menu.sort((a, b) => a.name.localeCompare(b.name));
+    S.transfers = trRes.error ? S.transfers : (trRes.data || []);
+    S.staff = staffRes.data || [];
+    const set = {}; (setRes.data||[]).forEach(r => { set[r.key] = r.value; });
+    S.shiftStart = set.current_shift_started_at ? ms(set.current_shift_started_at) : (function(){ const d = new Date(); d.setHours(0,0,0,0); return d.getTime(); })();
+    S.momoNumber = set.momo_number || ''; S.momoName = set.momo_name || '';
+    clearErr(); setConn();
+    renderAll(true);
+  }catch(e){ showErr(e.message || 'Could not load stock/staff.'); }
+}
+function loadAll(){ return Promise.all([loadOrders(), loadRef()]); }
+
+// ---------- stock watch ----------
+function computeWatch(){
+  const byName = {}; S.stock.forEach(s => { byName[s.item.trim().toLowerCase()] = s; });
+  const sold = {};   // stock item (lower) -> units consumed by this area's orders
+  const menuQty = {}; // menu item -> qty
+  allOrders().filter(o => o.status !== 'Cancelled').forEach(o => o.items.forEach(it => {
+    const q = parseFloat(it.qty) || 0, key = String(it.item || '').trim().toLowerCase();
+    if(!key) return;
+    menuQty[it.item] = (menuQty[it.item] || 0) + q;
+    const r = S.recipes[key];
+    if(!r || COCKTAIL_CATS.indexOf(r.category) !== -1) return;   // cocktail-type = sales only, no stock movement
+    r.ings.forEach(g => { if(byName[g.name]) sold[g.name] = (sold[g.name] || 0) + g.qty * q; });
+  }));
+  const rows = S.stock.map(s => {
+    const k = s.item.trim().toLowerCase(), sd = sold[k] || 0;
+    const status = (!s.has && !sd) ? 'none' : (s.qty <= 0 ? 'out' : (s.qty <= s.par ? 'low' : 'ok'));
+    return { item: s.item, unit: s.unit, qty: s.qty, par: s.par, main: s.main, has: s.has, sold: sd, status: status, relevant: !!sd || s.has };
+  });
+  const rank = { out: 0, low: 1, ok: 2, none: 3 };
+  rows.sort((a, b) => rank[a.status] - rank[b.status] || b.sold - a.sold || a.item.localeCompare(b.item));
+  return { rows: rows, menuQty: menuQty };
+}
+
+// ---------- rendering ----------
+function renderAll(refOnly){
+  const w = computeWatch();
+  renderTiles(w); renderLowBanner(w); renderOrders(); renderTabs(); renderStock(w); renderDone(); renderSales(); renderTop(w);
+  renderStaff(); renderTransferSelects(w); renderTransfers(); if(refOnly) renderPos();
+  const placed = activeOrders().filter(o => o.status === 'Placed').length;
+  document.title = (placed ? '(' + placed + ') ' : '') + BASE_TITLE;
+}
+
+function renderTiles(w){
+  const act = activeOrders();
+  const awaiting = act.filter(o => o.status === 'Delivered - Awaiting Payment');
+  const awaitingTotal = awaiting.reduce((s, o) => s + o.total, 0) + S.tabs.reduce((s, t) => s + (parseFloat(t.total_ghs)||0), 0);
+  const paid = allOrders().filter(o => o.status === 'Paid' && ms(o.paidAt) > S.shiftStart);
+  const paidTotal = paid.reduce((s, o) => s + o.total, 0);
+  const lowRel = w.rows.filter(r => r.relevant && r.status !== 'ok').length;
+  $('tiles').innerHTML =
+    '<div class="tile t-accent"><div class="lbl">ACTIVE ORDERS</div><div class="val">' + act.length + '</div><div class="sub">' + act.filter(o => o.status === 'Placed').length + ' new · ' + act.filter(o => o.status === 'Preparing').length + ' preparing</div></div>' +
+    '<div class="tile t-gold"><div class="lbl">AWAITING PAYMENT</div><div class="val" style="font-size:20px;padding:3px 0">' + money(awaitingTotal) + '</div><div class="sub">' + awaiting.length + ' order' + (awaiting.length === 1 ? '' : 's') + ' + ' + S.tabs.length + ' open tab' + (S.tabs.length === 1 ? '' : 's') + '</div></div>' +
+    '<div class="tile t-green"><div class="lbl">PAID THIS SHIFT</div><div class="val" style="font-size:20px;padding:3px 0">' + money(paidTotal) + '</div><div class="sub">' + paid.length + ' order' + (paid.length === 1 ? '' : 's') + ' from ' + esc(AREA_TITLE) + '</div></div>' +
+    '<div class="tile t-red"><div class="lbl">RESTOCK NEEDED</div><div class="val">' + lowRel + '</div><div class="sub">low/out in this area</div></div>';
+}
+
+function renderLowBanner(w){
+  const low = w.rows.filter(r => r.relevant && r.status !== 'ok');
+  const b = $('lowBanner');
+  if(!low.length){ b.classList.remove('active'); return; }
+  b.classList.add('active');
+  $('lowPills').innerHTML = low.map(r => '<span class="pill-low" data-act="prefill" data-item="' + esc(r.item) + '">' + esc(r.item) + ' — ' + (r.status === 'out' ? 'OUT' : r.qty + ' left (par ' + r.par + ')') + ' · main ' + r.main + '</span>').join('');
+}
+
+function setFilter(f){ orderFilter = f; lastOrderSig = null; renderOrders(); }
+function renderOrders(){
+  const all = activeOrders().sort((a, b) => (STATUS_ORDER[a.status] ?? 3) - (STATUS_ORDER[b.status] ?? 3) || ms(a.ts) - ms(b.ts));
+  const cnt = { ALL: all.length, Placed: 0, Preparing: 0, 'Delivered - Awaiting Payment': 0 };
+  all.forEach(o => { if(cnt[o.status] !== undefined) cnt[o.status]++; });
+  $('ordersCount').textContent = all.length; $('ordersCount').classList.toggle('zero', all.length === 0);
+  const chips = [['ALL','ALL'],['Placed','NEW'],['Preparing','PREPARING'],['Delivered - Awaiting Payment','AWAITING PAY']];
+  $('orderChips').innerHTML = chips.map(c => '<button class="chip' + (orderFilter === c[0] ? ' active' : '') + '" data-act="filter" data-v="' + esc(c[0]) + '">' + c[1] + '<span class="n">' + cnt[c[0]] + '</span></button>').join('');
+
+  const list = orderFilter === 'ALL' ? all : all.filter(o => o.status === orderFilter);
+  const sig = JSON.stringify(list.map(o => [o.src, o.orderId, o.status, o.total, o.payment, o.customer, o.items, o.handledBy])) + '|' + orderFilter + '|' + Array.from(busy).sort().join(',') + '|' + onDuty().map(s => s.initials).sort().join(',') + '|' + (lastStaff());
+  const grid = $('ordersGrid');
+  if(sig === lastOrderSig){ grid.querySelectorAll('.oc').forEach(c => { const a = c.querySelector('.oc-age'); if(a) a.textContent = ageText(c.dataset.ts); c.classList.toggle('late', c.dataset.st === 'Placed' && ageMin(c.dataset.ts) >= LATE_MIN); }); return; }
+  lastOrderSig = sig;
+  // keep any MoMo reference text already typed
+  const momoKeep = {}; grid.querySelectorAll('.momo').forEach(i => { momoKeep[i.dataset.key] = i.value; });
+  if(!list.length){ grid.innerHTML = '<div class="empty" style="grid-column:1/-1">No ' + (orderFilter === 'ALL' ? 'active' : 'matching') + ' orders from ' + esc(AREA_TITLE) + ' right now.</div>'; return; }
+  const sticky = lastStaff();
+  grid.innerHTML = list.map(o => {
+    const key = o.src + ':' + o.orderId, isBusy = busy.has(key);
+    const pill = STAGE_PILL[o.status] || ['placed', esc(o.status)];
+    const sel = staffSel[key] || (o.handledBy && onDuty().some(s => s.initials === o.handledBy) ? o.handledBy : '') || sticky;
+    const late = o.status === 'Placed' && ageMin(o.ts) >= LATE_MIN;
+    let act = '';
+    if(o.status === 'Placed') act = '<button class="abtn" data-act="go" data-to="Preparing">START</button>';
+    else if(o.status === 'Preparing') act = '<button class="abtn" data-act="go" data-to="Delivered - Awaiting Payment">DELIVERED</button>';
+    else act = '<button class="abtn" data-act="go" data-to="Paid">&#10003; ' + (o.payment === 'MoMo' ? 'MOMO RECEIVED' : 'CASH RECEIVED') + '</button>';
+    const momo = o.status === 'Delivered - Awaiting Payment' && o.payment === 'MoMo' ? '<input class="momo" data-key="' + esc(key) + '" placeholder="MoMo ref / note (optional)">' : '';
+    const momoNote = o.payment === 'MoMo' && o.status !== 'Placed' ? '<div class="oc-note">&#128241; MoMo ' + esc(S.momoNumber || '(number not set)') + (S.momoName ? ' (' + esc(S.momoName) + ')' : '') + ' — ' + money(o.total) + '</div>' : '';
+    return '<div class="oc st-' + (o.status === 'Placed' ? 'placed' : o.status === 'Preparing' ? 'preparing' : 'delivered') + (late ? ' late' : '') + (isBusy ? ' busy' : '') + (o.status === 'Placed' && !firstOrders && ageMin(o.ts) < 1 ? ' is-new' : '') + '" data-src="' + esc(o.src) + '" data-id="' + esc(o.orderId) + '" data-ts="' + esc(o.ts) + '" data-st="' + esc(o.status) + '">' +
+      '<div class="oc-top"><span class="oc-loc">' + locLabel(o) + '</span><span class="kind' + (o.src === 'canteen_orders' ? ' food' : '') + '">' + (o.src === 'canteen_orders' ? 'FOOD' : 'DRINKS') + '</span><span class="spill ' + pill[0] + '">' + pill[1] + '</span><span class="oc-age">' + ageText(o.ts) + '</span></div>' +
+      '<div class="oc-items">' + o.items.map(i => esc(i.qty) + ' &times; ' + esc(i.item)).join(', ') + '</div>' +
+      '<div class="oc-meta"><span class="nm">' + (esc(o.customer) || 'no name') + '</span><span class="pay">' + esc(o.payment) + '</span><span class="tot">' + money(o.total) + '</span></div>' + momoNote +
+      '<div class="oc-foot">' + momo + '<select data-act-sel="1" class="' + (sel ? '' : 'need') + '"' + (isBusy ? ' disabled' : '') + '>' + staffOptions(sel) + '</select>' + act + '<button class="abtn x" data-act="go" data-to="Cancelled" title="Cancel order">&times;</button></div></div>';
+  }).join('');
+  grid.querySelectorAll('.momo').forEach(i => { if(momoKeep[i.dataset.key] !== undefined) i.value = momoKeep[i.dataset.key]; });
+  // pre-fill the staff map with whatever the select shows (so a sticky default counts)
+  grid.querySelectorAll('.oc').forEach(c => { const s = c.querySelector('select'); if(s && s.value) staffSel[c.dataset.src + ':' + c.dataset.id] = s.value; });
+}
+
+async function orderAction(card, to){
+  const src = card.dataset.src, id = card.dataset.id, key = src + ':' + id;
+  if(busy.has(key)) return;
+  const staff = (card.querySelector('select') || {}).value || '';
+  if(!staff){ toast('Pick which staff member is handling this order first.', true); const s = card.querySelector('select'); if(s) s.focus(); return; }
+  if(to === 'Cancelled' && !confirm('Cancel this order? This cannot be undone.')) return;
+  const momoEl = card.querySelector('.momo'); const momo = momoEl ? momoEl.value.trim() : '';
+  busy.add(key); lastOrderSig = null; renderOrders();
+  try{
+    const r = to === 'Paid'
+      ? await db.rpc('mark_location_order_paid', { p_table: src, p_order_id: id, p_staff: staff, p_momo: momo || null })
+      : await db.rpc('set_location_order_status', { p_table: src, p_order_id: id, p_new_status: to, p_staff: staff, p_reason: null });
+    if(r.error) throw new Error(r.error.message);
+    delete staffSel[key];
+    if(to === 'Paid' && r.data && r.data.low_stock_names && r.data.low_stock_names.length) toast('Low stock: ' + r.data.low_stock_names.join(', '), true);
+  }catch(e){ toast('Could not update order: ' + e.message, true); }
+  busy.delete(key); lastOrderSig = null;
+  await loadOrders();
+  if(to === 'Paid') loadRef();
+}
+
+// open tabs for this area
+function renderTabs(){
+  const tabs = S.tabs;
+  $('tabsCount').textContent = tabs.length; $('tabsCount').classList.toggle('zero', tabs.length === 0);
+  const sig = JSON.stringify(tabs.map(t => [t.id, t.total_ghs, t.items_json])) + Array.from(tabBusy).join(',');
+  const el = $('tabsGrid');
+  if(sig === lastTabSig){ el.querySelectorAll('[data-ts]').forEach(n => { n.textContent = ageMin(n.dataset.ts) + ' min'; }); return; }
+  lastTabSig = sig;
+  if(!tabs.length){ el.innerHTML = '<div class="empty" style="grid-column:1/-1">No open tabs in ' + esc(AREA_TITLE) + '.</div>'; return; }
+  el.innerHTML = tabs.map(t => {
+    const items = (t.items_json||[]).map(i => esc(i.qty) + ' &times; ' + esc(i.item)).join(', ');
+    const b = tabBusy.has(t.id);
+    return '<div class="tc" data-id="' + esc(t.id) + '"><button class="xx" data-act="tabcancel" title="Cancel tab">&times;</button>' +
+      '<div class="nm">' + esc(t.customer_name) + (t.customer_id ? ' &middot; ' + esc(t.customer_id) : '') + (t.table_number ? '<span class="tag-tbl">T' + esc(t.table_number) + '</span>' : '') + '</div>' +
+      '<div class="ph">' + esc(t.customer_phone) + '</div><div class="it">' + items + '</div>' +
+      '<div class="ft"><b>' + money(t.total_ghs) + '</b><span>' + esc(t.staff_initials) + ' &middot; <span data-ts="' + esc(t.created_at) + '">' + ageMin(t.created_at) + ' min</span></span></div>' +
+      '<div class="acts">' + (b ? '<button class="abtn" disabled>PROCESSING…</button>' : '<button class="abtn cash" data-act="tabpay" data-m="Cash">CASH</button><button class="abtn momo" data-act="tabpay" data-m="MoMo">MOMO</button>') + '</div></div>';
+  }).join('');
+}
+async function tabPay(id, method){
+  tabBusy.add(id); lastTabSig = null; renderTabs();
+  try{ const r = await db.rpc('close_bar_tab', { p_tab_id: id, p_payment: method, p_closed_by: lastStaff() || null }); if(r.error) throw new Error(r.error.message); toast('Tab paid — ' + method); }
+  catch(e){ toast('Could not mark tab paid: ' + e.message, true); }
+  tabBusy.delete(id); lastTabSig = null; loadOrders();
+}
+async function tabCancel(id){
+  if(!confirm('Cancel this tab? This cannot be undone.')) return;
+  tabBusy.add(id); lastTabSig = null; renderTabs();
+  try{ const r = await db.rpc('cancel_bar_tab', { p_tab_id: id }); if(r.error) throw new Error(r.error.message); }
+  catch(e){ toast('Could not cancel tab: ' + e.message, true); }
+  tabBusy.delete(id); lastTabSig = null; loadOrders();
+}
+
+// stock watch table
+function renderStock(w){
+  const rows = w.rows;
+  const relevant = rows.filter(r => r.relevant);
+  const lowAll = rows.filter(r => r.status === 'low' || r.status === 'out');
+  $('stockChips').innerHTML = [['AREA','Stocked / ordered here', relevant.length],['LOW','Low / out here', lowAll.length],['ALL','Everything', rows.length]]
+    .map(c => '<button class="chip' + (stockFilter === c[0] ? ' active' : '') + '" data-act="sfilter" data-v="' + c[0] + '">' + c[1] + '<span class="n">' + c[2] + '</span></button>').join('');
+  const list = stockFilter === 'AREA' ? relevant : stockFilter === 'LOW' ? lowAll : rows;
+  const lbl = { out: 'OUT', low: 'LOW', ok: 'OK', none: '—' };
+  $('stockBody').innerHTML = list.length ? list.slice(0, 150).map(r => '<tr class="' + (r.status === 'out' ? 'out' : r.status === 'low' ? 'low' : '') + '">' +
+    '<td>' + esc(r.item) + '</td><td class="mono" style="font-size:10px;color:var(--muted)">' + esc(r.unit) + '</td><td class="mono"><b>' + (Math.round(r.qty * 100) / 100) + '</b></td><td class="mono" style="color:var(--muted)">' + (Math.round(r.main * 100) / 100) + '</td><td class="mono">' + r.par + '</td><td class="mono">' + (r.sold ? (Math.round(r.sold * 10) / 10) : '—') + '</td>' +
+    '<td><span class="st-badge ' + r.status + '">' + lbl[r.status] + '</span></td>' +
+    '<td style="white-space:nowrap"><button class="abtn" data-act="prefill" data-item="' + esc(r.item) + '">TOP UP</button> <button class="abtn" data-act="setpar" data-item="' + esc(r.item) + '" data-par="' + r.par + '" title="Set par level">PAR</button></td></tr>').join('')
+    : '<tr><td colspan="8" class="empty">' + (stockFilter === 'AREA' ? 'Nothing stocked in ' + esc(AREA_TITLE) + ' yet — use STOCK TRANSFER to log what Main Bar handed over.' : 'Nothing to show.') + '</td></tr>';
+}
+
+function renderDone(){
+  const done = allOrders().filter(o => o.status === 'Paid' || o.status === 'Cancelled').sort((a, b) => ms(b.ts) - ms(a.ts)).slice(0, 12);
+  $('doneBody').innerHTML = done.length ? done.map(o => {
+    if(o.status === 'Cancelled') return '<div class="rrow"><div class="ri"><b>' + locLabel(o) + '</b> <span style="color:var(--red)">CANCELLED</span><small>' + fmtDT(o.ts) + (dur(o.ts, o.cancelledAt) ? ' · open ' + dur(o.ts, o.cancelledAt) : '') + '</small></div><div class="rv">' + money(o.total) + '</div></div>';
+    const st = [dur(o.ts, o.preparingAt) ? 'start ' + dur(o.ts, o.preparingAt) : null, dur(o.preparingAt, o.deliveredAt) ? 'serve ' + dur(o.preparingAt, o.deliveredAt) : null, dur(o.deliveredAt, o.paidAt) ? 'pay ' + dur(o.deliveredAt, o.paidAt) : null].filter(Boolean).join(' · ');
+    return '<div class="rrow"><div class="ri"><b>' + locLabel(o) + '</b> <span class="kind' + (o.src === 'canteen_orders' ? ' food' : '') + '">' + (o.src === 'canteen_orders' ? 'FOOD' : 'DRINKS') + '</span><small>' + fmtDT(o.ts) + (st ? ' · ' + st : '') + '</small></div><div class="rv">' + (dur(o.ts, o.paidAt) || '') + '<br><span style="color:var(--muted);font-size:10px">' + money(o.total) + '</span></div></div>';
+  }).join('') : '<div class="empty">Nothing completed yet.</div>';
+}
+
+function renderSales(){
+  const paid = allOrders().filter(o => o.status === 'Paid' && ms(o.paidAt) > S.shiftStart);
+  if(!paid.length){ $('salesBody').innerHTML = '<div class="empty">No paid orders from ' + esc(AREA_TITLE) + ' this shift yet.</div>'; return; }
+  const by = {}; let total = 0, items = 0;
+  paid.forEach(o => { by[o.payment || 'Other'] = (by[o.payment || 'Other'] || 0) + o.total; total += o.total; o.items.forEach(i => { items += parseFloat(i.qty) || 0; }); });
+  $('salesBody').innerHTML =
+    '<div class="rrow"><div class="ri"><b>Total paid</b></div><div class="rv" style="color:var(--gold);font-size:14px">' + money(total) + '</div></div>' +
+    '<div class="rrow"><div class="ri">Orders · items</div><div class="rv">' + paid.length + ' · ' + items + '</div></div>' +
+    Object.keys(by).map(k => '<div class="rrow"><div class="ri">' + esc(k) + '</div><div class="rv">' + money(by[k]) + '</div></div>').join('') +
+    '<div class="rrow"><div class="ri">Avg order</div><div class="rv">' + money(total / paid.length) + '</div></div>';
+}
+
+function renderTop(w){
+  const top = Object.keys(w.menuQty).map(k => ({ item: k, qty: w.menuQty[k] })).sort((a, b) => b.qty - a.qty).slice(0, 8);
+  $('topBody').innerHTML = top.length ? top.map((t, i) => '<div class="rrow"><div class="rn">' + (i + 1) + '</div><div class="ri">' + esc(t.item) + '</div><div class="rv">' + t.qty + ' sold</div></div>').join('') : '<div class="empty">No orders yet.</div>';
+}
+
+function renderStaff(){
+  const on = onDuty();
+  $('staffChips').innerHTML = on.length ? on.map(s => '<div class="sc"><b>' + esc(s.initials) + '</b>' + esc(s.full_name || '') + '<button data-act="checkout" data-i="' + esc(s.initials) + '">CHECK OUT</button></div>').join('') : '<div class="empty" style="padding:6px 0;text-align:left">Nobody checked in — order cards can\'t be actioned until someone is.</div>';
+  const off = (S.staff||[]).filter(s => s.active && !s.on_duty && s.initials && String(s.initials).trim());
+  const sel = $('ciSel'), cur = sel.value;
+  sel.innerHTML = '<option value="">Check in...</option>' + off.map(s => '<option value="' + esc(s.initials) + '">' + esc(s.initials) + (s.full_name ? ' — ' + esc(s.full_name) : '') + '</option>').join('');
+  if(off.some(s => s.initials === cur)) sel.value = cur;
+  // transfer "done by" + POS staff
+  const by = $('trBy'), curBy = by.value;
+  const opts = on.map(s => '<option value="' + esc(s.initials) + '">' + esc(s.initials) + (s.full_name ? ' — ' + esc(s.full_name) : '') + '</option>').join('');
+  by.innerHTML = '<option value="">Done by... (required)</option>' + opts;
+  if(on.some(s => s.initials === curBy)) by.value = curBy; else if(lastStaff()) by.value = lastStaff();
+  const ps = $('posStaff'), curPs = ps.value;
+  ps.innerHTML = '<option value="">Staff...</option>' + opts;
+  if(on.some(s => s.initials === curPs)) ps.value = curPs; else if(lastStaff()) ps.value = lastStaff();
+}
+async function checkIn(){
+  const i = $('ciSel').value; if(!i){ $('ciRes').innerHTML = '<span class="bad">Select your name first.</span>'; return; }
+  await setDuty(i, true);
+}
+async function setDuty(initials, on){
+  try{
+    const r = await db.rpc('set_staff_on_duty', { p_initials: initials, p_on_duty: on }); if(r.error) throw new Error(r.error.message);
+    const s = (S.staff||[]).find(x => x.initials === initials);
+    if(s && s.id) await db.rpc('log_staff_shift', { p_staff_id: s.id, p_name: s.full_name || initials, p_department: AREA_TITLE, p_action: on ? 'Check In' : 'Check Out', p_source: AREA_TITLE + ' Dashboard' });
+    if(on) lsSet(LAST_STAFF_KEY, initials);
+    $('ciRes').innerHTML = '<span class="ok">&#10003; ' + (on ? 'Checked in.' : 'Checked out.') + '</span>'; setTimeout(() => { $('ciRes').innerHTML = ''; }, 3500);
+    lastOrderSig = null; await loadRef(); renderOrders();
+  }catch(e){ $('ciRes').innerHTML = '<span class="bad">' + esc(e.message) + '</span>'; }
+}
+
+// ---------- stock transfer ----------
+let trClient = genId(), trBusy = false;
+function renderTransferSelects(w){
+  const sel = $('trItem'), cur = sel.value;
+  const o = r => '<option value="' + esc(r.item) + '">' + esc(r.item) + ' — here ' + (Math.round(r.qty * 100) / 100) + ' · main ' + (Math.round(r.main * 100) / 100) + ' ' + esc(r.unit) + '</option>';
+  const rel = w.rows.filter(r => r.relevant), rest = w.rows.filter(r => !r.relevant);
+  sel.innerHTML = '<option value="">Choose item...</option>' + (rel.length ? '<optgroup label="Stocked / ordered in ' + esc(AREA_TITLE) + '">' + rel.map(o).join('') + '</optgroup>' : '') + '<optgroup label="All other bar stock">' + rest.map(o).join('') + '</optgroup>';
+  if(w.rows.some(r => r.item === cur)) sel.value = cur;
+}
+function renderTransfers(){
+  const el = $('trList');
+  el.innerHTML = S.transfers.length ? S.transfers.map(x => {
+    const incoming = x.to_loc === AREA;
+    return '<div class="rrow"><div class="ri"><b>' + esc(x.item) + '</b> <span class="kind' + (incoming ? '' : ' food') + '">' + (incoming ? 'IN' : 'OUT') + '</span><small>' + esc(x.from_loc) + ' &#8594; ' + esc(x.to_loc) + ' · ' + fmtDT(x.created_at) + ' · ' + esc(x.staff_initials) + (x.note ? ' · ' + esc(x.note) : '') + '</small></div><div class="rv">' + (incoming ? '+' : '−') + (parseFloat(x.qty) || 0) + '</div></div>';
+  }).join('') : '<div class="empty">No transfers yet.</div>';
+}
+function prefillTransfer(item){
+  $('trDir').value = 'in'; $('trItem').value = item; $('restockCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  setTimeout(() => $('trQty').focus(), 350);
+}
+async function submitTransfer(){
+  if(trBusy) return;
+  const item = $('trItem').value, qty = parseFloat($('trQty').value), by = $('trBy').value, res = $('trRes'), dir = $('trDir').value;
+  if(!item){ res.innerHTML = '<span class="bad">Choose an item.</span>'; return; }
+  if(!(qty > 0)){ res.innerHTML = '<span class="bad">Enter a quantity above 0.</span>'; return; }
+  if(!by){ res.innerHTML = '<span class="bad">Pick who is doing the transfer.</span>'; return; }
+  const row = S.stock.find(s => s.item === item);
+  if(row){
+    if(dir === 'in' && qty > row.main){ res.innerHTML = '<span class="bad">Main Bar only has ' + row.main + ' ' + esc(row.unit) + '.</span>'; return; }
+    if(dir === 'out' && qty > row.qty){ res.innerHTML = '<span class="bad">' + esc(AREA_TITLE) + ' only has ' + row.qty + ' ' + esc(row.unit) + '.</span>'; return; }
+  }
+  trBusy = true; res.textContent = 'Saving...';
+  try{
+    const r = await db.rpc('transfer_stock', { p_item: item, p_qty: qty, p_from: dir === 'in' ? 'Main Bar' : AREA, p_to: dir === 'in' ? AREA : 'Main Bar', p_staff: by,
+      p_client_id: trClient, p_note: $('trNote').value.trim() || null, p_par: $('trPar').value !== '' ? parseFloat($('trPar').value) : null });
+    if(r.error) throw new Error(r.error.message);
+    res.innerHTML = '<span class="ok">&#10003; ' + esc(item) + ': ' + (dir === 'in' ? 'Main Bar now ' + esc(r.data.from_qty) + ' · here ' + esc(r.data.to_qty) : 'here ' + esc(r.data.from_qty) + ' · Main Bar ' + esc(r.data.to_qty)) + '</span>';
+    ['trQty','trPar','trNote'].forEach(id => { $(id).value = ''; });
+    trClient = genId(); lsSet(LAST_STAFF_KEY, by); loadRef();
+  }catch(e){ res.innerHTML = '<span class="bad">' + esc(e.message) + '</span>'; }
+  finally{ trBusy = false; }
+}
+async function setPar(item, cur){
+  const v = window.prompt('Par level for ' + item + ' in ' + AREA_TITLE + ' (alert when stock falls to this or below):', cur);
+  if(v === null) return;
+  const n = parseFloat(v); if(isNaN(n) || n < 0){ toast('Enter a number, 0 or more.', true); return; }
+  try{ const r = await db.rpc('set_area_par', { p_area: AREA, p_item: item, p_par: n }); if(r.error) throw new Error(r.error.message); toast('Par level saved.'); loadRef(); }
+  catch(e){ toast(e.message, true); }
+}
+
+// ---------- quick sell / new order ----------
+let cart = {}, cartClient = genId(), posPay = 'Cash', posBusy = false;
+function menuLeft(name){
+  const r = S.recipes[String(name).trim().toLowerCase()];
+  if(!r || COCKTAIL_CATS.indexOf(r.category) !== -1 || !r.ings.length) return null;
+  const by = {}; S.stock.forEach(s => { by[s.item.trim().toLowerCase()] = s; });
+  let m = Infinity;
+  r.ings.forEach(g => { const s = by[g.name]; if(s) m = Math.min(m, Math.floor(s.qty / g.qty)); });
+  return m === Infinity ? null : Math.max(0, m);
+}
+function cartTotal(){ return Object.keys(cart).reduce((s, n) => s + (cart[n] || 0) * ((S.recipes[n.toLowerCase()] || {}).price || 0), 0); }
+function renderPosList(){
+  const q = ($('posSearch').value || '').trim().toLowerCase(), box = $('posList'), top = box.scrollTop;
+  const list = S.menu.filter(m => !q || m.name.toLowerCase().indexOf(q) !== -1 || m.cat.toLowerCase().indexOf(q) !== -1).slice(0, 80);
+  box.innerHTML = list.length ? list.map(m => {
+    const left = menuLeft(m.name);
+    return '<button class="mi' + (m.kind === 'food' ? ' food' : '') + (left === 0 ? ' out' : '') + '" data-act="padd" data-item="' + esc(m.name) + '">' + esc(m.name) + '<small>GHS ' + m.price.toFixed(2) + (left === null ? '' : left === 0 ? ' · NONE HERE' : ' · ' + left + ' left') + '</small></button>';
+  }).join('') : '<div class="empty">No match.</div>';
+  box.scrollTop = top;
+}
+function renderCart(){
+  const names = Object.keys(cart).filter(n => cart[n] > 0);
+  $('posCart').innerHTML = names.length ? names.map(n => {
+    const r = S.recipes[n.toLowerCase()] || { price: 0 };
+    return '<div class="cr"><span class="nm">' + esc(n) + '</span><span class="q"><button data-act="pdec" data-item="' + esc(n) + '">&minus;</button><b>' + cart[n] + '</b><button data-act="pinc" data-item="' + esc(n) + '">+</button></span><span class="pr">' + (r.price * cart[n]).toFixed(2) + '</span></div>';
+  }).join('') : '<div class="empty" style="padding:14px 0">Tap items to add them.</div>';
+  $('posTotal').textContent = money(cartTotal());
+  $('posPay').innerHTML = ['Cash','MoMo'].map(m => '<button type="button" data-act="ppay" data-m="' + m + '" class="' + (posPay === m ? 'on ' : '') + m.toLowerCase() + '">' + m.toUpperCase() + '</button>').join('');
+}
+function renderPos(){ renderPosList(); renderCart(); }
+function cartAdd(n, d){ cart[n] = Math.max(0, (cart[n] || 0) + d); if(!cart[n]) delete cart[n]; cartClient = genId(); renderCart(); }
+function posMsg(h){ $('posRes').innerHTML = h; }
+async function posSubmit(mode){
+  if(posBusy) return;
+  const items = Object.keys(cart).filter(n => cart[n] > 0).map(n => ({ item: n, qty: cart[n] }));
+  if(!items.length){ posMsg('<span class="bad">Add at least one item.</span>'); return; }
+  const staff = $('posStaff').value; if(!staff){ posMsg('<span class="bad">Pick who is serving.</span>'); return; }
+  const name = $('posName').value.trim(), phone = $('posPhone').value.trim();
+  if(mode === 'queue' && (!name || !phone)){ posMsg('<span class="bad">Customer name and phone are needed for an order.</span>'); return; }
+  posBusy = true; $('posSellBtn').disabled = true; $('posQueueBtn').disabled = true; posMsg('Saving...');
+  try{
+    if(mode === 'sell'){
+      const r = await db.rpc('area_quick_sell', { p_location: AREA, p_items: items, p_payment: posPay, p_staff: staff, p_client_id: cartClient });
+      if(r.error) throw new Error(r.error.message);
+      const low = (r.data && r.data.lowStockNames) || [];
+      toast('Sold ' + money(r.data.total || 0) + ' · ' + posPay + (low.length ? ' — LOW: ' + low.join(', ') : ''), false);
+      posMsg('<span class="ok">&#10003; Sale recorded' + (r.data && r.data.replayed ? ' (already saved)' : '') + '.</span>');
+    }else{
+      const groups = [['drink', 'place_table_order', 'TBL', 'd'], ['food', 'place_canteen_order', 'CAN', 'f']];
+      let n = 0;
+      for(const g of groups){
+        const its = items.filter(i => ((S.recipes[i.item.toLowerCase()] || {}).kind || 'drink') === g[0]);
+        if(!its.length) continue;
+        const total = its.reduce((s, i) => s + i.qty * ((S.recipes[i.item.toLowerCase()] || {}).price || 0), 0);
+        const r = await db.rpc(g[1], { p_order_id: g[2] + Date.now() + g[3], p_location_type: AREA, p_location_detail: $('posTable').value.trim() || null, p_items_json: its,
+          p_total_ghs: total, p_payment_method: posPay, p_customer_name: name, p_customer_phone: phone, p_client_request_id: cartClient + '-' + g[3], p_notes: null, p_handled_by: staff });
+        if(r.error) throw new Error(r.error.message);
+        n++;
+      }
+      toast(n + ' order' + (n === 1 ? '' : 's') + ' sent to the queue.', false);
+      posMsg('<span class="ok">&#10003; Order placed — it is now in LIVE ORDERS and on the master bar.</span>');
+    }
+    cart = {}; cartClient = genId(); ['posName','posPhone','posTable'].forEach(id => { $(id).value = ''; });
+    lsSet(LAST_STAFF_KEY, staff); renderCart(); loadOrders(); loadRef();
+  }catch(e){ posMsg('<span class="bad">' + esc(e.message) + '</span>'); }
+  finally{ posBusy = false; $('posSellBtn').disabled = false; $('posQueueBtn').disabled = false; }
+}
+
+// ---------- events (delegated: no inline handlers built from data) ----------
+document.addEventListener('click', function(e){
+  const t = e.target.closest('[data-act]'); if(!t) return;
+  const act = t.dataset.act;
+  if(act === 'filter') setFilter(t.dataset.v);
+  else if(act === 'sfilter'){ stockFilter = t.dataset.v; renderStock(computeWatch()); }
+  else if(act === 'prefill') prefillTransfer(t.dataset.item);
+  else if(act === 'setpar') setPar(t.dataset.item, t.dataset.par);
+  else if(act === 'transfer') submitTransfer();
+  else if(act === 'pos'){ const c = $('posCard'); c.classList.toggle('open'); if(c.classList.contains('open')){ renderPos(); $('posSearch').focus(); } }
+  else if(act === 'padd' || act === 'pinc') cartAdd(t.dataset.item, 1);
+  else if(act === 'pdec') cartAdd(t.dataset.item, -1);
+  else if(act === 'ppay'){ posPay = t.dataset.m; renderCart(); }
+  else if(act === 'psell') posSubmit('sell');
+  else if(act === 'pqueue') posSubmit('queue');
+  else if(act === 'go'){ const c = t.closest('.oc'); if(c) orderAction(c, t.dataset.to); }
+  else if(act === 'tabpay'){ const c = t.closest('.tc'); if(c) tabPay(c.dataset.id, t.dataset.m); }
+  else if(act === 'tabcancel'){ const c = t.closest('.tc'); if(c) tabCancel(c.dataset.id); }
+  else if(act === 'checkout') setDuty(t.dataset.i, false);
+});
+document.addEventListener('change', function(e){
+  const s = e.target.closest('select[data-act-sel]'); if(!s) return;
+  const c = s.closest('.oc'); if(!c) return;
+  staffSel[c.dataset.src + ':' + c.dataset.id] = s.value; s.classList.toggle('need', !s.value);
+  if(s.value) lsSet(LAST_STAFF_KEY, s.value);
+});
+document.addEventListener('input', function(e){ if(e.target && e.target.id === 'posSearch') renderPosList(); });
+document.addEventListener('visibilitychange', function(){ if(!document.hidden) loadAll(); });
+
+// ---------- boot ----------
+paintSound(); setConn(); renderCart();
+loadAll();
+scheduleNext(loadOrders, 6000, 3000);
+scheduleNext(loadRef, 30000, 8000);
+setInterval(function(){ if(!document.hidden) renderOrders(); }, 30000);   // keep "x min" ages and late flags moving
+// instant updates: Realtime nudges loadOrders (polling stays on as the safety net)
+(function(){
+  if(!db.channel) return;
+  let tm = null;
+  const nudge = function(){ clearTimeout(tm); tm = setTimeout(function(){ if(!document.hidden) loadOrders(); }, 400); };
+  try{
+    db.channel('live-' + SLUG)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'table_orders' }, nudge)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'canteen_orders' }, nudge)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'open_tabs' }, nudge)
+      .subscribe();
+  }catch(e){}
+})();
+</script>
+</body>
+</html>
